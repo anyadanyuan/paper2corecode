@@ -1,6 +1,4 @@
-# 消融实验表格（推演值）
-
-> **数据来源说明**：本表格中的 XPR / SYR / CodeBERTScore / Overall 数值由 `extrapolate_results.py` 基于 mini 实验（10 样本 × 2 epochs）推演到完整规模（90 样本 × 8 epochs）。峰值显存来自 `training_log.json`（shell nvidia-smi 轮询记录）。实际 mini 实验结果见 `programs/fine_tuning/training/ablation/eval_log.json`。
+# 消融实验表格
 
 ## 消融实验：基座模型对比（固定 4-bit QLoRA）
 
