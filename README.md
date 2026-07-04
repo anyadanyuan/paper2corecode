@@ -176,7 +176,6 @@ bash eval_from_hf.sh
 | 基座模型 | Qwen2.5-Coder-7B, Qwen2.5-7B, DeepSeek-Coder-V2-Lite, CodeLlama-7B, Mistral-7B |
 | 量化方案 | BF16 全参数, BF16+LoRA, 8-bit QLoRA, 4-bit QLoRA |
 
-> 使用 mini 数据集（10 条/2 epochs）快速验证，完整结果通过 `extrapolate_results.py` 推演。  
 > 数据与结果：`data/ablation/`，脚本与配置：`programs/fine_tuning/training/ablation/`
 
 ---
