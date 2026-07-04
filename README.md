@@ -132,6 +132,7 @@ cd paper2CoreCode
 # 安装依赖
 pip install -r requirements.txt
 
+# ！由于模型尚未上传huggingface，评测暂时无法运行！
 # 评测微调模型（自动从 HuggingFace 下载模型 + TaskMonitor 显存监控）
 cd programs/fine_tuning/evaluation
 bash eval_from_hf.sh
