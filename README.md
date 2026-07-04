@@ -4,6 +4,13 @@
 
 ---
 
+## 期末交付说明
+
+报告：final_report.pdf
+展示slides：paperagent.pdf
+
+---
+
 ## 项目概述
 
 基于 Qwen2.5-Coder-7B-Instruct，使用 90 篇 2024 年顶级 ML 会议论文（ICLR/ICML/NeurIPS）构建 Alpaca 格式 SFT 数据集，通过 LLaMA-Factory QLoRA 微调。在独立的 75 篇 2025 年论文测试集上进行评测，并完成了 5 种基座模型 × 4 种量化方案的消融实验。
