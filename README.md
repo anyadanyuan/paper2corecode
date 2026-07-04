@@ -6,8 +6,8 @@
 
 ## 期末交付说明
 
-报告：final_report.pdf
-展示slides：paperagent.pdf
+- 报告：final_report.pdf
+- 展示slides：paperagent.pdf
 
 ---
 
