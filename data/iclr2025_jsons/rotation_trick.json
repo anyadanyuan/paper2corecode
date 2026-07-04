@@ -1,0 +1,1832 @@
+{
+  "paper_id": "rotation_trick",
+  "title": "RESTRUCTURING VECTOR QUANTIZATION WITH THE ROTATION TRICK",
+  "authors": [
+    {
+      "first": "Christopher",
+      "middle": [],
+      "last": "Fifty",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Stanford University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Ronald",
+      "middle": [
+        "G"
+      ],
+      "last": "Junkins",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Stanford University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Dennis",
+      "middle": [],
+      "last": "Duan",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Stanford University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Aniketh",
+      "middle": [],
+      "last": "Iyengar",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Stanford University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Jerry",
+      "middle": [
+        "W"
+      ],
+      "last": "Liu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Stanford University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Ehsan",
+      "middle": [],
+      "last": "Amid",
+      "affiliation": {}
+    },
+    {
+      "first": "Sebastian",
+      "middle": [],
+      "last": "Thrun",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Stanford University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Christopher",
+      "middle": [],
+      "last": "Ré",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Stanford University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Vector Quantized Variational AutoEncoders (VQ-VAEs) are designed to compress a continuous input to a discrete latent space and reconstruct it with minimal distortion. They operate by maintaining a set of vectors-often referred to as the codebook-and quantizing each encoder output to the nearest vector in the codebook. However, as vector quantization is non-differentiable, the gradient to the encoder flows around the vector quantization layer rather than through it in a straight-through approximation. This approximation may be undesirable as all information from the vector quantization operation is lost. In this work, we propose a way to propagate gradients through the vector quantization layer of VQ-VAEs. We smoothly transform each encoder output into its corresponding codebook vector via a rotation and rescaling linear transformation that is treated as a constant during backpropagation. As a result, the relative magnitude and angle between encoder output and codebook vector becomes encoded into the gradient as it propagates through the vector quantization layer and back to the encoder. Across 11 different VQ-VAE training paradigms, we find this restructuring improves reconstruction metrics, codebook utilization, and quantization error. Our code is available at https://github.com/cfifty/rotation_trick.",
+  "body": {
+    "1_INTRODUCTION": "Vector quantization (Gray, 1984) is an approach to discretize a continuous vector space. It defines a finite set of vectors-referred to as the codebook-and maps any vector in the continuous vector space to the closest vector in the codebook. However, deep learning paradigms that use vector quantization are often difficult to train because replacing a vector with its closest codebook counterpart is a nondifferentiable operation (Huh et al., 2023) . This characteristic was not an issue at its creation during the Renaissance of Information Theory for applications like noisy channel communication (Cover, 1999) ; however in the era deep learning, it presents a challenge as gradients cannot directly flow through layers that use vector quantization during backpropagation.\nIn deep learning, vector quantization is largely used in the eponymous Vector Quantized-Variational AutoEncoder (VQ-VAE) (Van Den Oord et al., 2017) . A VQ-VAE is an AutoEncoder with a vector quantization layer between the encoder's output and decoder's input, thereby quantizing the learned representation at the bottleneck. While VQ-VAEs are ubiquitous in state-of-the-art generative modeling (Rombach et al., 2022; Dhariwal et al., 2020; Brooks et al., 2024) , their gradients cannot flow from the decoder to the encoder uninterrupted as they must pass through a non-differentiable vector quantization layer.\nA solution to the non-differentiability problem is to approximate gradients via a \"straight-through estimator\" (STE) (Bengio et al., 2013) . During backpropagation, the STE copies and pastes the gradients from the decoder's input to the encoder's output, thereby skipping the quantization operation altogether. However, this approximation can lead to poor-performing models and codebook collapse: a phenomena where a large percentage of the codebook converge to zero norm and are unused by the model (Mentzer et al., 2023) . Even if codebook collapse does not occur, the codebook is often under-utilized, thereby limiting the information capacity of the VQ-VAEs's bottleneck (Dhariwal et al., 2020) . instabilities caused by the vector quantization layer. We partition these efforts into two categories: (1) methods that sidestep the STE and (2) methods that improve codebook-model interactions.\nSidestepping the STE. Several prior works have sought to fix the problems caused by the STE by avoiding deterministic vector quantization. Baevski et al. (2019) employ the Gumbel-Softmax trick (Jang et al., 2016) to fit a categorical distribution over codebook vectors that converges to a one-hot distribution towards the end of training, Gautam et al. (2023) quantize using a convex combination of codebook vectors, and Takida et al. (2022) employ stochastic quantization. Unlike the above that cast vector quantization as a distribution over codebook vectors, Huh et al. (2023) propose an alternating optimization where the encoder is optimized to output representations close to the codebook vectors while the decoder minimizes reconstruction loss from a fixed set of codebook vector inputs. While these approaches sidestep the training instabilities caused by the STE, they can introduce their own set of problems and complexities such as low codebook utilization at inference and the tuning of a temperature schedule (Zhang et al., 2023) . As a result, many applications and research papers continue to employ VQ-VAEs that are trained using the STE (Rombach et al., 2022; Chang et al., 2022; Huang et al., 2023; Zhu et al., 2023; Dong et al., 2023) .\nCodebook-Model Improvements. Another way to attack codebook collapse or under-utilization is to change the codebook lookup. Rather than use Euclidean distance, Yu et al. (2021) employ a cosine similarity measure, Goswami et al. (2024) a hyperbolic metric, and Lee et al. (2022) stochastically sample codes as a function of the distance between the encoder output and codebook vectors. Another perspective examines the learning of the codebook. Kolesnikov et al. (2022) split high-usage codebook vectors, Dhariwal et al. (2020) ; Łańcucki et al. (2020) ; Zheng & Vedaldi (2023) resurrect low-usage codebook vectors throughout training, Chen et al. (2024) dynamically selects one of m codebooks for each datapoint, and Mentzer et al. (2023) ; Zhao et al. (2024) ; Yu et al. (2023) ; Chiu et al. (2022) fix the codebook vectors to an a priori geometry and train the model without learning the codebook at all. Other works propose loss penalties to encourage codebook utilization. Zhang et al. (2023) add a KL-divergence penalty between codebook utilization and a uniform distribution while Yu et al. (2023) add an entropy loss term to penalize low codebook utilization. While effective at targeting specific training difficulties, as each of these methods continue to use the STE, the training instability caused by this estimator persist. Most of our experiments in Section 5 implement a subset of these approaches, and we find that replacing the STE with the rotation trick further improves performance.",
+    "3_STRAIGHT_THROUGH_ESTIMATOR_(STE)": "In this section, we review the Straight-Through Estimator (STE) and visualize its effect on the gradients. We then explore two STE alternatives that-at first glance-appear to correct the approximation made by the STE.\nFor notation, we define a sample space X over the input data with probability distribution p. For input x ∈ X , we define the encoder as a deterministic mapping that parameterizes a posterior distribution p E (e|x). The vector quantization layer, Q(•), is a function that selects the codebook vector q ∈ C nearest to the encoder output e. Under Euclidean distance, it has the form:\nQ(q = i|e) = 1 if i = arg min 1≤j≤|C| ∥e -q j ∥ 2 0 otherwise\nThe decoder is similarly defined as a deterministic mapping that parameterizes the conditional distribution over reconstructions p D (x|q). As in the VAE (Kingma & Welling, 2013) , the loss function follows from the ELBO with the KL-divergence term zeroing out as p E (e|x) is deterministic and the utilization over codebook vectors is assumed to be uniform. Van Den Oord et al. (2017) additionally add a \"codebook loss\" term ∥sg(e) -q∥ 2 2 to learn the codebook vectors and a \"commitment loss\" term β∥e -sg(q)∥ 2 2 to pull the encoder's output towards the codebook vectors. sg stands for stopgradient and β is a hyperparameter, typically set to a value in [0.25, 2]. For predicted reconstruction x, the optimization objective becomes:\nL(x) = ∥x -x∥ 2 2 + ∥sg(e) -q∥ 2 2 + β∥e -sg(q)∥ 2 2\nIn the subsequent analysis, we focus only on the ∥x -x∥ 2 2 term as the other two are not functions of the decoder. During backpropagation, the model must differentiate through the vector quantization where ∂L ∂q represents backpropagation through the decoder, ∂q ∂e represents backpropagation through the vector quantization layer, and ∂e ∂x represents backpropagation through the encoder. As vector quantization is not a smooth transformation, ∂q ∂e cannot be computed and gradients cannot flow through this term to update the encoder in backpropagation.\nTo solve the issue of non-differentiability, the STE copies the gradients from q to e, bypassing vector quantization entirely. Simply, the STE sets ∂q ∂e to the identity matrix I in the backward pass: ∂L ∂x = ∂L ∂q I ∂e ∂x\nThe first two terms ∂L ∂q ∂q ∂e combine to ∂L ∂e which, somewhat misleadingly, does not actually depend on e. As a consequence, the location of e within the Voronoi partition generated by codebook vector q-be it close to q or at the boundary of the region-has no impact on the gradient update to the encoder.\nAn example of this effect is visualized in Figure 2 for two example functions. In the STE approximation, the \"exact\" gradient at the encoder output is replaced by the gradient at the corresponding codebook vector for each Voronoi partition, irrespective of where in that region the encoder output e lies. As a result, the exact gradient field becomes \"partitioned\" into 16 different regions-all with the same gradient update to the encoder-for the 16 vectors in the codebook.\nReturning to our question, is there a better way to propagate gradients through the vector quantization layer? At first glance, one may be tempted to estimate the curvature at q and use this information to transform ∂q ∂e as q moves to e. This is accomplished by taking a second order expansion around q to approximate the value of the loss at e:\nL e ≈ L q + (∇ q L) T (e -q) + 1 2 (e -q) T (∇ 2 q L)(e -q)\nThen we can compute the gradient at the point e instead of q up to second order approximation with:\n∂L ∂e ≈ ∂ ∂e L q + (∇ q L) T (e -q) + 1 2 (e -q) T (∇ 2 q L)(e -q) = ∇ q L + (∇ 2 q L)(e -q)\nWhile computing Hessians with respect to model parameters are typically prohibitive in modern deep learning architectures, computing them with respect to only the codebook is feasible. Moreover as we must only compute (∇ 2 q L)(e -q), one may take advantage of efficient Hessian-Vector products implementations in deep learning frameworks (Dagréou et al., 2024) and avoid computing the full Hessian matrix.\nExtending this idea a step further, we can compute the exact gradient ∂L ∂e at e by making two passes through the network. Let L q be the loss with the vector quantization layer and L e be the loss without vector quantization, i.e. q = e rather than q = Q(e). Then one may form the total loss L = L q + λL e , where λ is a small constant like 10 -6 , to scale down the effect of L e on the decoder's parameters and use a gradient scaling multiplier of λ -1 to reweigh the effect of L e on the encoder's parameters to 1. As ∂q ∂e is non-differentiable, gradients from L q will not flow to the encoder. While seeming to correct the encoder's gradients, replacing the STE with either approach will likely result in worse performance. This is because computing the exact gradient with respect to e is actually the AutoEncoder (Hinton & Zemel, 1993 ) gradient, the model that VAEs (Kingma & Welling, 2013) and VQ-VAEs (Van Den Oord et al., 2017) were designed to replace given the AutoEncoder's propensity to overfit and difficultly generalizing. Accordingly using either Hessian approximation or exact gradients via a double forward pass will cause the encoder to be trained like an AutoEncoder and the decoder to be trained like a VQ-VAE. This mis-match in optimization objectives is likely another contributing factor to the poor performance we observe for both methods in Table 1 , and a deeper analysis into these characteristics is presented in Appendix A.3.",
+    "4_THE_ROTATION_TRICK": {
+      "4.1_THE_ROTATION_TRICK_PRESERVES_ANGLES": "In this section, we formally define the rotation trick. For encoder output e, let q = Q(e) represent the corresponding codebook vector. Q(•) is non-differentiable so gradients cannot flow through this layer during the backward pass. The STE solves this problem-maintaining the direction and magnitude of the gradient ∇ q L-as ∇ q L moves from q to e with some clever hacking of the backpropagation function in deep learning frameworks:\nq = e -(q -e) constant\nwhich is a parameterization of vector quantization that sets the gradient at the encoder output to the gradient at the decoder's input. The rotation trick offers a different parameterization: casting the forward pass as a rotation and rescaling that aligns e with q: moves to e via the STE (middle) and rotation trick (right). The STE \"copies-and-pastes\" the gradient to preserve its direction while the rotation trick moves the gradient so the angle between q and ∇qL is preserved (proved in Appendix A.6).\nq = ∥q∥ ∥e∥ R constant e R is the rotationfoot_0 transformation that aligns e with q and ∥q∥ ∥e∥ rescales e to have the same magnitude as q. Note that both R and ∥q∥ ∥e∥ are functions of e. To avoid differentiating through this dependency, we treat them as fixed constants-or detached from the computational graph in deep learning frameworkswhen differentiating. This choice is explained in Appendix A.7.\nWhile the rotation trick does not change the output of the forward pass, the backward pass changes. Rather than set ∂q ∂e = I as in the STE, the rotation trick sets ∂q ∂e to be a rotation and rescaling transformation:\n∂ q ∂e = ∥q∥ ∥e∥ R\nAs a result, ∂q ∂e changes based on the position of e in the codebook partition of q, and notably, the angle between ∇ q L and q is preserved as ∇ q L moves to e. This effect is visualized in Figure 3 . While the STE translates the gradient from q to e, the rotation trick rotates it so that the angle between ∇ q L and q is preserved. In a sense, the rotation trick and the STE are sibilings. They choose different characteristics of the gradient as desiderata and then preserve those characteristics as the gradient flows around the non-differentiable vector quantization operation to the encoder.",
+      "4.2_EFFICIENT_ROTATION_COMPUTATION": "The rotation transformation R that rotates e to q can be efficiently computed with Householder matrix reflections. We define ê = e ∥e∥ , q = q ∥q∥ , λ = ∥q∥ ∥e∥ , and r = ê+q ∥ê+q∥ . Then the rotation and rescaling that aligns e to q is simply:\nq = λRe = λ(I -2rr T + 2qê T )e = λ[e -2rr T e + 2qê T e]\nDue to space constraints, we leave the derivation of this formula to Appendix A.5. Parameterizing the rotation in this fashion avoids computing outer products and therefore consumes minimal GPU VRAM. Further, we did not detect a difference in wall-clock time between VQ-VAEs trained with the STE and VQ-VAEs trained with the rotation trick for our experiments in Section 5.",
+      "4.3_VORONOI_PARTITION_ANALYSIS": "In the context of lossy compression, vector quantization works well when the distortion, or equivalently quantization error ∥e -q∥ 2 2 , is low and the information capacity-equivalently codebook utilization-is high (Cover, 1999) . Later in Section 5, we will see that VQ-VAEs trained with the rotation trick have this desiderata-often reducing quantization error by an order of magnitude and substantially increasing codebook usage-when compared to VQ-VAEs trained with the STE. However, the underlying reason why this occurs is less clear. ",
+      "4.4_FURTHER_ANALYSIS": "The Appendix contains several supplementary analyses. Appendix A.2 compares the rotation trick with the STE for a non-convex synthetic example; Appendix A.4 looks at the behavior far away from the origin; and Appendix A.8 analyzes the effect of using a reflection rather than a rotation. Finally, Appendix A.9 examines scaling the gradient's norm by ∥q∥ ∥e∥ and explores alternatives.",
+      "_text": "As discussed in Section 3, updating the encoder's parameters by approximating, or exactly, computing the gradient at the encoder's output is undesirable. Similarly, the STE appears to lose information: the location of e within the quantized region-be it close to q or far away at the boundary-has no impact on the gradient update to the encoder. Capturing this information, i.e. using the location of e in relation to q to transform the gradients through ∂q ∂e , could be beneficial to the encoder's gradient updates and an improvement over the STE.\nViewed geometrically, we ask how to move the gradient ∇ q L from q to e, and what characteristics of ∇ q L and q should be preserved during this movement. The STE offers one possible answer: move the gradient from q to e so that its direction and magnitude are preserved. However, this paper supplies a different answer: move the gradient so that the angle between ∇ q L and q is preserved as ∇ q L moves to e. We term this approach \"the rotation trick\", and in Section 4.3 we show that preserving the angle between q and ∇ q L conveys desirable properties to how points move within the same quantized region."
+    },
+    "5_EXPERIMENTS": {
+      "5.1_VQ-VAE_EVALUATION": "We begin with a straightforward evaluation: training a VQ-VAE to reconstruct examples from ImageNet (Deng et al., 2009) . Following Van Den Oord et al. (2017) , our training objective is a linear combination of the reconstruction, codebook, and commitment loss:\nL = ∥x -x∥ 2 2 + ∥sg(e) -q∥ 2 2 + β∥e -sg(q)∥ 2 2\nwhere β is a hyperparameter scaling constant. Following convention, we drop the codebook loss term from the objective and instead use an exponential moving average to update the codebook vectors.\nEvaluation Settings. For 256 × 256 × 3 input images, we evaluate two different settings: (1) compressing to a latent space of dimension 32 × 32 × 32 with a codebook size of 1024 following Yu et al. (2021) and (2) compressing to 64 × 64 × 3 with a codebook size of 8192 following Rombach et al. (2022) . In both settings, we compare with a Euclidean and cosine similarity codebook lookup. Evaluation Metrics. We log both training and validation set reconstruction metrics. Of note, we compute reconstruction FID (Heusel et al., 2017) and reconstruction IS (Salimans et al., 2016) on reconstructions from the full ImageNet validation set as a measure of reconstruction quality. We also compute codebook usage, or the percentage of codebook vectors that are used in each batch of data, as a measure of the information capacity of the vector quantization layer and quantization error ∥e -q∥ 2 2 as a measure of distortion. Baselines. Our comparison spans the STE estimator (VQ-VAE), stochastic quantization with Gumbel-Softmax (Baevski et al., 2019) , (Gumbel VQ-VAE) the Hessian approximation described in Section 3 (VQ-VAE w/ Hessian Approx), the exact gradient backward pass described in Section 3 (VQ-VAE w/ Exact Gradients), and the rotation trick (VQ-VAE w/ Rotation Trick). All methods share the same architecture, hyperparameters, and training settings, and these settings are summarized in Table 8 of the Appendix. There is no functional difference among methods in the forward pass; the only differences relates to how gradients are propagated through ∂q ∂e during backpropagation. Results. Table 1 displays our findings. We find that using the rotation trick reduces the quantization error-sometimes by an order of magnitude-and improves low codebook utilization. Both results are expected given the Voronoi partition analysis in Section 4.3: points at the boundary of quantized regions are likely pushed to under-utilized codebook vectors while points loosely grouped around the codebook vector are condensed towards it. These two features appear to have a meaningful effect on reconstruction metrics: training a VQ-VAE with the rotation trick substantially improves r-FID and r-IS.\nWe also see that the Hessian Approximation or using Exact Gradients results in poor reconstruction performance. While the gradients to the encoder are, in a sense, \"more accurate\", training the encoder like an AutoEncoder (Hinton & Zemel, 1993) likely introduces overfitting and poor generalization. Moreover, the mismatch in training objectives between the encoder and decoder is likely an aggravating factor and partly responsible for both models' poor performance.",
+      "5.2_VQGAN_EVALUATION": "Moving to the next level of complexity, we evaluate the effect of the rotation trick on VQGANs (Esser et al., 2021) . The VQGAN training objective is:\nL VQGAN = L Per + ∥sg(e) -q∥ 2 2 + β∥e -sg(q)∥ 2 2 + λL Adv\nwhere L Per is the perceptual loss from Johnson et al. (2016) and replaces the L 2 loss used to train VQ-VAEs. L Adv is a patch-based adversarial loss similar to the adversarial loss in Conditional GAN (Isola et al., 2017) . β is a constant that weights the commitment loss while λ is an adaptive weight based on the ratio of ∇L Per to ∇L Adv with respect to the last layer of the decoder.",
+      "5.3_VIT-VQGAN_EVALUATION": "Improving upon the VQGAN model, Yu et al. (2021) propose using a ViT (Dosovitskiy, 2020) rather than CNN to parameterize the encoder and decoder. The ViT-VQGAN uses factorized codes and L 2 normalization on the output and input to the vector quantization layer to improve performance and training stability. Additionally, the authors change the training objective, adding a logit-laplace loss and restoring the L 2 reconstruction error to L VQGAN .",
+      "_text": "In Section 4.3, we showed the rotation trick enables behavior that would increase codebook utilization and reduce quantization error by changing how points within the same Voronoi region are updated. However, the extent to which these changes will affect applications is unclear. In this section, we evaluate the effect of the rotation trick across many different VQ-VAE paradigms.\nWe begin with image reconstruction: training a VQ-VAE with the reconstruction objective of Van Den Oord et al. (2017) and later extend our evaluation to the more complex VQGANs (Esser et al., 2021) , the VQGANs designed for latent diffusion (Rombach et al., 2022) , and then the ViT-VQGAN (Yu et al., 2021) . Finally, we evaluate VQ-VAE reconstructions on videos using a TimeSformer (Bertasius et al., 2021) encoder and decoder. Due to space constraints, the video results are presented in Appendix A.1. In total, our empirical analysis spans 11 different VQ-VAE configurations. For all experiments, aside from handling ∂q ∂e differently, the models, hyperparameters, and training settings are identical and described in Appendix A.10."
+    },
+    "6_LIMITATIONS": "Rotation Trick STE A limitation of the rotation trick can arise when the encoder outputs or codebook vectors are forced to be close to 0 norm (i.e., ∥e∥ ≈ 0 or ∥q∥ ≈ 0). In this case, the angle between e and q may be obtuse. When this happens, the rotation trick will \"over-rotate\" the gradient ∇ q L as it is transported from q to e so that ∇ q L and ∇ e L now point in different directions (i.e. the cosine of the angle between ∇ e L and ∇ q L will be negative). An example is visualized in Figure 6 . This is undesirable because-when the angle between e and q is obtuse-the rotation trick will violate the assumption that when e ≈ q, ∇ q L ≈ ∇ e L, and it will likely result in worse performance than VQ-VAEs trained with the STE. While obtuse angles between e and q are very unlikely-by design, the codebook vectors should be \"angularly close\" to the vectors that are mapped to them-however, if there is a restriction that forces codewords to have near 0 norm, then the rotation trick will likely perform worse than the STE.",
+    "7_CONCLUSION": "In this work, we explore different ways to propagate gradients through the vector quantization layer of VQ-VAEs and find that preserving the angle-rather than the direction-between the codebook vector and gradient induces desirable effects for how points within the same codebook region are updated. These effects cause a substantial improvement in model performance. Across 11 different settings, we find that training VQ-VAEs with the rotation trick improves their reconstructions. For example, training one of the VQGANs used in latent diffusion with the rotation trick improves r-FID from 5.0 to 1.1 and r-IS from 141.5 to 200.2, reduces quantization error by two orders of magnitude, and increases codebook usage by 13.5x. A APPENDIX Expanding our analysis beyond the image modality, we evaluate the effect of the rotation trick on video reconstructions from the BAIR Robot dataset (Ebert et al., 2017) and from the UCF101 action recognition dataset (Soomro, 2012) . We follow the quantization paradigm used by ViT-VQGAN, but replace the ViT with a TimeSformer (Bertasius et al., 2021) video model. Due to compute limitations, both encoder and decoder follow a relatively small TimeSformer model: 8 layers, 256 hidden dimensions, 4 attention heads, and 768 MLP hidden dimensions. A complete description of the architecture, training settings, and hyperparameters are provided in Appendix A.10.4.\nResults.\nTable 5 shows our results. For both datasets, training a TimeSformer-VQGAN model with the STE results in codebook collapse. We explored several different hyperparameter settings; however in all cases, codebook utilization drops to almost 0% within the first several epochs. On the other hand, models trained with the rotation trick do not exhibit any training instability and produce high quality reconstructions as indicated by r-FVD (Unterthiner et al., 2018). Several non-cherry picked video reconstructions are displayed in Appendix A.10.4. A.2 NON-CONVEX SYNTHETIC EXAMPLE To supplement our analysis in Section 4.3, we include a numerical simulation of vector quantization for minimizing Himmelblau's function (Figure 7 ) across 100 gradient updates for the STE and rotation trick gradient estimators to highlight the differences in their behaviors. Our simulation uses an EMA with a decay rate of 0.8 as described in Van Den Oord et al. (2017) to update the codebook vectors and a learning rate of 1e -3 to update the pre-quantized points. Points for both the STE and the rotation trick simulation use the same random initialization for both codewords and pre-quantized vectors. The only difference is whether the STE or the rotation trick is used as the gradient estimator through the vector quantization operation. Similar to our findings in Section 5, we see that the rotation trick clusters points more tightly around each codebook vector when compared to the STE, resulting in lower distortion. Moreover, the codebook vectors more rapidly converge to the four equal local minima in Himmelblau's function, resulting in a lower objective function value when averaged across all points."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "vq-wav2vec: Self-supervised learning of discrete speech representations",
+      "authors": [
+        {
+          "first": "Alexei",
+          "middle": [],
+          "last": "Baevski",
+          "suffix": ""
+        },
+        {
+          "first": "Steffen",
+          "middle": [],
+          "last": "Schneider",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Auli",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "A model of inductive bias learning",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Baxter",
+          "suffix": ""
+        }
+      ],
+      "year": 2000,
+      "venue": "Journal of artificial intelligence research"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Estimating or propagating gradients through stochastic neurons for conditional computation",
+      "authors": [
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Léonard",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Is space-time attention all you need for video understanding?",
+      "authors": [
+        {
+          "first": "Gedas",
+          "middle": [],
+          "last": "Bertasius",
+          "suffix": ""
+        },
+        {
+          "first": "Heng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Lorenzo",
+          "middle": [],
+          "last": "Torresani",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Video generation models as world simulators",
+      "authors": [
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Brooks",
+          "suffix": ""
+        },
+        {
+          "first": "Bill",
+          "middle": [],
+          "last": "Peebles",
+          "suffix": ""
+        },
+        {
+          "first": "Connor",
+          "middle": [],
+          "last": "Holmes",
+          "suffix": ""
+        },
+        {
+          "first": "Will",
+          "middle": [],
+          "last": "Depue",
+          "suffix": ""
+        },
+        {
+          "first": "Yufei",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Jing",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Schnurr",
+          "suffix": ""
+        },
+        {
+          "first": "Joe",
+          "middle": [],
+          "last": "Taylor",
+          "suffix": ""
+        },
+        {
+          "first": "Troy",
+          "middle": [],
+          "last": "Luhman",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Luhman",
+          "suffix": ""
+        },
+        {
+          "first": "Clarence",
+          "middle": [],
+          "last": "Ng",
+          "suffix": ""
+        },
+        {
+          "first": "Ricky",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Maskgit: Masked generative image transformer",
+      "authors": [
+        {
+          "first": "Huiwen",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Ce",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [
+            "T"
+          ],
+          "last": "Freeman",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Balance of number of embedding and their dimensions in vector quantization",
+      "authors": [
+        {
+          "first": "Hang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Sankepally",
+          "middle": [],
+          "last": "Sainath Reddy",
+          "suffix": ""
+        },
+        {
+          "first": "Ziwei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Dianbo",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Gradnorm: Gradient normalization for adaptive loss balancing in deep multitask networks",
+      "authors": [
+        {
+          "first": "Vijay",
+          "middle": [],
+          "last": "Zhao Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Chen-Yu",
+          "middle": [],
+          "last": "Badrinarayanan",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Rabinovich",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Self-supervised learning with random-projection quantizer for speech recognition",
+      "authors": [
+        {
+          "first": "Chung-Cheng",
+          "middle": [],
+          "last": "Chiu",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiahui",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghui",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Elements of information theory",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Thomas",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Cover",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "How to compute hessianvector products?",
+      "authors": [
+        {
+          "first": "Mathieu",
+          "middle": [],
+          "last": "Dagréou",
+          "suffix": ""
+        },
+        {
+          "first": "Pierre",
+          "middle": [],
+          "last": "Ablin",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Vaiter",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Moreau",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "ICLR Blogposts 2024"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Imagenet: A large-scale hierarchical image database",
+      "authors": [
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        },
+        {
+          "first": "Li-Jia",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Jukebox: A generative model for music",
+      "authors": [
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Heewoo",
+          "middle": [],
+          "last": "Jun",
+          "suffix": ""
+        },
+        {
+          "first": "Christine",
+          "middle": [],
+          "last": "Payne",
+          "suffix": ""
+        },
+        {
+          "first": "Jong",
+          "middle": [
+            "Wook"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Peco: Perceptual codebook for bert pre-training of vision transformers",
+      "authors": [
+        {
+          "first": "Xiaoyi",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Jianmin",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Dongdong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Weiming",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Dong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Fang",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "Nenghai",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Baining",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "An image is worth 16x16 words: Transformers for image recognition at scale",
+      "authors": [
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Self-supervised visual planning with temporal skip connections",
+      "authors": [
+        {
+          "first": "Frederik",
+          "middle": [],
+          "last": "Ebert",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [
+            "X"
+          ],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "CoRL"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Taming transformers for high-resolution image synthesis",
+      "authors": [
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        },
+        {
+          "first": "Bjorn",
+          "middle": [],
+          "last": "Ommer",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Soft convex quantization: Revisiting vector quantization with convex optimization",
+      "authors": [
+        {
+          "first": "Tanmay",
+          "middle": [],
+          "last": "Gautam",
+          "suffix": ""
+        },
+        {
+          "first": "Reid",
+          "middle": [],
+          "last": "Pryzant",
+          "suffix": ""
+        },
+        {
+          "first": "Ziyi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Chenguang",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Somayeh",
+          "middle": [],
+          "last": "Sojoudi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Hypervq: Mlr-based vector quantization in hyperbolic space",
+      "authors": [
+        {
+          "first": "Nabarun",
+          "middle": [],
+          "last": "Goswami",
+          "suffix": ""
+        },
+        {
+          "first": "Yusuke",
+          "middle": [],
+          "last": "Mukuta",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsuya",
+          "middle": [],
+          "last": "Harada",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Vector quantization",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Gray",
+          "suffix": ""
+        }
+      ],
+      "year": 1984,
+      "venue": "IEEE Assp Magazine"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Gans trained by a two time-scale update rule converge to a local nash equilibrium",
+      "authors": [
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Heusel",
+          "suffix": ""
+        },
+        {
+          "first": "Hubert",
+          "middle": [],
+          "last": "Ramsauer",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "Bernhard",
+          "middle": [],
+          "last": "Nessler",
+          "suffix": ""
+        },
+        {
+          "first": "Sepp",
+          "middle": [],
+          "last": "Hochreiter",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Autoencoders, minimum description length and helmholtz free energy",
+      "authors": [
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Zemel",
+          "suffix": ""
+        }
+      ],
+      "year": 1993,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Towards accurate image coding: Improved autoregressive image generation with dynamic vector quantization",
+      "authors": [
+        {
+          "first": "Mengqi",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhendong",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuowei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yongdong",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Straightening out the straightthrough estimator: Overcoming optimization challenges in vector quantized networks",
+      "authors": [
+        {
+          "first": "Minyoung",
+          "middle": [],
+          "last": "Huh",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Cheung",
+          "suffix": ""
+        },
+        {
+          "first": "Pulkit",
+          "middle": [],
+          "last": "Agrawal",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Isola",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Image-to-image translation with conditional adversarial networks",
+      "authors": [
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Isola",
+          "suffix": ""
+        },
+        {
+          "first": "Jun-Yan",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Tinghui",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Alexei",
+          "middle": [
+            "A"
+          ],
+          "last": "Efros",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Categorical reparameterization with gumbel-softmax",
+      "authors": [
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "Shixiang",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Poole",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Perceptual losses for real-time style transfer and super-resolution",
+      "authors": [
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Alahi",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Computer Vision-ECCV 2016: 14th European Conference"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Progressive growing of gans for improved quality, stability, and variation",
+      "authors": [
+        {
+          "first": "Tero",
+          "middle": [],
+          "last": "Karras",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "A style-based generator architecture for generative adversarial networks",
+      "authors": [
+        {
+          "first": "Tero",
+          "middle": [],
+          "last": "Karras",
+          "suffix": ""
+        },
+        {
+          "first": "Samuli",
+          "middle": [],
+          "last": "Laine",
+          "suffix": ""
+        },
+        {
+          "first": "Timo",
+          "middle": [],
+          "last": "Aila",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Multi-task learning using uncertainty to weigh losses for scene geometry and semantics",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Kendall",
+          "suffix": ""
+        },
+        {
+          "first": "Yarin",
+          "middle": [],
+          "last": "Gal",
+          "suffix": ""
+        },
+        {
+          "first": "Roberto",
+          "middle": [],
+          "last": "Cipolla",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Auto-encoding variational bayes",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Diederik",
+          "suffix": ""
+        },
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Uvim: A unified modeling approach for vision with learned guiding codes",
+      "authors": [
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "André Susano",
+          "middle": [],
+          "last": "Pinto",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Jeremiah",
+          "middle": [],
+          "last": "Harmsen",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Houlsby",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Robust training of vector quantized bottleneck models",
+      "authors": [
+        {
+          "first": "Adrian",
+          "middle": [],
+          "last": "Łańcucki",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Chorowski",
+          "suffix": ""
+        },
+        {
+          "first": "Guillaume",
+          "middle": [],
+          "last": "Sanchez",
+          "suffix": ""
+        },
+        {
+          "first": "Ricard",
+          "middle": [],
+          "last": "Marxer",
+          "suffix": ""
+        },
+        {
+          "first": "Nanxin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jga",
+          "middle": [],
+          "last": "Hans",
+          "suffix": ""
+        },
+        {
+          "first": "Sameer",
+          "middle": [],
+          "last": "Dolfing",
+          "suffix": ""
+        },
+        {
+          "first": "Tanel",
+          "middle": [],
+          "last": "Khurana",
+          "suffix": ""
+        },
+        {
+          "first": "Antoine",
+          "middle": [],
+          "last": "Alumäe",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Laurent",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "2020 International Joint Conference on Neural Networks (IJCNN)"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Autoregressive image generation using residual quantization",
+      "authors": [
+        {
+          "first": "Doyup",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Chiheon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Saehoon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Minsu",
+          "middle": [],
+          "last": "Cho",
+          "suffix": ""
+        },
+        {
+          "first": "Wook-Shin",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Finite scalar quantization: Vq-vae made simple",
+      "authors": [
+        {
+          "first": "Fabian",
+          "middle": [],
+          "last": "Mentzer",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Minnen",
+          "suffix": ""
+        },
+        {
+          "first": "Eirikur",
+          "middle": [],
+          "last": "Agustsson",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Tschannen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Highresolution image synthesis with latent diffusion models",
+      "authors": [
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "Dominik",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "Björn",
+          "middle": [],
+          "last": "Ommer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Improved techniques for training gans",
+      "authors": [
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "Wojciech",
+          "middle": [],
+          "last": "Zaremba",
+          "suffix": ""
+        },
+        {
+          "first": "Vicki",
+          "middle": [],
+          "last": "Cheung",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Ucf101: A dataset of 101 human actions classes from videos in the wild",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Soomro",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Sq-vae: Variational bayes on discrete representation with self-annealed stochastic quantization",
+      "authors": [
+        {
+          "first": "Yuhta",
+          "middle": [],
+          "last": "Takida",
+          "suffix": ""
+        },
+        {
+          "first": "Takashi",
+          "middle": [],
+          "last": "Shibuya",
+          "suffix": ""
+        },
+        {
+          "first": "Weihsiang",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "Chieh-Hsin",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "Junki",
+          "middle": [],
+          "last": "Ohmura",
+          "suffix": ""
+        },
+        {
+          "first": "Toshimitsu",
+          "middle": [],
+          "last": "Uesaka",
+          "suffix": ""
+        },
+        {
+          "first": "Naoki",
+          "middle": [],
+          "last": "Murata",
+          "suffix": ""
+        },
+        {
+          "first": "Shusuke",
+          "middle": [],
+          "last": "Takahashi",
+          "suffix": ""
+        },
+        {
+          "first": "Toshiyuki",
+          "middle": [],
+          "last": "Kumakura",
+          "suffix": ""
+        },
+        {
+          "first": "Yuki",
+          "middle": [],
+          "last": "Mitsufuji",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Towards accurate generative models of video: A new metric & challenges",
+      "authors": [
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "Sjoerd",
+          "middle": [],
+          "last": "Van Steenkiste",
+          "suffix": ""
+        },
+        {
+          "first": "Karol",
+          "middle": [],
+          "last": "Kurach",
+          "suffix": ""
+        },
+        {
+          "first": "Raphael",
+          "middle": [],
+          "last": "Marinier",
+          "suffix": ""
+        },
+        {
+          "first": "Marcin",
+          "middle": [],
+          "last": "Michalski",
+          "suffix": ""
+        },
+        {
+          "first": "Sylvain",
+          "middle": [],
+          "last": "Gelly",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Neural discrete representation learning",
+      "authors": [
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Van Den",
+          "suffix": ""
+        },
+        {
+          "first": "Oriol",
+          "middle": [],
+          "last": "Oord",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Videogpt: Video generation using vq-vae and transformers",
+      "authors": [
+        {
+          "first": "Wilson",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Yunzhi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "Aravind",
+          "middle": [],
+          "last": "Srinivas",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Vector-quantized image modeling with improved vqgan",
+      "authors": [
+        {
+          "first": "Jiahui",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jing",
+          "middle": [],
+          "last": "Yu Koh",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ruoming",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Ku",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhong",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Baldridge",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghui",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Language model beats diffusiontokenizer is key to visual generation",
+      "authors": [
+        {
+          "first": "Lijun",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "José",
+          "middle": [],
+          "last": "Lezama",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Nitesh",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Gundavarapu",
+          "suffix": ""
+        },
+        {
+          "first": "Kihyuk",
+          "middle": [],
+          "last": "Versari",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Sohn",
+          "suffix": ""
+        },
+        {
+          "first": "Yong",
+          "middle": [],
+          "last": "Minnen",
+          "suffix": ""
+        },
+        {
+          "first": "Agrim",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Xiuye",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [
+            "G"
+          ],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hauptmann",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Regularized vector quantization for tokenized image synthesis",
+      "authors": [
+        {
+          "first": "Jiahui",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Fangneng",
+          "middle": [],
+          "last": "Zhan",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Theobalt",
+          "suffix": ""
+        },
+        {
+          "first": "Shijian",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Image and video tokenization with binary spherical quantization",
+      "authors": [
+        {
+          "first": "Yue",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanjun",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Philipp",
+          "middle": [],
+          "last": "Krähenbühl",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Online clustered codebook",
+      "authors": [
+        {
+          "first": "Chuanxia",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [],
+          "last": "Vedaldi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Designing a better asymmetric vqgan for stablediffusion",
+      "authors": [
+        {
+          "first": "Zixin",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Xuelu",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Dongdong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jianmin",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Le",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yinpeng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Gang",
+          "middle": [],
+          "last": "Hua",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    }
+  ]
+}

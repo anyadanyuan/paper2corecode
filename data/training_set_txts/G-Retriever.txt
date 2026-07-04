@@ -1,0 +1,86 @@
+# 1 Introduction
+
+Graphs and Large Language Models (LLMs). The advent of LLMs has significantly shaped the artificial intelligence landscape. As these models are applied to increasingly diverse tasks, their ability to process complex structured data will be increasingly vital. In particular, in our interconnected world, a significant portion of real-world data inherently possesses a graph structure, such as the Web, e-commerce, recommendation systems, knowledge graphs, and many others. Moreover, many of these involve graphs with textual attributes (i.e., textual graphs), making them well-suited for LLM-centric methods. This has spurred interest in combining graph-based technologies, particularly graph neural networks (GNNs), with LLMs to enhance their reasoning on graphs [44, 15, 24] .
+The Present Work: Enabling 'Chat With Your Graph'. While existing works integrate LLMs and GNNs in various ways, they mostly focus on conventional graph tasks such as node, edge and graph 38th Conference on Neural Information Processing Systems (NeurIPS 2024).
+
+# 2 Related Work
+
+Graphs and Large Language Models. A significant body of research has emerged at the intersection of graph-based techniques and LLMs [30, 24, 15, 44, 54] . This exploration spans diverse aspects, ranging from the design of general graph models [47, 25, 51, 19, 40, 31] , and multi-modal architectures [23, 49] to practical applications. Noteworthy applications include fundamental graph reasoning [52, 3, 56] , node classification [8, 11, 39, 5, 50, 4, 33] , graph classification/regression [32, 55] , and leveraging LLMs for knowledge graph-related tasks [41, 14, 29] .
+
+# 3 Formalization
+
+This section establishes the notation and formalizes key concepts related to textual graphs, language models for text encoding, and large language models and prompt tuning.
+
+# 4 Proposed GraphQA Benchmark
+
+Our GraphQA represents a comprehensive and diverse benchmark for graph question-answering. It is tailored to assess the capabilities of models in answering a wide range of questions about graphs across diverse domains.
+
+## 4.1 Data Format
+
+Each entry in the GraphQA benchmark consists of a textual graph, a question related to the graph, and one or more corresponding answers, as illustrated in Figure 2 . Textual Graphs. The textual graph is converted into a natural language format, resulting in a list of nodes and edges, akin to a CSV file format. It is important to note that while multiple methods exist for textualizing a graph, our focus is not on identifying the optimal solution. Instead, we prioritize a straightforward yet empirically effective approach for representing graphs in natural language, facilitating the benchmark's use in diverse GraphQA scenarios.
+
+## 4.2 Description of Datasets
+
+The GraphQA benchmark integrates three existing datasets: ExplaGraphs, SceneGraphs, and WebQSP. Table 2 presents the summary statistics of these datasets. It is important to note that these datasets were not originally developed for this work. However, a significant contribution of our research is the standardization and processing of these diverse datasets into a uniform data format suitable for the GraphQA benchmark. These datasets, previously utilized in different contexts, are reintroduced with a new focus tailored for GraphQA. For a detailed comparison with the original datasets, see the Appendix C.
+ExplaGraphs is a dataset for generative commonsense reasoning, focusing on creating explanation graphs for stance prediction in debates. It offers detailed, unambiguous commonsense-augmented graphs to evaluate arguments supporting or refuting a belief. The primary task is to assess whether arguments are supportive or contradictory, using accuracy as the metric. We have converted the triplet-form provided in Saha et al. [35] into a standard graph format.
+SceneGraphs, a visual question answering dataset, includes 100,000 scene graphs. Each graph details objects, attributes, and relations within an image. This dataset challenges users with tasks requiring spatial understanding and multi-step inference. The task is to answer open-ended questions based on a textual description of a scene graph, evaluated on accuracy. We have sampled from the GQA dataset [13] and constructed standard graphs from the provided JSON files.
+WebQSP is a large-scale multi-hop knowledge graph QA dataset consisting of 4,737 questions. It was proposed by Yih et al. [48] and, following Luo et al. [28] , utilizes a subset of Freebase, encompassing facts within 2-hops of entities mentioned in the questions. The task involves answering questions that
+
+# 5 G-Retriever
+
+In this section, we introduce G-Retriever, a new architecture tailored for GraphQA, which integrates the strengths of GNNs, LLMs, and RAG. To allow efficient fine-tuning while preserving the LLM's pretrained language capabilities, we freeze the LLM and use a soft prompting approach on the output of the GNN. Our RAG-based design mitigates hallucinations through direct retrieval of the graph, while allowing our approach to scale to graphs exceeding the LLM's context window size. To adapt RAG to graphs, we formulate subgraph retrieval as a PCST optimization problem. This approach also allows us to enhance explainability by returning the retrieved subgraph.
+G-Retriever comprises four main steps: indexing, retrieval, subgraph construction and generation, as depicted in Figure 3 . The implementation details of each step are elaborated in the following sections.
+
+## 5.1 Indexing
+
+We initiate the RAG approach by generating node and graph embeddings using a pre-trained LM. These embeddings are then stored in a nearest neighbor data structure.
+To elaborate, consider x n ∈ D Ln as the text attributes of node n. Utilizing a pre-trained LM, such as SentenceBert [34] , we apply the LM to x n , yielding the representation z n :
+EQUATION
+where d denotes the dimension of the output vector. Similar preprocessing steps are applied to edges. Refer to Figure 3 , Step 1 for an illustrative representation.
+
+## 5.2 Retrieval
+
+For retrieval, we employ the same encoding strategy to the query x q , to ensure consistent treatment of textual information:
+EQUATION
+Next, to identify the most relevant nodes and edges for the current query, we use a k-nearest neighbors retrieval approach. This method yields a set of 'relevant nodes/edges' based on the similarity between the query and each node or edge. The retrieval operation is defined as:
+EQUATION
+where z n and z e are the embeddings of node n and edge e, respectively. We use the cosine similarity function, cos(•, •), to measure the similarity between the query representation and the node/edge embeddings. The argtopk operation retrieves the top-k elements based on this similarity, providing a set of nodes V k and edges E k considered most relevant to the query. See Step 2 of Figure 3 .
+
+## 5.3 Subgraph Construction
+
+This step aims to construct a subgraph that encompasses as many relevant nodes and edges as possible, while keeping the graph size manageable. This approach offers two key benefits: Firstly, it helps to filter out nodes and edges that are not pertinent to the query. This is crucial because irrelevant information can overshadow the useful data, potentially diverting the focus of the subsequent LLM from the information of interest. Secondly, it enhances efficiency; by keeping the graph size manageable, it becomes feasible to translate the graph into natural language and then input it into the LLM for processing. The Prize-Collecting Steiner Tree algorithm [2] serves as our primary method for identifying such optimally sized and relevant subgraphs. See Step 3 in Figure 3 .
+
+## 5.4 Answer Generation
+
+Graph Encoder. Let S * = (V * , E * ) represent the retrieved subgraph. We use a graph encoder to model the structure of this graph, specifically using a standard Graph Attention Network (GAT) [43] . Our approach for encoding the retrieved subgraph is defined as follows:
+EQUATION
+Here, POOL denotes the mean pooling operation, and d g is the dimension of the graph encoder.
+Projection Layer. We incorporate a multilayer perceptron (MLP) to align the graph token with the vector space of the LLM:
+EQUATION
+where d l is the dimension of the LLM's hidden embedding.
+
+## 6.1 Experiment Setup
+
+In the indexing step, we use SentenceBert [34] as the LM to encode all node and edge attributes. In the generation step, we use the open-source Llama2-7b [42] as the LLM and Graph Transformer [37] as the graph encoder. Additional details are provided in Appendix B.1.
+
+## 6.2 Main Results
+
+In our experiments, we consider three model configurations: 1) Inference-only: Using a frozen LLM for direct question answering; 2) Frozen LLM w/ prompt tuning (PT): Keeping the parameters of the LLM frozen and adapting only the prompt; 3) Tuned LLM: Fine-tuning the LLM with LoRA [10] . We provide more details in Appendix B.2. Table 3 demonstrates the effectiveness of our method across three datasets in various configurations.
+In the inference-only setting, G-Retriever surpasses all baselines. Notably, LLM can perform even better when no graph knowledge is provided (i.e., question only), which might be attributed to the complexity and potential noise in the knowledge. For frozen LLM with prompt tuning, G-Retriever outperforms traditional prompt tuning and GraphToken [31] , a graph prompt tuning-based method, with average performance increases of 40.6% and 30.8% respectively. Furthermore, when tuned with LoRA, G-Retriever achieves the best performance.
+
+## 6.3 Efficiency Evaluation
+
+The efficiency of our approach is highlighted by the data in Table 4 . Implementing our graph-based retrieval significantly decreases the number of tokens required to describe the graphs in text, reduces the number of nodes in graphs, and speeds up the training process. Specifically, for the SceneGraphs dataset, tokens decreased by 83%, nodes by 74%, and training time by 29%. For the WebQSP dataset, tokens decreased by 99%, nodes by 99%, and training time by 67%. These substantial reductions demonstrate the method's efficiency and potential in managing large-scale graph data.
+
+## 6.4 Mitigation of Hallucination
+
+To evaluate hallucination, we instructed the models to answer graph-related questions, specifically by identifying supporting nodes or edges from the graph. We assessed the model's faithfulness using three metrics: the fraction of valid nodes (denoted as Valid Nodes), the fraction of valid edges (denoted as Valid Edges), and the fraction of times the entire set of cited nodes and edges was valid (denoted as Fully Valid Graphs). We manually reviewed 100 responses from both our method and the baseline (i.e.,, LLM with graph prompt tuning). Table 5 shows that G-Retriever significantly reduces hallucinations by 54% compared to the baseline, as our graph retrieval ensures that the data is sourced directly from the actual graph, leading to fewer hallucinations. See Appendix G for details.
+
+## 6.5 Ablation Study
+
+In this ablation study, we assess the individual impact of key components within our pipeline. As shown in Table 6 , there are performance drops when any of these components are removed, with the graph encoder and textualized graph showing declines of 22.51% and 19.19%, respectively. This demonstrates their complementary effects in representing the graph in both textual and embedded formats. Additionally, the retrieval on graphs is also important to the overall performance. Further details are available in Appendix B.3. We also present additional studies on our framework: it is robust to the choice of graph encoders (see Appendix B.4) and benefits from the increased scale of LLMs (see Appendix B.5).
+
+# 7 Conclusion
+
+In this work, we introduce a new GraphQA benchmark for real-world graph question answering and present G-Retriever, an architecture adept at complex and creative queries. Experimental results show that G-Retriever surpasses baselines in textual graph tasks across multiple domains, scales effectively with larger graph sizes, and demonstrates resistance to hallucination.
+Limitations and Future Work: Currently, G-Retriever employs a static retrieval component. Future developments could investigate more sophisticated RAG where the retrieval is trainable.

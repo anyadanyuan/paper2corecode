@@ -1,0 +1,3861 @@
+{
+  "paper_id": "cp_fuse",
+  "title": "COPYRIGHT-PROTECTED LANGUAGE GENERATION VIA ADAPTIVE MODEL FUSION",
+  "authors": [
+    {
+      "first": "Javier",
+      "middle": [],
+      "last": "Abad",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zurich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Konstantin",
+      "middle": [],
+      "last": "Donhauser",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zurich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Francesco",
+      "middle": [],
+      "last": "Pinto",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zurich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Fanny",
+      "middle": [],
+      "last": "Yang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zurich",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "The risk of language models reproducing copyrighted material from their training data has led to the development of various protective measures. Among these, inference-time strategies that impose constraints via post-processing have shown promise in addressing the complexities of copyright regulation. However, they often incur prohibitive computational costs or suffer from performance trade-offs. To overcome these limitations, we introduce Copyright-Protecting Model Fusion (CP-Fuse), a novel approach that combines models trained on disjoint sets of copyrighted material during inference. In particular, CP-Fuse adaptively aggregates the model outputs to minimize the reproduction of copyrighted content, adhering to a crucial balancing property to prevent the regurgitation of memorized data.\nThrough extensive experiments, we show that CP-Fuse significantly reduces the reproduction of protected material without compromising the quality of text and code generation. Moreover, its post-hoc nature allows seamless integration with other protective measures, further enhancing copyright safeguards. Lastly, we show that CP-Fuse is robust against common techniques for extracting training data 1 .",
+  "body": {
+    "1_INTRODUCTION": "Large Language Models (LLMs), such as GPT-4 (Achiam et al., 2023) and Gemini (Team et al., 2023) , have achieved undeniable success. However, they also present a significant challenge: the risk of reproducing copyrighted material from their training data (Sag, 2019; Yu et al., 2023; Karamolegkou et al., 2023) . With the widespread adoption of these models for generating new text and code, the risk of large-scale copyright violations has become a pressing issue, as highlighted by several recent multi-million dollar lawsuits (Henderson et al., 2023) . Consequently, preventing copyright infringement in language models has become a critical focus for researchers and practitioners alike.\nThe fair use doctrine (17 U.S.C. 107) offers a legal framework to mitigate liability for copyright infringement, spurring interest in techniques that allow models to use protected works without harming their market value (Henderson et al., 2023) . Since verbatim reproduction often stems from memorization during training (Carlini et al., 2021; 2023; Somepalli et al., 2022; Pinto et al., 2024) , researchers have explored training-time strategies that prevent memorization of individual data samples, such as Differentially Private (DP) training (Dwork et al., 2014; Abadi et al., 2016) . However, scaling DP training to large models is computationally prohibitive and can degrade performance (Anil et al., 2022) , motivating the exploration of alternative heuristic methods (Hans et al., 2024) .\nBeyond training-time approaches, pre-processing and inference-time methods have also been considered. Pre-processing strategies curate the training data by excluding or deduplicating copyrighted samples (Kandpal et al., 2022; Kocetkov et al., 2022; Min et al., 2023) . However, these techniques are only partially effective (Lee et al., 2023; Ippolito et al., 2023) and often degrade model performance by removing high-quality copyrighted samples (Meeus et al., 2023) . In contrast, inference-time methods intervene during decoding to prevent the reproduction of copyrighted content (Wei et al., 2024) . Notably, Vyas et al. (2023) propose a general framework for constructing copyright-protected models by combining generative models trained on different data sources. While promising, their framework lacks a computationally feasible implementation suitable for real-world language models.",
+    "3_COPYRIGHT-PROTECTING_MODEL_FUSION": {
+      "3.1_PRELIMINARIES": "At the core of our method is the assumption of the separability of copyrighted material, as discussed by Vyas et al. (2023) for various vision and language applications. This assumption is akin to those used in exact machine unlearning (Bourtoule et al., 2021; Yan et al., 2022; Dukler et al., 2023) and in works that split datasets into safe and unsafe parts (Golatkar et al., 2021; 2024; Li et al., 2024) .\nConsider a dataset D and a set of copyright-protected material C that could be compromised when training a model p on D. The assumption states that we can split D into two potentially overlapping subsets, D 1 and D 2 , such that each subset contains data associated with two non-overlapping sets of copyright-protected materials, C 1 and C 2 , where C 1 ∩ C 2 = ∅. This assumption holds, for instance, when we construct D from sources that are sufficiently distinct. Hence, any language model trained on the subset D 1 is protected from infringing the copyright of materials in C \\ C 1 ⊇ C 2 .\nGiven the two subsets D 1 and D 2 , we can then train two generative models p (1) , p (2) on the respective subsets and \"fuse\" them to construct a model p that achieves protection against all copyright-protected material C. In this context, Vyas et al. (2023) propose the k-NAF (Near Access Free) framework as a quantitative guarantee for copyright protection. Definition 3.1. Formally, a model p(.|x) is k-NAF for some k ∈ R + if, for any input prompt x and some user-specified divergence function ∆,\nEQUATION\nThe key intuition behind why a model satisfying k-NAF is less likely to regurgitate copyrighted material is as follows: if the separability of copyrighted material holds, the likelihood of generating infringing text for any material c ∈ C decreases exponentially with the length of c for at least one of the models. Therefore, for a model p to satisfy the k-NAF guarantee, it must assign a minimal probability to events involving the reproduction of protected material.",
+      "3.2_ALGORITHM": "We introduce Copyright-Protecting Model Fusion (CP-Fuse), a simple yet effective algorithm for copyright protection via model fusion. Inspired by the k-NAF framework, we aim to minimize the maximum KL-divergence in Equation ( 1). However, achieving this directly is computationally intractable; therefore, we propose an efficient approximate algorithm that iteratively optimizes p(y t |y <t , x) given the history p(y <t |x). In Lemma 3.2, we show that leveraging the KL-divergence allows us to express the update rule in a model fusion form. Formally, we iteratively define\nEQUATION\nwhich results in a convex optimization problem. Although solving this problem naively is still computationally intensive, we overcome this limitation using the following lemma: Lemma 3.2. The optimal solution p(y\nt | y <t , x) of the optimization problem in Equation (2) satisfies 2 log p * (y t ) = α t log p (1) (y t |y <t , x) + β t log p (2) (y t |y <t , x) + γ t (3) for some α t , β t ≥ 0, γ t ∈ R.\nEquation ( 2) can therefore be solved efficiently by performing a grid search over the parameters α t and β t , with γ t chosen as a function of α t and β t to ensure the total probability mass sums to 1.",
+      "3.3_EFFICACY_OF_METHODOLOGY": "In this section, we provide an intuitive explanation of how our method prevents the reproduction of memorized training samples. Recall that, by Lemma 3.2, CP-Fuse adaptively selects α t and β t based on the sequence history y <t . Specifically, the algorithm assigns less weight to the model that has been more dominant in generating y <t . More formally, the following balancing property holds:\nLemma 3.3. (Balancing property) Given a prompt x, let y <t be any non-ending sequence and assume that p (i) (.|y <t , x) has full support for i ∈ {1, 2} and p (1) (y <t |x) > p (2) (y <t |x). Then, either 1. E yt∼p(.|y<t,x) log p (1) (y ≤t |x) = E yt∼p(.|y<t,x) log p (2) (y ≤t |x) 2. p(y t |y <t , x) = p (2) (y t |y <t , x) 20 40 60 80 100 120 140 Generated Token 0 25 50 75 100 125 150 175 200 0 Sequence Log-Likelihood CP-Fuse CP-p p p p (1) CP-Fuse (2) CP-Fuse (1) CP-(2) CP-Figure 2: Log-likelihood of sequences produced by CP-Fuse and CP-∆, and their base models p (1) and p (2) , at each generated token. We show a random generation from StarCoder fine-tuned on the Python instructions; details in Section 4. Intuitively, this balancing property ensures that neither model dominates the text generation. As an example, suppose the generation of a subsequence y <t is strongly dominated by p (1) , such that p (1) (y <t |x) ≫ p (2) (y <t |x). If the first case in Lemma 3.3 holds, the output distribution of the copyright-protected model, p(y t |y <t , x), will be such that, in expectation, the sequence with the new token has the same log-probability for both models, i.e., loosely speaking p (1) (y ≤t |x) ≈ p (2) (y ≤t |x). Conversely, if the second case p = p (2) holds, then the generation of y t is independent of p (1) (y <t |x). In other words, the next token generated by p will likely match the most probable token under the dominant model, p (1) (y <t |x), only if both p (1) and p ( 2) are close conditioned on y <t and x, that is, when the generated sequence is not protected assuming separability of copyrighted material (Section 3.1). We provide additional experimental evidence for this property in Appendix A.7.\nWe now illustrate how adaptively choosing α t and β t is crucial for achieving effective copyright protection. We present in Figure 2 the cumulative log-likelihood at each generated token for sequences produced by CP-Fuse and token-wise CP-∆ (which does not consider the history), alongside their respective base models p (1) and p (2) . The balancing property of CP-Fuse ensures that the loglikelihoods under p (1) and p (2) are approximately equal for the generated sequence at each token, thereby preventing the reproduction of copyrighted material, as no protected content is memorized by both base models. In contrast, CP-∆ shows a clear preference for p (2) , suggesting that p (2) may have memorized protected training samples, making CP-∆ vulnerable to reproducing them. In the next section, we further validate this observation through extensive real-world experiments.",
+      "_text": "We focus on language models p that take a prompt x as input and return a probability distribution over a sequence of tokens of variable length T from a fixed alphabet V , with y T = EOS representing the end-of-sequence token. Using the convention that y <0 = ∅, we can factorize p as: p(y 0:T |x) = T t=0 p(y t |y <t , x).\nWe now introduce a key assumption and background underlying our work."
+    },
+    "4_EXPERIMENTS": {
+      "4.1_PREVENTING_COPYRIGHT_INFRINGEMENT_WITH_CP-FUSE": "Table 1 presents the copyright-infringement metrics for the overfitted models, the baselines, and CP-Fuse across fine-tuning splits. CP-Fuse substantially reduces verbatim regurgitation in both code and text tasks. Specifically, CP-Fuse decreases exact matches by more than a factor of 25 compared to the overfitted models and consistently outperforms the baselines. In particular, the system-mode self-reminder (SystemPrompt) fails to prevent the reproduction of memorized samples, possibly due to the override of safety fine-tuning during our fine-tuning. MemFree noticeably reduces the length of memorized text segments; however, it still reproduces segments twice as long as those produced by CP-Fuse. A quick inspection of MemFree outputs also reveals that it often avoids exact copying simply by inserting spaces or spelling mistakes (refer to Appendix A.10 for examples). Finally, CP-∆ still generates long text segments that exactly match the training data, often 4 to 7 times longer than those produced by CP-Fuse. These segments frequently exceed the legal 160-character threshold, while such infringements almost entirely disappear with our method (refer to Appendix A.1).\nThe approximate memorization metrics further support these observations. We observe a consistent improvement with CP-Fuse compared to the overfitted models, also offering better protection than the baselines. Notably, CP-Fuse achieves near \"non-plagiarism\" on the code task, as the JPlag tool detects almost no copying in the generated code, while it clearly indicates infringement for all baselines.\nThese findings demonstrate the effectiveness of our method in preventing both verbatim and quasiverbatim reproduction of training material. Additional metrics supporting these conclusions are provided in Appendix A.1. Furthermore, experiments using temperature sampling decoding, detailed in Appendix A.4, yield equivalent conclusions. We also explore combining three models instead of two in Appendix A.8, which provides further improvement in the memorization metrics.\nComparison between CP-Fuse and CP-∆ We now provide a more detailed comparison between our method and CP-∆. Figure 3 shows histograms illustrating the distribution of exact matches generated by both methods. We observe a significantly heavier-tailed distribution for CP-∆, which consistently reproduces longer verbatim text segments than CP-Fuse and is therefore more likely to infringe on copyright. For instance, the longest exact match for CP-Fuse in the abstracts task is 73 characters, whereas the 95th percentile for CP-∆ is 342 characters, with the longest match exceeding 500 characters. These results highlight the importance of adaptively setting the weights based on sequence history when combining the models to ensure effective copyright protection. We provide examples of extracts produced by both methods for different datasets in Appendix A.9.",
+      "4.2_UTILITY_EVALUATION_FOR_CODE_GENERATION_AND_STORY-TELLING": "The success of our method in preventing the exact and approximate reproduction of training samples raises the question of whether it still generates useful text and code for solving the task at hand.\nIn Table 2 , we present the results for the considered utility metrics, pass@1 for code-based tasks and fluency for story-telling writing, on the test splits not seen during fine-tuning. We observe that 100 200 300 400 500\nMaximum Exact Matching Length 0 5 10 15 20 25 30 Frequency def adapter_add_nio_ binding(self, adapter_number, nio): try: adapter = self._ethe rnet_adapters[adapte r_number] except IndexError: raise DockerError(\"Adapter {adapter_number} does n =\"run an oct project\") parser.add_argument('project_path', help=\"The project directory\") parser.add_argument('-p', '-publisher-channel', dest='publisher_channel', help='the channel for the external publisher', default=None) parser.add_argument('--no-results', action='store_true', help=\"if set, html report and graphs will not be generated\") parser.add_argument('-o', '-output-dir', help=\"output directory for test results\") parser.add_argument('--withforwarder', action='store_true', help=\"Set if HQ should connect to external forwarder\") parser.add_argument('--forwarderaddress', help=\" _entries(self, start=0, end=0, data_request=None, steam_ids=None): ', yang_type='list', is_config=True) except (TypeError, ValueError): raise ValueError({ 'error-string':, 'defined-type': \"list\", 'generated-type':, }) self.__virtual_link = t if hasattr(self, '_set'): self._set() CP-CP-Fuse\n(a) Python instructions 100 200 300 400 500 Maximum Exact Matching Length 0 5 10 15 20 25 30 Frequency\nThe Stable Marriage problem (SM), solved by the famous deferred acceptance algorithm of Gale and Shapley (GS), has many natural generalizations. If we allow ties in preferences, then the problem of finding a maximum Let $A$ be a set of $N$ vectors in ${ Z}^nandletvbeavectorin{ C}^N$ that has minimal negative support for A. Such a vector v gives rise to a formal series solution of the A-hypergeometric system with parameter = Av. If v lies in Q n , then this series has rational coefficients. Let p be a prime number. We characterize those v whose coordinates are rational, p-integral, and lie in the closed interval [ 1, 0] for which the corresponding normalized series solution has p-integral coefficients. From this we deduce further integrality results for hypergeometric series. CP-Fuse produces code that is as accurate as that generated by the overfitted models, passing a similar proportion of unit tests. Additionally, the stories generated based on the WritingPrompts dataset achieve the same level of fluency as those produced by copyright-infringing models. All baselines perform similarly, with the notable exception of MemFree, which consistently underperforms.\nWe further validate the high quality of text and code produced by our method with examples of its outputs in Appendix A.9. For the code tasks, CP-Fuse generates code that is significantly different from the original, effectively solving the tasks while often incorporating exception handling and additional features. For the text tasks, it produces well-written stories and coherent abstracts that also differ notably from the reference material.\nComparison between CP-Fuse and MemFree Filtering approaches like MemFree are susceptible to hallucinations (Ippolito et al., 2023; Liu et al., 2024b) . This issue is particularly problematic in code generation, where even minor changes, such as modifying variable names or introducing typos, can result in incorrect code. As a result, MemFree significantly underperforms on the APPS dataset due to the lengthy Python solutions, which increase the likelihood of hallucinations and, consequently, errors. We provide two examples in Figure 4 . The MBPP and HumanEval datasets, with their shorter problems, are less affected by this issue. A similar problem arises in the WritingPrompts dataset, where alterations in the decoding process can lead to grammatical and spelling errors or cause the model to deviate from the intended topic (see Appendix A.10 for examples). In contrast, CP-Fuse generates tokens that are consistent with at least one of the two combined models. Figure 4 : Examples of typical errors in code generated by MemFree for the APPS dataset. The highlighted characters indicate the code affected by filtering, leading to errors. On the left, MemFree changes a variable name, resulting in a syntax error. On the right, MemFree alters the logic of the code, producing incorrect output, whereas CP-Fuse successfully solves the problem.",
+      "4.3_CP-FUSE_AS_A_WRAPPER_OF_OTHER_PROTECTION_METHODS": "In this section, we demonstrate how CP-Fuse can be combined with other training-time methods to improve protection. Specifically, we apply CP-Fuse on top of models fine-tuned on the WritingPrompts dataset using the goldfish loss (Hans et al., 2024) , a recently proposed technique designed to mitigate memorization during training. As presented in Figure 5a , integrating CP-Fuse results in further improvements in both the exact match and BLEU score. We also conduct similar experiments in Appendix A.5, where CP-Fuse is applied on top of early-stopped models-another strategy aimed at reducing memorization during training.",
+      "4.4_ROBUSTNESS_OF_CP-FUSE_UNDER_PREFIX_PROMPTING_EXTRACTIONS": "Previous sections have shown that our method effectively reduces regurgitation without sacrificing utility. In this final section, we evaluate the robustness of CP-Fuse against prefix prompting extractions using the WritingPrompts dataset. We assume a threat model where an adversary has black-box access to CP-Fuse, which wraps two potentially copyright-infringing models. The attacker has access to the prompts used during fine-tuning, as well as a prefix of the original story, and their goal is to have CP-Fuse regurgitate a story memorized by one of the base models. We study the impact of increasing the prefix length on the exact match (EM) and BLEU score of the generated outputs. The results in Figure 5b show that CP-Fuse remains robust as the prefix length increases. Specifically, exact matching remains relatively stable, while there is a slight increase in the BLEU score; however, it is still significantly smaller than that observed in the overfitted models and baselines (Table 1 ). In Appendix A.11, we visualize the stories generated by CP-Fuse and show how they evolve given short and long prefix lengths. CP-Fuse consistently produces outputs that differ from the reference, thanks to its balancing mechanism that prevents any single model from dominating the generation process.\nModel Split EM ↓ BLE ↓ GL Split 1 Split 1 84.68 0.11 Split 2 21.79 0.03 GL Split 2 Split 1 19.11 0.02 Split 2 120.28 0.16 CP-Fuse Split 1 20.68 0.03 Split 2 25.50 0.03 (a) Wrapping experiments with GL loss p r o m p t 2 5 6  5 1 2  1 0 2 4  1 5 3 ",
+      "_text": "We conduct our experiments using language models that are commonly employed in practical applications. Each dataset (details provided below) is partitioned into two non-overlapping subsets of 3,000 samples each, and a separate model is fine-tuned on each subset. In this setup, every training example is treated as potentially copyright-protected. To evaluate the copyright protection capabilities of CP-Fuse, we simulate an extreme scenario by overfitting the models to the subsets by fine-tuning them for 50 epochs (see Appendix D). As a result, the base models strongly memorize the data, representing a challenging setting where they are prone to reproducing any training sample."
+    },
+    "5_CONCLUSIONS": "In this paper, we introduced CP-Fuse, a simple yet effective algorithm for copyright protection based on model fusion. We first demonstrated that CP-Fuse satisfies key properties for preventing the reproduction of memorized training samples. Additionally, we provided extensive evidence of its effectiveness in challenging scenarios involving overfitted models, where CP-Fuse significantly reduced the regurgitation of protected materials, outperforming other inference-time baselines without compromising the quality of the generated code and text. The versatility of CP-Fuse was demonstrated through its seamless integration with other training-time techniques that mitigate memorization. Finally, we showcased its robustness against standard prefix prompting extraction strategies.\nIt is important to note that CP-Fuse operates under the assumption of copyright separability. A potential avenue for future research is theoretically investigating CP-Fuse's performance when this assumption only partially holds. Moreover, it would be valuable to apply our algorithm in real-world scenarios involving larger models and genuine copyright-protected content, such as books or songs."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Strong copyright protection for language models via adaptive model fusion",
+      "authors": [
+        {
+          "first": "Javier",
+          "middle": [],
+          "last": "Abad",
+          "suffix": ""
+        },
+        {
+          "first": "Konstantin",
+          "middle": [],
+          "last": "Donhauser",
+          "suffix": ""
+        },
+        {
+          "first": "Francesco",
+          "middle": [],
+          "last": "Pinto",
+          "suffix": ""
+        },
+        {
+          "first": "Fanny",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Deep learning with differential privacy",
+      "authors": [
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Abadi",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Brendan Mcmahan",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Mironov",
+          "suffix": ""
+        },
+        {
+          "first": "Kunal",
+          "middle": [],
+          "last": "Talwar",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the 2016 ACM SIGSAC conference on computer and communications security"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "GPT-4 technical report",
+      "authors": [
+        {
+          "first": "Josh",
+          "middle": [],
+          "last": "Achiam",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Adler",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Lama",
+          "middle": [],
+          "last": "Ahmad",
+          "suffix": ""
+        },
+        {
+          "first": "Ilge",
+          "middle": [],
+          "last": "Akkaya",
+          "suffix": ""
+        },
+        {
+          "first": "Florencia",
+          "middle": [],
+          "last": "Leoni Aleman",
+          "suffix": ""
+        },
+        {
+          "first": "Diogo",
+          "middle": [],
+          "last": "Almeida",
+          "suffix": ""
+        },
+        {
+          "first": "Janko",
+          "middle": [],
+          "last": "Altenschmidt",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Altman",
+          "suffix": ""
+        },
+        {
+          "first": "Shyamal",
+          "middle": [],
+          "last": "Anadkat",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Measuring non-adversarial reproduction of training data in large language models",
+      "authors": [
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Aerni",
+          "suffix": ""
+        },
+        {
+          "first": "Javier",
+          "middle": [],
+          "last": "Rando",
+          "suffix": ""
+        },
+        {
+          "first": "Edoardo",
+          "middle": [],
+          "last": "Debenedetti",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Carlini",
+          "suffix": ""
+        },
+        {
+          "first": "Daphne",
+          "middle": [],
+          "last": "Ippolito",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Tramèr",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Large-scale differentially private BERT",
+      "authors": [
+        {
+          "first": "Rohan",
+          "middle": [],
+          "last": "Anil",
+          "suffix": ""
+        },
+        {
+          "first": "Badih",
+          "middle": [],
+          "last": "Ghazi",
+          "suffix": ""
+        },
+        {
+          "first": "Vineet",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "Ravi",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Pasin",
+          "middle": [],
+          "last": "Manurangsi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Findings of the Association for Computational Linguistics: EMNLP 2022"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Program synthesis with large language models",
+      "authors": [
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Austin",
+          "suffix": ""
+        },
+        {
+          "first": "Augustus",
+          "middle": [],
+          "last": "Odena",
+          "suffix": ""
+        },
+        {
+          "first": "Maxwell",
+          "middle": [],
+          "last": "Nye",
+          "suffix": ""
+        },
+        {
+          "first": "Maarten",
+          "middle": [],
+          "last": "Bosma",
+          "suffix": ""
+        },
+        {
+          "first": "Henryk",
+          "middle": [],
+          "last": "Michalewski",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Dohan",
+          "suffix": ""
+        },
+        {
+          "first": "Ellen",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Carrie",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Terry",
+          "suffix": ""
+        },
+        {
+          "first": "Quoc",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Machine unlearning",
+      "authors": [
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Bourtoule",
+          "suffix": ""
+        },
+        {
+          "first": "Varun",
+          "middle": [],
+          "last": "Chandrasekaran",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [
+            "A"
+          ],
+          "last": "Choquette-Choo",
+          "suffix": ""
+        },
+        {
+          "first": "Hengrui",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Adelin",
+          "middle": [],
+          "last": "Travers",
+          "suffix": ""
+        },
+        {
+          "first": "Baiwu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Lie",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Papernot",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE Symposium on Security and Privacy (SP)"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Language models are few-shot learners",
+      "authors": [
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Nick",
+          "middle": [],
+          "last": "Ryder",
+          "suffix": ""
+        },
+        {
+          "first": "Melanie",
+          "middle": [],
+          "last": "Subbiah",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [
+            "D"
+          ],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Arvind",
+          "middle": [],
+          "last": "Neelakantan",
+          "suffix": ""
+        },
+        {
+          "first": "Pranav",
+          "middle": [],
+          "last": "Shyam",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Extracting training data from large language models",
+      "authors": [
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Carlini",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Tramer",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Wallace",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Jagielski",
+          "suffix": ""
+        },
+        {
+          "first": "Ariel",
+          "middle": [],
+          "last": "Herbert-Voss",
+          "suffix": ""
+        },
+        {
+          "first": "Katherine",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Roberts",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Ulfar",
+          "middle": [],
+          "last": "Erlingsson",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "30th USENIX Security Symposium (USENIX Security 21)"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Quantifying memorization across neural language models",
+      "authors": [
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Carlini",
+          "suffix": ""
+        },
+        {
+          "first": "Daphne",
+          "middle": [],
+          "last": "Ippolito",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Jagielski",
+          "suffix": ""
+        },
+        {
+          "first": "Katherine",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Tramèr",
+          "suffix": ""
+        },
+        {
+          "first": "Chiyuan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Unlearn what you want to forget: Efficient unlearning for LLMs",
+      "authors": [
+        {
+          "first": "Jiaao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Diyi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The 2023 Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Evaluating large language models trained on code",
+      "authors": [
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jerry",
+          "middle": [],
+          "last": "Tworek",
+          "suffix": ""
+        },
+        {
+          "first": "Heewoo",
+          "middle": [],
+          "last": "Jun",
+          "suffix": ""
+        },
+        {
+          "first": "Qiming",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Henrique",
+          "middle": [],
+          "last": "Ponde De Oliveira Pinto",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "Harri",
+          "middle": [],
+          "last": "Edwards",
+          "suffix": ""
+        },
+        {
+          "first": "Yuri",
+          "middle": [],
+          "last": "Burda",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Joseph",
+          "suffix": ""
+        },
+        {
+          "first": "Greg",
+          "middle": [],
+          "last": "Brockman",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Ray",
+          "suffix": ""
+        },
+        {
+          "first": "Raul",
+          "middle": [],
+          "last": "Puri",
+          "suffix": ""
+        },
+        {
+          "first": "Gretchen",
+          "middle": [],
+          "last": "Krueger",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Petrov",
+          "suffix": ""
+        },
+        {
+          "first": "Heidy",
+          "middle": [],
+          "last": "Khlaaf",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Brooke",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Gray",
+          "suffix": ""
+        },
+        {
+          "first": "Nick",
+          "middle": [],
+          "last": "Ryder",
+          "suffix": ""
+        },
+        {
+          "first": "Mikhail",
+          "middle": [],
+          "last": "Pavlov",
+          "suffix": ""
+        },
+        {
+          "first": "Alethea",
+          "middle": [],
+          "last": "Power",
+          "suffix": ""
+        },
+        {
+          "first": "Lukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Bavarian",
+          "suffix": ""
+        },
+        {
+          "first": "Clemens",
+          "middle": [],
+          "last": "Winter",
+          "suffix": ""
+        },
+        {
+          "first": "Philippe",
+          "middle": [],
+          "last": "Tillet",
+          "suffix": ""
+        },
+        {
+          "first": "Felipe",
+          "middle": [
+            "Petroski"
+          ],
+          "last": "Such",
+          "suffix": ""
+        },
+        {
+          "first": "Dave",
+          "middle": [],
+          "last": "Cummings",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Plappert",
+          "suffix": ""
+        },
+        {
+          "first": "Fotios",
+          "middle": [],
+          "last": "Chantzis",
+          "suffix": ""
+        },
+        {
+          "first": "Elizabeth",
+          "middle": [],
+          "last": "Barnes",
+          "suffix": ""
+        },
+        {
+          "first": "Ariel",
+          "middle": [],
+          "last": "Herbert-Voss",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Hebgen Guss",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Nichol",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Paino",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolas",
+          "middle": [],
+          "last": "Tezak",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Babuschkin",
+          "suffix": ""
+        },
+        {
+          "first": "Suchir",
+          "middle": [],
+          "last": "Balaji",
+          "suffix": ""
+        },
+        {
+          "first": "Shantanu",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Saunders",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Hesse",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "N"
+          ],
+          "last": "Carr",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Leike",
+          "suffix": ""
+        },
+        {
+          "first": "Josh",
+          "middle": [],
+          "last": "Achiam",
+          "suffix": ""
+        },
+        {
+          "first": "Vedant",
+          "middle": [],
+          "last": "Misra",
+          "suffix": ""
+        },
+        {
+          "first": "Evan",
+          "middle": [],
+          "last": "Morikawa",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Knight",
+          "suffix": ""
+        },
+        {
+          "first": "Miles",
+          "middle": [],
+          "last": "Brundage",
+          "suffix": ""
+        },
+        {
+          "first": "Mira",
+          "middle": [],
+          "last": "Murati",
+          "suffix": ""
+        },
+        {
+          "first": "Katie",
+          "middle": [],
+          "last": "Mayer",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Welinder",
+          "suffix": ""
+        },
+        {
+          "first": "Bob",
+          "middle": [],
+          "last": "Mcgrew",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Mccandlish",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Wojciech",
+          "middle": [],
+          "last": "Zaremba",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "CopyBench: Measuring literal and non-literal reproduction of copyright-protected text in language model generation",
+      "authors": [
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Akari",
+          "middle": [],
+          "last": "Asai",
+          "suffix": ""
+        },
+        {
+          "first": "Niloofar",
+          "middle": [],
+          "last": "Mireshghallah",
+          "suffix": ""
+        },
+        {
+          "first": "Sewon",
+          "middle": [],
+          "last": "Min",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Grimmelmann",
+          "suffix": ""
+        },
+        {
+          "first": "Yejin",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        },
+        {
+          "first": "Hannaneh",
+          "middle": [],
+          "last": "Hajishirzi",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        },
+        {
+          "first": "Pang",
+          "middle": [
+            "Wei"
+          ],
+          "last": "Koh",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Can large language models be an alternative to human evaluations?",
+      "authors": [
+        {
+          "first": "Cheng-Han",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Hung-Yi",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Safe: Machine unlearning with shard graphs",
+      "authors": [
+        {
+          "first": "Yonatan",
+          "middle": [],
+          "last": "Dukler",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Bowman",
+          "suffix": ""
+        },
+        {
+          "first": "Alessandro",
+          "middle": [],
+          "last": "Achille",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Golatkar",
+          "suffix": ""
+        },
+        {
+          "first": "Ashwin",
+          "middle": [],
+          "last": "Swaminathan",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Soatto",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "The algorithmic foundations of differential privacy",
+      "authors": [
+        {
+          "first": "Cynthia",
+          "middle": [],
+          "last": "Dwork",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Roth",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Foundations and Trends® in Theoretical Computer Science"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Who's Harry Potter? approximate unlearning in LLMs",
+      "authors": [
+        {
+          "first": "Ronen",
+          "middle": [],
+          "last": "Eldan",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Russinovich",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Can copyright be reduced to privacy",
+      "authors": [
+        {
+          "first": "Niva",
+          "middle": [],
+          "last": "Elkin-Koren",
+          "suffix": ""
+        },
+        {
+          "first": "Uri",
+          "middle": [],
+          "last": "Hacohen",
+          "suffix": ""
+        },
+        {
+          "first": "Roi",
+          "middle": [],
+          "last": "Livni",
+          "suffix": ""
+        },
+        {
+          "first": "Shay",
+          "middle": [],
+          "last": "Moran",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Hierarchical neural story generation",
+      "authors": [
+        {
+          "first": "Angela",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Dauphin",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "GPTscore: Evaluate as you desire",
+      "authors": [
+        {
+          "first": "Jinlan",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "See-Kiong",
+          "middle": [],
+          "last": "Ng",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengbao",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Pengfei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Mixed-privacy forgetting in deep networks",
+      "authors": [
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Golatkar",
+          "suffix": ""
+        },
+        {
+          "first": "Alessandro",
+          "middle": [],
+          "last": "Achille",
+          "suffix": ""
+        },
+        {
+          "first": "Avinash",
+          "middle": [],
+          "last": "Ravichandran",
+          "suffix": ""
+        },
+        {
+          "first": "Marzia",
+          "middle": [],
+          "last": "Polito",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Soatto",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "CPR: Retrieval augmented generation for copyright protection",
+      "authors": [
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Golatkar",
+          "suffix": ""
+        },
+        {
+          "first": "Alessandro",
+          "middle": [],
+          "last": "Achille",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Zancato",
+          "suffix": ""
+        },
+        {
+          "first": "Yu-Xiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Ashwin",
+          "middle": [],
+          "last": "Swaminathan",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Soatto",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Scaling expert language models with unsupervised domain discovery",
+      "authors": [
+        {
+          "first": "Suchin",
+          "middle": [],
+          "last": "Gururangan",
+          "suffix": ""
+        },
+        {
+          "first": "Margaret",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        },
+        {
+          "first": "Weijia",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Althoff",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Be like a goldfish, don't memorize! mitigating memorization in generative LLMs",
+      "authors": [
+        {
+          "first": "Abhimanyu",
+          "middle": [],
+          "last": "Hans",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxin",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "Neel",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Kirchenbauer",
+          "suffix": ""
+        },
+        {
+          "first": "Hamid",
+          "middle": [],
+          "last": "Kazemi",
+          "suffix": ""
+        },
+        {
+          "first": "Prajwal",
+          "middle": [],
+          "last": "Singhania",
+          "suffix": ""
+        },
+        {
+          "first": "Siddharth",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "Gowthami",
+          "middle": [],
+          "last": "Somepalli",
+          "suffix": ""
+        },
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Geiping",
+          "suffix": ""
+        },
+        {
+          "first": "Abhinav",
+          "middle": [],
+          "last": "Bhatele",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Foundation models and fair use",
+      "authors": [
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Henderson",
+          "suffix": ""
+        },
+        {
+          "first": "Xuechen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Jurafsky",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsunori",
+          "middle": [],
+          "last": "Hashimoto",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [
+            "A"
+          ],
+          "last": "Lemley",
+          "suffix": ""
+        },
+        {
+          "first": "Percy",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Measuring coding challenge competence with apps",
+      "authors": [
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Basart",
+          "suffix": ""
+        },
+        {
+          "first": "Saurav",
+          "middle": [],
+          "last": "Kadavath",
+          "suffix": ""
+        },
+        {
+          "first": "Mantas",
+          "middle": [],
+          "last": "Mazeika",
+          "suffix": ""
+        },
+        {
+          "first": "Akul",
+          "middle": [],
+          "last": "Arora",
+          "suffix": ""
+        },
+        {
+          "first": "Ethan",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Collin",
+          "middle": [],
+          "last": "Burns",
+          "suffix": ""
+        },
+        {
+          "first": "Samir",
+          "middle": [],
+          "last": "Puranik",
+          "suffix": ""
+        },
+        {
+          "first": "Horace",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Adversarial perturbations cannot reliably protect artists from generative AI",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Hönig",
+          "suffix": ""
+        },
+        {
+          "first": "Javier",
+          "middle": [],
+          "last": "Rando",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Carlini",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Tramèr",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Let's fuse step by step: A generative fusion decoding algorithm with LLMs for multi-modal text recognition",
+      "authors": [
+        {
+          "first": "Chan-Jan",
+          "middle": [],
+          "last": "Hsu",
+          "suffix": ""
+        },
+        {
+          "first": "Yi-Chang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Feng-Ting",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "Pei-Chen",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Yu-Hsiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Po-Chun",
+          "middle": [],
+          "last": "Hsu",
+          "suffix": ""
+        },
+        {
+          "first": "Da-Shan",
+          "middle": [],
+          "last": "Shiu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Privacy implications of retrieval-based language models",
+      "authors": [
+        {
+          "first": "Yangsibo",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Samyak",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "Zexuan",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Danqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "DONOTTRAIN: A metadata standard for indicating consent for machine learning",
+      "authors": [
+        {
+          "first": "Daphne",
+          "middle": [],
+          "last": "Ippolito",
+          "suffix": ""
+        },
+        {
+          "first": "Yun",
+          "middle": [],
+          "last": "William",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Preventing generation of verbatim memorization in language models gives a false sense of privacy",
+      "authors": [
+        {
+          "first": "Daphne",
+          "middle": [],
+          "last": "Ippolito",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Tramèr",
+          "suffix": ""
+        },
+        {
+          "first": "Milad",
+          "middle": [],
+          "last": "Nasr",
+          "suffix": ""
+        },
+        {
+          "first": "Chiyuan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Jagielski",
+          "suffix": ""
+        },
+        {
+          "first": "Katherine",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [
+            "A"
+          ],
+          "last": "Choquette-Choo",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Carlini",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 16th International Natural Language Generation Conference"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "NEFTune: Noisy embeddings improve instruction finetuning",
+      "authors": [
+        {
+          "first": "Neel",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Ping-Yeh",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxin",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Kirchenbauer",
+          "suffix": ""
+        },
+        {
+          "first": "Hong-Min",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "Gowthami",
+          "middle": [],
+          "last": "Somepalli",
+          "suffix": ""
+        },
+        {
+          "first": "Bhavya",
+          "middle": [],
+          "last": "Brian R Bartoldson",
+          "suffix": ""
+        },
+        {
+          "first": "Avi",
+          "middle": [],
+          "last": "Kailkhura",
+          "suffix": ""
+        },
+        {
+          "first": "Aniruddha",
+          "middle": [],
+          "last": "Schwarzschild",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Saha",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Knowledge unlearning for mitigating privacy risks in language models",
+      "authors": [
+        {
+          "first": "Joel",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "Dongkeun",
+          "middle": [],
+          "last": "Yoon",
+          "suffix": ""
+        },
+        {
+          "first": "Sohee",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Sungmin",
+          "middle": [],
+          "last": "Cha",
+          "suffix": ""
+        },
+        {
+          "first": "Moontae",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Lajanugen",
+          "middle": [],
+          "last": "Logeswaran",
+          "suffix": ""
+        },
+        {
+          "first": "Minjoon",
+          "middle": [],
+          "last": "Seo",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Phi-2: The surprising power of small language models",
+      "authors": [
+        {
+          "first": "Mojan",
+          "middle": [],
+          "last": "Javaheripi",
+          "suffix": ""
+        },
+        {
+          "first": "Sébastien",
+          "middle": [],
+          "last": "Bubeck",
+          "suffix": ""
+        },
+        {
+          "first": "Marah",
+          "middle": [],
+          "last": "Abdin",
+          "suffix": ""
+        },
+        {
+          "first": "Jyoti",
+          "middle": [],
+          "last": "Aneja",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastien",
+          "middle": [],
+          "last": "Bubeck",
+          "suffix": ""
+        },
+        {
+          "first": "Caio",
+          "middle": [],
+          "last": "César",
+          "suffix": ""
+        },
+        {
+          "first": "Teodoro",
+          "middle": [],
+          "last": "Mendes",
+          "suffix": ""
+        },
+        {
+          "first": "Weizhu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Allie",
+          "middle": [],
+          "last": "Del Giorno",
+          "suffix": ""
+        },
+        {
+          "first": "Ronen",
+          "middle": [],
+          "last": "Eldan",
+          "suffix": ""
+        },
+        {
+          "first": "Sivakanth",
+          "middle": [],
+          "last": "Gopi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "LLM-Blender: Ensembling large language models with pairwise ranking and generative fusion",
+      "authors": [
+        {
+          "first": "Dongfu",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Bill",
+          "middle": [],
+          "last": "Yuchen",
+          "suffix": ""
+        },
+        {
+          "first": "Lin",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Dataless knowledge fusion by merging weights of language models",
+      "authors": [
+        {
+          "first": "Xisen",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Preotiuc-Pietro",
+          "suffix": ""
+        },
+        {
+          "first": "Pengxiang",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Deduplicating training data mitigates privacy risks in language models",
+      "authors": [
+        {
+          "first": "Nikhil",
+          "middle": [],
+          "last": "Kandpal",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Wallace",
+          "suffix": ""
+        },
+        {
+          "first": "Colin",
+          "middle": [],
+          "last": "Raffel",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Copyright violations and large language models",
+      "authors": [
+        {
+          "first": "Antonia",
+          "middle": [],
+          "last": "Karamolegkou",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Anders",
+          "middle": [],
+          "last": "Søgaard",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Prometheus 2: An open source language model specialized in evaluating other language models",
+      "authors": [
+        {
+          "first": "Seungone",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Juyoung",
+          "middle": [],
+          "last": "Suk",
+          "suffix": ""
+        },
+        {
+          "first": "Shayne",
+          "middle": [],
+          "last": "Longpre",
+          "suffix": ""
+        },
+        {
+          "first": "Bill",
+          "middle": [],
+          "last": "Yuchen Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Jamin",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        },
+        {
+          "first": "Sean",
+          "middle": [],
+          "last": "Welleck",
+          "suffix": ""
+        },
+        {
+          "first": "Graham",
+          "middle": [],
+          "last": "Neubig",
+          "suffix": ""
+        },
+        {
+          "first": "Moontae",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Kyungjae",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Minjoon",
+          "middle": [],
+          "last": "Seo",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "The stack: 3 TB of permissively licensed source code",
+      "authors": [
+        {
+          "first": "Denis",
+          "middle": [],
+          "last": "Kocetkov",
+          "suffix": ""
+        },
+        {
+          "first": "Raymond",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Loubna",
+          "middle": [],
+          "last": "Ben Allal",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Chenghao",
+          "middle": [],
+          "last": "Mou",
+          "suffix": ""
+        },
+        {
+          "first": "Carlos",
+          "middle": [],
+          "last": "Muñoz Ferrandis",
+          "suffix": ""
+        },
+        {
+          "first": "Yacine",
+          "middle": [],
+          "last": "Jernite",
+          "suffix": ""
+        },
+        {
+          "first": "Margaret",
+          "middle": [],
+          "last": "Mitchell",
+          "suffix": ""
+        },
+        {
+          "first": "Sean",
+          "middle": [],
+          "last": "Hughes",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Wolf",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Deduplicating training data makes language models better",
+      "authors": [
+        {
+          "first": "Katherine",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Daphne",
+          "middle": [],
+          "last": "Ippolito",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Nystrom",
+          "suffix": ""
+        },
+        {
+          "first": "Chiyuan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Douglas",
+          "middle": [],
+          "last": "Eck",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Callison-Burch",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Carlini",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Talkin\"bout AI generation: Copyright and the generative-AI supply chain",
+      "authors": [
+        {
+          "first": "Katherine",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": ", A Feder",
+          "middle": [],
+          "last": "Cooper",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Grimmelmann",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "StarCoder: may the source be with you!",
+      "authors": [
+        {
+          "first": "Raymond",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Loubna",
+          "middle": [],
+          "last": "Ben Allal",
+          "suffix": ""
+        },
+        {
+          "first": "Yangtian",
+          "middle": [],
+          "last": "Zi",
+          "suffix": ""
+        },
+        {
+          "first": "Niklas",
+          "middle": [],
+          "last": "Muennighoff",
+          "suffix": ""
+        },
+        {
+          "first": "Denis",
+          "middle": [],
+          "last": "Kocetkov",
+          "suffix": ""
+        },
+        {
+          "first": "Chenghao",
+          "middle": [],
+          "last": "Mou",
+          "suffix": ""
+        },
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Marone",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Akiki",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jenny",
+          "middle": [],
+          "last": "Chim",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Purifying large language models by ensembling a small language model",
+      "authors": [
+        {
+          "first": "Tianlin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Qian",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyu",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Qing",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Min",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "DExperts: Decoding-time controlled text generation with experts and anti-experts",
+      "authors": [
+        {
+          "first": "Alisa",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Maarten",
+          "middle": [],
+          "last": "Sap",
+          "suffix": ""
+        },
+        {
+          "first": "Ximing",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Swabha",
+          "middle": [],
+          "last": "Swayamdipta",
+          "suffix": ""
+        },
+        {
+          "first": "Chandra",
+          "middle": [],
+          "last": "Bhagavatula",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Yejin",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Rethinking machine unlearning for large language models",
+      "authors": [
+        {
+          "first": "Sijia",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanshun",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Jinghan",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Casper",
+          "suffix": ""
+        },
+        {
+          "first": "Nathalie",
+          "middle": [],
+          "last": "Baracaldo",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Hase",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaojun",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuguang",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Hang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Kush",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Varshney",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "SHIELD: Evaluation and defense strategies for copyright compliance in LLM text generation",
+      "authors": [
+        {
+          "first": "Xiaoze",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Feijie",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Cunxiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoqian",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jing",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "G-eval: NLG evaluation using GPT-4 with better human alignment",
+      "authors": [
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Iter",
+          "suffix": ""
+        },
+        {
+          "first": "Yichong",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Shuohang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Ruochen",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Chenguang",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF49",
+      "title": "An adversarial perspective on machine unlearning for AI safety",
+      "authors": [
+        {
+          "first": "Jakub",
+          "middle": [],
+          "last": "Łucki",
+          "suffix": ""
+        },
+        {
+          "first": "Boyi",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Yangsibo",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Henderson",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Tramèr",
+          "suffix": ""
+        },
+        {
+          "first": "Javier",
+          "middle": [],
+          "last": "Rando",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Dolos: Language-agnostic plagiarism detection in source code",
+      "authors": [
+        {
+          "first": "Rien",
+          "middle": [],
+          "last": "Maertens",
+          "suffix": ""
+        },
+        {
+          "first": "Charlotte",
+          "middle": [],
+          "last": "Van Petegem",
+          "suffix": ""
+        },
+        {
+          "first": "Niko",
+          "middle": [],
+          "last": "Strijbol",
+          "suffix": ""
+        },
+        {
+          "first": "Toon",
+          "middle": [],
+          "last": "Baeyens",
+          "suffix": ""
+        },
+        {
+          "first": "Arne",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Carla",
+          "middle": [],
+          "last": "Jacobs",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Dawyndt",
+          "suffix": ""
+        },
+        {
+          "first": "Bart",
+          "middle": [],
+          "last": "Mesuere",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Journal of Computer Assisted Learning"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Pack of LLMs: Model fusion at test-time via perplexity optimization",
+      "authors": [
+        {
+          "first": "Costas",
+          "middle": [],
+          "last": "Mavromatis",
+          "suffix": ""
+        },
+        {
+          "first": "Petros",
+          "middle": [],
+          "last": "Karypis",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Karypis",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Did the neurons read your book? document-level membership inference for large language models",
+      "authors": [
+        {
+          "first": "Matthieu",
+          "middle": [],
+          "last": "Meeus",
+          "suffix": ""
+        },
+        {
+          "first": "Shubham",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Marek",
+          "middle": [],
+          "last": "Rei",
+          "suffix": ""
+        },
+        {
+          "first": "Yves-Alexandre",
+          "middle": [],
+          "last": "De Montjoye",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Silo language models: Isolating legal risk in a nonparametric datastore",
+      "authors": [
+        {
+          "first": "Sewon",
+          "middle": [],
+          "last": "Min",
+          "suffix": ""
+        },
+        {
+          "first": "Suchin",
+          "middle": [],
+          "last": "Gururangan",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Wallace",
+          "suffix": ""
+        },
+        {
+          "first": "Weijia",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Hannaneh",
+          "middle": [],
+          "last": "Hajishirzi",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Memorization in NLP fine-tuning methods",
+      "authors": [
+        {
+          "first": "Fatemehsadat",
+          "middle": [],
+          "last": "Mireshghallah",
+          "suffix": ""
+        },
+        {
+          "first": "Archit",
+          "middle": [],
+          "last": "Uniyal",
+          "suffix": ""
+        },
+        {
+          "first": "Tianhao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Evans",
+          "suffix": ""
+        },
+        {
+          "first": "Taylor",
+          "middle": [],
+          "last": "Berg-Kirkpatrick",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "First Workshop on Pre-training: Perspectives, Pitfalls, and Paths Forward at ICML"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "LLMs and memorization: On quality and specificity of copyright compliance",
+      "authors": [
+        {
+          "first": "Rebekka",
+          "middle": [],
+          "last": "Felix B Mueller",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [
+            "K"
+          ],
+          "last": "Görge",
+          "suffix": ""
+        },
+        {
+          "first": "Janna",
+          "middle": [
+            "C"
+          ],
+          "last": "Bernzen",
+          "suffix": ""
+        },
+        {
+          "first": "Maximilian",
+          "middle": [],
+          "last": "Pirk",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Poretschkin",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Extracting training data from document-based VQA models",
+      "authors": [
+        {
+          "first": "Francesco",
+          "middle": [],
+          "last": "Pinto",
+          "suffix": ""
+        },
+        {
+          "first": "Nathalie",
+          "middle": [],
+          "last": "Rauschmayr",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Tramèr",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [],
+          "last": "Torr",
+          "suffix": ""
+        },
+        {
+          "first": "Federico",
+          "middle": [],
+          "last": "Tombari",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the 41st International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Finding plagiarisms among a set of programs with JPlag",
+      "authors": [
+        {
+          "first": "Lutz",
+          "middle": [],
+          "last": "Prechelt",
+          "suffix": ""
+        },
+        {
+          "first": "Guido",
+          "middle": [],
+          "last": "Malpohl",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Michael Philippsen",
+          "suffix": ""
+        }
+      ],
+      "year": 2002,
+      "venue": "J. Univers. Comput. Sci"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "The new legal landscape for text mining and machine learning",
+      "authors": [
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Sag",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Journal of the Copyright Society of the USA"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Diffusion art or digital forgery? investigating data replication in diffusion models",
+      "authors": [
+        {
+          "first": "Gowthami",
+          "middle": [],
+          "last": "Somepalli",
+          "suffix": ""
+        },
+        {
+          "first": "Vasu",
+          "middle": [],
+          "last": "Singla",
+          "suffix": ""
+        },
+        {
+          "first": "Micah",
+          "middle": [],
+          "last": "Goldblum",
+          "suffix": ""
+        },
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Geiping",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Goldstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Evaluation metrics in the era of GPT-4: reliably evaluating large language models on sequence to sequence tasks",
+      "authors": [
+        {
+          "first": "Andrea",
+          "middle": [],
+          "last": "Sottana",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Gemini: a family of highly capable multimodal models",
+      "authors": [
+        {
+          "first": "Gemini",
+          "middle": [],
+          "last": "Team",
+          "suffix": ""
+        },
+        {
+          "first": "Rohan",
+          "middle": [],
+          "last": "Anil",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Borgeaud",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghui",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Jean-Baptiste",
+          "middle": [],
+          "last": "Alayrac",
+          "suffix": ""
+        },
+        {
+          "first": "Jiahui",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Radu",
+          "middle": [],
+          "last": "Soricut",
+          "suffix": ""
+        },
+        {
+          "first": "Johan",
+          "middle": [],
+          "last": "Schalkwyk",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "M"
+          ],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Anja",
+          "middle": [],
+          "last": "Hauth",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Memorization without overfitting: Analyzing the training dynamics of large language models",
+      "authors": [
+        {
+          "first": "Kushal",
+          "middle": [],
+          "last": "Tirumala",
+          "suffix": ""
+        },
+        {
+          "first": "Aram",
+          "middle": [],
+          "last": "Markosyan",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        },
+        {
+          "first": "Armen",
+          "middle": [],
+          "last": "Aghajanyan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "LLaMa 2: Open foundation and fine-tuned chat models",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Louis",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Albert",
+          "suffix": ""
+        },
+        {
+          "first": "Amjad",
+          "middle": [],
+          "last": "Almahairi",
+          "suffix": ""
+        },
+        {
+          "first": "Yasmine",
+          "middle": [],
+          "last": "Babaei",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolay",
+          "middle": [],
+          "last": "Bashlykov",
+          "suffix": ""
+        },
+        {
+          "first": "Soumya",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "Prajjwal",
+          "middle": [],
+          "last": "Bhargava",
+          "suffix": ""
+        },
+        {
+          "first": "Shruti",
+          "middle": [],
+          "last": "Bhosale",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF64",
+      "title": "On provable copyright protection for generative models",
+      "authors": [
+        {
+          "first": "Nikhil",
+          "middle": [],
+          "last": "Vyas",
+          "suffix": ""
+        },
+        {
+          "first": "Boaz",
+          "middle": [],
+          "last": "Sham M Kakade",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Barak",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Knowledge fusion of large language models",
+      "authors": [
+        {
+          "first": "Fanqi",
+          "middle": [],
+          "last": "Wan",
+          "suffix": ""
+        },
+        {
+          "first": "Xinting",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Deng",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaojun",
+          "middle": [],
+          "last": "Quan",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        },
+        {
+          "first": "Shuming",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Fusing models with complementary expertise",
+      "authors": [
+        {
+          "first": "Hongyi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Felipe",
+          "middle": [
+            "Maia"
+          ],
+          "last": "Polo",
+          "suffix": ""
+        },
+        {
+          "first": "Yuekai",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Souvik",
+          "middle": [],
+          "last": "Kundu",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Xing",
+          "suffix": ""
+        },
+        {
+          "first": "Mikhail",
+          "middle": [],
+          "last": "Yurochkin",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Annual Conference on Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Evaluating copyright takedown methods for language models",
+      "authors": [
+        {
+          "first": "Boyi",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Weijia",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Yangsibo",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Chiyuan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Henderson",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Model soups: averaging weights of multiple fine-tuned models improves accuracy without increasing inference time",
+      "authors": [
+        {
+          "first": "Mitchell",
+          "middle": [],
+          "last": "Wortsman",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Ilharco",
+          "suffix": ""
+        },
+        {
+          "first": "Ya",
+          "middle": [],
+          "last": "Samir",
+          "suffix": ""
+        },
+        {
+          "first": "Rebecca",
+          "middle": [],
+          "last": "Gadre",
+          "suffix": ""
+        },
+        {
+          "first": "Raphael",
+          "middle": [],
+          "last": "Roelofs",
+          "suffix": ""
+        },
+        {
+          "first": "Ari",
+          "middle": [
+            "S"
+          ],
+          "last": "Gontijo-Lopes",
+          "suffix": ""
+        },
+        {
+          "first": "Hongseok",
+          "middle": [],
+          "last": "Morcos",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Namkoong",
+          "suffix": ""
+        },
+        {
+          "first": "Yair",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Carmon",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kornblith",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Defending ChatGPT against jailbreak attack via self-reminders",
+      "authors": [
+        {
+          "first": "Yueqi",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Jingwei",
+          "middle": [],
+          "last": "Yi",
+          "suffix": ""
+        },
+        {
+          "first": "Jiawei",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        },
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Curl",
+          "suffix": ""
+        },
+        {
+          "first": "Lingjuan",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        },
+        {
+          "first": "Qifeng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xing",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Fangzhao",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Nature Machine Intelligence"
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Ties-merging: Resolving interference when merging models",
+      "authors": [
+        {
+          "first": "Prateek",
+          "middle": [],
+          "last": "Yadav",
+          "suffix": ""
+        },
+        {
+          "first": "Derek",
+          "middle": [],
+          "last": "Tam",
+          "suffix": ""
+        },
+        {
+          "first": "Leshem",
+          "middle": [],
+          "last": "Choshen",
+          "suffix": ""
+        },
+        {
+          "first": "Colin",
+          "middle": [
+            "A"
+          ],
+          "last": "Raffel",
+          "suffix": ""
+        },
+        {
+          "first": "Mohit",
+          "middle": [],
+          "last": "Bansal",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "ARCANE: An efficient architecture for exact machine unlearning",
+      "authors": [
+        {
+          "first": "Haonan",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoguang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Ziyao",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Hui",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Fenghua",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaodong",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IJCAI"
+    },
+    {
+      "id": "BIBREF72",
+      "title": "CodeIPPrompt: Intellectual property infringement assessment of code language models",
+      "authors": [
+        {
+          "first": "Zhiyuan",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhao",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Ning",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Chenguang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yevgeniy",
+          "middle": [],
+          "last": "Vorobeychik",
+          "suffix": ""
+        },
+        {
+          "first": "Chaowei",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF73",
+      "title": "Counterfactual memorization in neural language models",
+      "authors": [
+        {
+          "first": "Chiyuan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Daphne",
+          "middle": [],
+          "last": "Ippolito",
+          "suffix": ""
+        },
+        {
+          "first": "Katherine",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Jagielski",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Tramèr",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Carlini",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF74",
+      "title": "Negative preference optimization: From catastrophic collapse to effective unlearning",
+      "authors": [
+        {
+          "first": "Ruiqi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Licong",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Song",
+          "middle": [],
+          "last": "Mei",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF75",
+      "title": "Autonomous data selection with language models for mathematical texts",
+      "authors": [
+        {
+          "first": "Yifan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yifan",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "C"
+          ],
+          "last": "Yao",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "ICLR 2024 Workshop on Navigating and Addressing Data Problems for Foundation Models"
+    },
+    {
+      "id": "BIBREF76",
+      "title": "Judging LLM-as-a-judge with MT-Bench and Chatbot Arena",
+      "authors": [
+        {
+          "first": "Lianmin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Wei-Lin",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "Siyuan",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhanghao",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghao",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Zi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuohan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Dacheng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Xing",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF77",
+      "title": "ai/AutoMathText 11 Visit the GitHub repository for additional",
+      "authors": [],
+      "year": 2021,
+      "venue": ""
+    }
+  ]
+}

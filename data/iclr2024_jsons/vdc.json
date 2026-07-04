@@ -1,0 +1,1532 @@
+{
+  "paper_id": "vdc",
+  "title": "VDC: VERSATILE DATA CLEANSER BASED ON VISUAL-LINGUISTIC INCONSISTENCY BY MULTI-MODAL LARGE LANGUAGE MODELS",
+  "authors": [
+    {
+      "first": "Zihao",
+      "middle": [],
+      "last": "Zhu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Chinese University of Hong Kong",
+        "location": {
+          "settlement": "Shenzhen"
+        }
+      }
+    },
+    {
+      "first": "Mingda",
+      "middle": [],
+      "last": "Zhang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Chinese University of Hong Kong",
+        "location": {
+          "settlement": "Shenzhen"
+        }
+      }
+    },
+    {
+      "first": "Shaokui",
+      "middle": [],
+      "last": "Wei",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Chinese University of Hong Kong",
+        "location": {
+          "settlement": "Shenzhen"
+        }
+      }
+    },
+    {
+      "first": "Bingzhe",
+      "middle": [],
+      "last": "Wu",
+      "affiliation": {
+        "laboratory": "Tencent AI Lab",
+        "institution": "",
+        "location": {}
+      }
+    },
+    {
+      "first": "Baoyuan",
+      "middle": [],
+      "last": "Wu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Chinese University of Hong Kong",
+        "location": {
+          "settlement": "Shenzhen"
+        }
+      }
+    }
+  ],
+  "abstract": "The role of data in building AI systems has recently been emphasized by the emerging concept of data-centric AI. Unfortunately, in the real-world, datasets may contain dirty samples, such as poisoned samples from backdoor attack, noisy labels in crowdsourcing, and even hybrids of them. The presence of such dirty samples makes the DNNs vunerable and unreliable. Hence, it is critical to detect dirty samples to improve the quality and realiability of dataset. Existing detectors only focus on detecting poisoned samples or noisy labels, that are often prone to weak generalization when dealing with dirty samples from other fields. In this paper, we find a commonality of various dirty samples is visual-linguistic inconsistency between images and associated labels. To capture the semantic inconsistency between modalities, we propose versatile data cleanser (VDC) leveraging the surpassing capabilities of multimodal large language models (MLLM) in cross-modal alignment and reasoning. It consists of three consecutive modules: the visual question generation module to generate insightful questions about the image; the visual question answering module to acquire the semantics of the visual content by answering the questions with MLLM; followed by the visual answer evaluation module to evaluate the inconsistency. Extensive experiments demonstrate its superior performance and generalization to various categories and types of dirty samples. The code is available at https://github.com/zihao-ai/vdc.",
+  "body": {
+    "1_INTRODUCTION": "The emerging concept of data-centric AI (DCAI) highlights the pivotal role of data in constructing advanced AI systems (Zha et al., 2023) . The quality and reliability of data are crucial factors influencing model performance. Nevertheless, in the real world, dataset can be susceptible to undesirable flaws (Whang et al., 2023) .\nFor instance, dirty samples may be introduced into the datasets intentionally or unintentionally. In this paper, we comprehensively examine three categories of dirty samples as follows: Category I: Poisoned Samples. In the context of backdoor attack, malicious attackers intentionally manipulate partical clean samples by embedding triggers and changing the ground-truth labels to target labels, thereby generating poisoned samples. Deep neural networks (DNNs) trained on the dataset with such poisoned samples will be injected with backdoor, i.e., predict any poisoned sample as the target label during the inference stage, while maintain accuracy on the clean samples. Category II: Noisy Labels. In scenarios of crowdsourcing or web crawling, human annotators or automatic annotation robots may make mistakes accidentally, resulting in the presence of dirty samples with corrupted labels. Training DNNs using the dataset with such noisy labels will significantly degrade the overall performance. Category III: Hybrid Dirty Samples. An even more critical concern arises when the attackers poison datasets that initially contain noisy labels. In this case, the datasets comprise both poisoned samples and noisy labels. Models trained on such datasets will encounter both malicious backdoor attack and performance degradation simultaneously. The presence of above dirty samples makes the DNNs vulnerable and unreliable. To enhance the robustness and performance of DNNs, the detection of dirty samples is crucial in the lifecycle of DCAI. Recent research have been proposed on the noisy label detection (Northcutt et al., 2021; Zhu et al., 2022; Yu et al., 2023) or poisoned sample detection (Hayase et al., 2021; Tang et al., 2021; Qi et al., 2023) respectively. However, they frequently exhibit limitations in terms of generalization: 1). Inconsistent generalization across different categories of dirty samples. We empirically find that detectors designed for detecting poisoned samples are ineffective when applied to datasets with noisy labels, and vice versa. Moreover, both types of detectors prove inadequate for hybrid dirty samples. (See Table 5 in Sec 5.2.3). 2). Inconsistent generalization across different types of dirty samples in the same category. For noisy label detection, research has shown that symmetric noisy labels are more readily detectable than asymmetric ones (Cheng et al., 2021) . Likewise, for poisoned sample detection, sensitivity to various triggers has been demonstrated in Wu et al. (2022) . Therefore, developing a universal framework capable of detecting multiple types of dirty samples concurrently, including noisy labels and poisoned samples, is an urgent challenge for DCAI.\nWe find a notable commonality of noisy labels and poisoned samples lies in visual-linguistic inconsistency between visual contents and associated labels, i.e., the semantics of visual modality and that of language modality of label do not match, even when the poisoned samples are embedded with triggers. Given the exceptional capabilities of multimodal large language models (MLLM) in cross-modal alignment and reasoning, we resort to MLLM to measure this semantic inconsistency between modalities. To this end, we propose a universal detection framework called Versatile Data Cleanser (VDC). It consists of three consecutive modules: the visual question generation (VQG) module to generate insightful visual questions about the image based on the associated label; the visual question answering (VQA) module to obtain the semantic information of the image by answering the generated questions with MLLM; followed by the visual answer evaluation (VAE) module to measure the inconsistency by evaluating the matching score between the semantics of the image and labels. Since VDC does not involve the training process with specific dirty samples, it is endowed with the universal capacity to detect various categories and types of dirty samples.\nWe summarize our main contributions: 1). We identify the commonality of various dirty samples is visual-linguistic inconsistency between visual contents and associated labels. 2). To quantify this inconsistency, we propose a versatile data cleanser that leverages the impressive capabilities of multimodal large language models. 3). Experiments show that VDC consistently exhibits superior performance for detecting poisoned samples, noisy labels, and hybrids of them.",
+    "3_PRELIMINARIES:_DIRTY_SAMPLE_DETECTION": "In this section, we first define the setup of dirty sample detection task, including poisoned samples and noisy labels, and then clarify the goals of this paper.\nSetup. We consider a standard classification problem given the dataset D = {(x i , y i )} N i=1 that contains N samples i.i.d sampled from X × Y, where x i ∈ X denotes the input feature, y i ∈ Y = {1, . . . , K} is the label of x i . The classification task aims to learn a classifier f θ : X → Y. In the real-world, however, when collecting a dataset, some samples may be corrupted due to human mistakes or malicious goals, thereby generating dirty samples with corrupted labels in the dataset. Therefore, in the real-world, D is the fusion of dirty dataset D = {( xi , ỹi )} M i=1 and clean dataset\nD = {( xi , ŷi )} N -M\ni=1 , i.e., D ′ = D ∪ D, where ( xi , ỹi ) is a dirty sample and M is the number of dirty samples, ( xi , ŷi ) is a clean sample. We formulate two types of dirty sample in the following:\n• Poisoned Sample: Poisoned sample denotes the one that its visual feature is maliciously manipulated by the attacker, i.e., xi := g(x i ) ̸ = xi , where g(•) is the generation function, such as blending (Chen et al., 2017) and wrapping-based transformation (Nguyen & Tran, 2021) . Meanwhile, the label is changed to the target label by the attacker, i.e., ỹi = y t ̸ = ŷi .\n• Noisy Label: Noisy label represents the sample that its label is annotated incorrectly, while its visual feature remains unchanged, i.e., xi = xi , ỹi ∈ Ỹ ̸ = ŷi , where Ỹ represents noisy version of Y. Following Yu et al. (2023) ; Zhu et al. (2022) , we focus on the closed-set label noise that Y and Ỹ are assumed to be in the same label space. This situation is common when human annotators are asked to select the most appropriate label from a preset label set.\nGoal. Unlike most existing works that can only detect noisy labels or poisoned samples, our goal is to design a universal detection framework that can be applied to various categories of dirty samples.",
+    "4_METHODOLOGY:_VERSATILE_DATA_CLEANSER": {
+      "4.1_VISUAL_QUESTION_GENERATION": "We propose to obtain semantic information of the visual content by asking MLLM visual questions. Therefore, the first step is how to design insightful questions based on the given label y i , which is formulated as follows:\nEQUATION\nwhere y i might be corrupted label ỹi or ground-truth label ŷi , Q j i denotes the j-th question and A j i denotes expected answer, and N q denotes the number of questions. In order to comprehensively and fully understand the semantics of images, two different types of questions are considered in VDC, including coarse-grained general questions and fine-grained label-specific questions.\nGeneral Questions. General questions can serve as a means to acquire holistic semantic understanding of an image from a global perspective, such as \"Please describe the image briefly.\". The expected answers to these general questions align with the given label. Since the general questions remain consistent across various labels, they are generated by random selection from a set of predefined templates, as outlined in Table 10 in Appendix E.\nLabel-specific Questions. Besides, the label-specific questions related to the given labels aim to extract more localized semantics from the image, encompassing aspects of common sense features, attributions, functions, geography, history, culture, and etc . For example, given the label \"airplane\", an apt question is \"Is the object in the image designed for flying in the air?\". Designing most labelspecific questions necessitates a level of expertise about the label that may exceed the capacity of a human annotator. When dealing with a multitude of labels, such as ImageNet with 1,000 classes, manually designing for each label becomes impractical. Hence, we utilize LLM like ChatGPT (Ope-nAI) to automatically generate these questions, depending on its expansive open-world knowledge. The well-designed prompts and generated questions are detailed in Appendix D and E.",
+      "4.2_VISUAL_QUESTION_ANSWERING": "The next step involves responding to the generated questions in Sec 4.1 based on the input image x i to acquire the semantics of the visual content. This process is often referred to as the visual question answering (VQA) task, which can be formulated as follows:\nEQUATION\nwhere R j i indicates the response of VQA model for the question Q j i . Answering these questions necessitates the capabilities of natural language generation and external knowledge beyond the visible content of image. Therefore, we resort to MLLM as our VQA model owing to its remarkable capabilities of visual and language understanding and reasoning, which has been demonstrated in a wide range of visual-language tasks.",
+      "4.3_VISUAL_ANSWER_EVALUATION": "Afterward, for a suspicious input sample (x i , y i ), we obtain a set of questions, expected answers, and responses, i.e.,\n{Q j i , A j i , R j i } Nq j=1 .\nThe subsequent step is to assess visual-linguistic consistency by evaluating the matching score between the semantics of the image and label. We first judge the correctness of the response of MLLM, i.e., whether it aligns with the expected answer, which can be formulated as follows:\nEQUATION\nwhere e i denotes the correctness, i.e., true or false. For label-specific questions with deterministic expected answers, we use string matching to evaluate the response. If the word \"yes\" is present in the response, the result should be true, otherwise if the response contains the word \"no\", the result should be false. Nevertheless, for general questions, string matching is insufficient to determine correctness. In such cases, we employ ChatGPT as a specialized evaluator through meticulously designed prompts, which is a commonly adopted approach in the evaluation of LLM Chang et al. (2023) .\nVote-based Ensemble. Then the matching score s i of sample (x i , y i ) is computed as the proportion of questions answered correctly, which are formulated as follows:\nEQUATION\nwhere 1(•) denotes identity function. If the score is less than the threshold α, sample (x i , y i ) is detected as a dirty sample and then removed from the dataset.",
+      "_text": "We find that what poisoned samples and noisy labels have in common is that the visual features of the poisoned samples are inconsistent with their given labels. For example, an image containing 'cat' is wrongly labeled as a 'dog', which can be detected by comparing the semantics of the visual content of the image and that of the given label. For the poisoned sample, although the trigger is embedded into the image, its underlying semantics has not been modified. We refer this commonality as \"visual-linguistic inconsistency\". Thanks to the surpassing abilities of multimodal understanding and reasoning of MLLM, we propose Versatile Data Cleanser, called VDC, to capture the visuallinguistic inconsistency based on MLLM. To the best of our knowledge, VDC is the first universal framework that is capable of detecting both noisy labels and poisoned samples simultaneously. As shown in Figure 1 , it consists of the following consecutive modules:\n• Visual Question Generation (VQG): VQG module first generates insightful visual questions related to the given labels based on the template and LLM, which is detailed in Sec 4.1.\n• Visual Question Answering (VQA): Then VQA module resorts to MLLM to answer the generated visual questions about the image to acquire the semantics of the visual content, which is detailed in Sec 4.2.\n• Visual Answer Evaluation (VAE): The VAE module assesses visual-linguistic inconsistency by evaluating the matching score between the semantics of the image and label, detailed in Sec 4.3."
+    },
+    "5.1_EXPERIMENTAL_SETTINGS": "Datasets. We evaluate ASRon three benchmark datasets, CIFAR-10 ( Krizhevsky et al., 2009) and two ImageNet (Russakovsky et al., 2015) subsets: (1) For ImageNet-100, we randomly choose 100 classes from ImageNet, in which 500 images per class for training and 100 images per class for testing.\n(2) For ImageNet-Dog, to evaluate the effect of similarity of classes, we randomly choose 10 classes of dogs from ImageNet, in which 800 images per class for training and 200 images per class for testing.",
+    "5.2.1_RESULTS_ON_DETECTING_POISONED_SAMPLES": "In this section, we first conduct a comprehensive evaluation on the poisoned samples detection.\nThe results on CIFAR-10, ImageNet-100 and ImageNet-Dog with different poisoning ratios are presented in Tables 1,2,13,14 (Refer Tables 13,14 in Appendix F.2). For a fair comparison, all baselines requiring clean data utilize 4% clean subset. The results demonstrate the effectiveness of our proposed method from the following aspects:\nConsistent Effectiveness Against Various Types of Poisoned Samples. From the results on CIFAR-10 in Table 1 , we find that VDC consistently exhibits superior performance under various types of poisoned samples without relying on any clean subset, demonstrating the generalization of VDC. In contrast, other detectors are sensitive to different types of triggers. For example, VDC achieves average TPR of 99.91% against all backdoor attacks, while SPECTER experiences a sig- nificant fluctuation with a difference of 87.15% between its highest and lowest TPR. Additionally, VDC achieves competitive results in terms of FPR, averaging only 2.75%, which indicates that VDC has a low propensity to incorrectly identify clean samples as dirty samples.\nConsistent Effectiveness Across Datasets. Comparing the results of ImageNet-100 in Table 2 and CIFAR-10 in Table 1 , when facing a larger dataset with more labels, VDC maintains performance with the average TPR still reaching 99.94%. On the contrary, other baselines are unstable on different datasets, such as SPECTRE decreases from 77.20% to 45.58%. To explore the effect of the similarity of classes, we evaluate on a fine-grained dataset ImageNet-Dog. From the results in Table 3 in Appendix F.1, VDC shows evident improvement compared to other baselines.\nConsistent Effectiveness Across Poisoning Ratios. We also evaluate with lower poisoning ratios on CIFAR-10 and ImageNet-100 to study the effect of poisoning ratios. Compare Table 1 with η = 0.09 and Table 13 with η = 0.009 on CIFAR-10, we find that the performance of VDC has almost no fluctuation, while other methods are greatly affected by the poisoning ratio. A similar phenomenon on ImageNet-100 can be found in Table 2 and 14 .",
+    "5.2.2_RESULTS_ON_DETECTING_NOISY_LABELS.": "In this section, we evaluate VDC on noisy label detection, another common type of dirty samples.\nThe results on CIFAR-10, ImageNet-100 and ImageNet-Dog are shown in Table 4 , verifying that VDC also performs well on detecting noisy labels from the following points:\nConsistent Effectiveness Against Various Types of Noisy Labels. By comparing the performance on the symmetric and the asymmetric noisy labels, we note that asymmetric is a more challenging setting. Even though some baselines behave well on detecting symmetric noisy labels, such as SimiFeat-V and SimiFeat-R, they may reach low TPR on the symmetric noisy labels. However, VDC consistently works well on the asymmetric noisy label. For example, VDC achieves 99.60% TPR on detecting asymmetric noisy labels on CIFAR-10, while SimiFeat-V only has 59.67% TPR.\nConsistent Effectiveness Across Datasets. From the results on the three datasets in Table 4 , we note that VDC performs consistently well on different datasets, while other methods perform worse on ImageNet-100 and Imagenet-Dog, which indicates the robustness of our proposed method. ",
+    "5.2.3_RESULTS_ON_DETECTING_HYBRID_DIRTY_SAMPLES": "In the real world, when an attacker poisons a realistic dataset, the dataset may already contain noisy labels. Therefore, in this section, we further evaluate the effectiveness of detectors when the dataset contains both poisoned samples and noisy samples, in which poisoning ratio is 0.09 and noisy ratio is 0.1 The results on CIFAR-10 are shown in Table 5 . The following insightful points can be found from the results:\nConsistent Effectiveness Against Hybrids of Poisoned Samples and Noisy Labels. In this more challenging scenario, VDC still shows leading advantages compared with other methods, with average TPR reaching 99.41%. However, methods designed only for poisoned sample detection perform poorly when detecting a mixture of various dirty samples, such as SCAn decreasing from 95.46% to 46.29%. In the meantime, methods designed only to detect noisy samples also underperform in this case, such as CL decreasing from 85.05% to 36.33%, which further illustrates the effectiveness and robustness of our proposed method.",
+    "5.2.4_TRAINING_ON_THE_PURIFIED_DATASETS": "After detecting and removing dirty samples from the origin dataset, we normally train DNNs on the purified datasets to verify the detection effect. The results on the purified datasets initially contain poisoned samples, noisy labels, and hybrid dirty samples are shown in Tables 6,15,16,17. By accurately detecting dirty samples, VDC indeed prevents the trained model from being interfered by dirty samples, i.e., maintaining low ASR and high ACC compared with other detectors.",
+    "6_A_CLOSER_LOOK_AT_VDC": "In this section, we provide further analysis and ablation studies of VDC and show some limitations.\nEffect of the Type of Visual Questions. specific questions while keeping all other settings constant. We observe that using only one type of question makes the model perform worse. In addition, label-specific questions are slightly more important than general questions.",
+    "7_CONCLUSION": "In this paper, we propose to detect dirty samples with corrupted labels by exploiting semantic inconsistency between visual content and associated labels. To this end, we design versatile data cleanser (VDC), a universal detection framework harnessing the surpassing capabilities of large language models and multimodal large language models, which is capable of detecting various categories and types of dirty samples. Experimental results validate the consistent superior performance of VDC in poisoned sample detection and noisy label detection. In addtion, VDC still maintains effectiveness even when the dataset contains the hybrid dirty samples. Furthermore, we anticipate that as large language models continue to evolve at a rapid pace, VDC will demonstrate further enhanced performance in the future."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Deep k-nn for noisy labels",
+      "authors": [
+        {
+          "first": "Dara",
+          "middle": [],
+          "last": "Bahri",
+          "suffix": ""
+        },
+        {
+          "first": "Heinrich",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Maya",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "A new backdoor attack in cnns by training set corruption without label poisoning",
+      "authors": [
+        {
+          "first": "Mauro",
+          "middle": [],
+          "last": "Barni",
+          "suffix": ""
+        },
+        {
+          "first": "Kassem",
+          "middle": [],
+          "last": "Kallas",
+          "suffix": ""
+        },
+        {
+          "first": "Benedetta",
+          "middle": [],
+          "last": "Tondi",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "IEEE International Conference on Image Processing"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Confidence scores make instance-dependent label-noise learning possible",
+      "authors": [
+        {
+          "first": "Antonin",
+          "middle": [],
+          "last": "Berthon",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Gang",
+          "middle": [],
+          "last": "Niu",
+          "suffix": ""
+        },
+        {
+          "first": "Tongliang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Masashi",
+          "middle": [],
+          "last": "Sugiyama",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "A survey on evaluation of large language models",
+      "authors": [
+        {
+          "first": "Yupeng",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jindong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Kaijie",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Linyi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoyuan",
+          "middle": [],
+          "last": "Yi",
+          "suffix": ""
+        },
+        {
+          "first": "Cunxiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yidong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Detecting backdoor attacks on deep neural networks by activation clustering",
+      "authors": [
+        {
+          "first": "Bryant",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Wilka",
+          "middle": [],
+          "last": "Carvalho",
+          "suffix": ""
+        },
+        {
+          "first": "Nathalie",
+          "middle": [],
+          "last": "Baracaldo",
+          "suffix": ""
+        },
+        {
+          "first": "Heiko",
+          "middle": [],
+          "last": "Ludwig",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Edwards",
+          "suffix": ""
+        },
+        {
+          "first": "Taesung",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Molloy",
+          "suffix": ""
+        },
+        {
+          "first": "Biplav",
+          "middle": [],
+          "last": "Srivastava",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Effective backdoor defense by exploiting sensitivity of poisoned samples",
+      "authors": [
+        {
+          "first": "Weixin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Baoyuan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Haoqian",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Targeted backdoor attacks on deep learning systems using data poisoning",
+      "authors": [
+        {
+          "first": "Xinyun",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Chang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kimberly",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Learning with instancedependent label noise: A sample sieve approach",
+      "authors": [
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaowei",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Xingyu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yifei",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Xing",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Instructblip: Towards general-purpose vision-language models with instruction tuning",
+      "authors": [
+        {
+          "first": "Wenliang",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Junnan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Dongxu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Huat",
+          "middle": [],
+          "last": "Tiong",
+          "suffix": ""
+        },
+        {
+          "first": "Junqi",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Weisheng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Boyang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Pascale",
+          "middle": [],
+          "last": "Fung",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Hoi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Strip: A defence against trojan attacks on deep neural networks",
+      "authors": [
+        {
+          "first": "Yansong",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Change",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Derui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Shiping",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Surya",
+          "middle": [],
+          "last": "Damith C Ranasinghe",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nepal",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 35th Annual Computer Security Applications Conference"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Robust loss functions under label noise for deep neural networks",
+      "authors": [
+        {
+          "first": "Aritra",
+          "middle": [],
+          "last": "Ghosh",
+          "suffix": ""
+        },
+        {
+          "first": "Himanshu",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Shanti",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Badnets: Evaluating backdooring attacks on deep neural networks",
+      "authors": [
+        {
+          "first": "Tianyu",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Kang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Brendan",
+          "middle": [],
+          "last": "Dolan-Gavitt",
+          "suffix": ""
+        },
+        {
+          "first": "Siddharth",
+          "middle": [],
+          "last": "Garg",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "IEEE Access"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Spectre: Defending against backdoor attacks using robust statistics",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Hayase",
+          "suffix": ""
+        },
+        {
+          "first": "Weihao",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Raghav",
+          "middle": [],
+          "last": "Somani",
+          "suffix": ""
+        },
+        {
+          "first": "Sewoong",
+          "middle": [],
+          "last": "Oh",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Deep residual learning for image recognition",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shaoqing",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Spatial transformer networks",
+      "authors": [
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Jaderberg",
+          "suffix": ""
+        },
+        {
+          "first": "Karen",
+          "middle": [],
+          "last": "Simonyan",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Nlnl: Negative learning for noisy labels",
+      "authors": [
+        {
+          "first": "Youngdong",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Junho",
+          "middle": [],
+          "last": "Yim",
+          "suffix": ""
+        },
+        {
+          "first": "Juseung",
+          "middle": [],
+          "last": "Yun",
+          "suffix": ""
+        },
+        {
+          "first": "Junmo",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the IEEE/CVF international conference on computer vision"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Learning multiple layers of features from tiny images",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Krizhevsky",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Mimic-it: Multi-modal in-context instruction tuning",
+      "authors": [
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanhan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Liangyu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jinghao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Fanyi",
+          "middle": [],
+          "last": "Pu",
+          "suffix": ""
+        },
+        {
+          "first": "Jingkang",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Chunyuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Ziwei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Invisible backdoor attack with sample-specific triggers",
+      "authors": [
+        {
+          "first": "Yuezun",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yiming",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Baoyuan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Longkang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Ran",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Siwei",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Visual instruction tuning",
+      "authors": [
+        {
+          "first": "Haotian",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chunyuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Qingyang",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yong Jae",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Trojaning attack on neural networks",
+      "authors": [
+        {
+          "first": "Yingqi",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Shiqing",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Yousra",
+          "middle": [],
+          "last": "Aafer",
+          "suffix": ""
+        },
+        {
+          "first": "Wen-Chuan",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Juan",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Weihang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "25th Annual Network and Distributed System Security Symposium"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Wanet -imperceptible warping-based backdoor attack",
+      "authors": [
+        {
+          "first": "Anh",
+          "middle": [],
+          "last": "Tuan",
+          "suffix": ""
+        },
+        {
+          "first": "Anh",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "Tran",
+          "middle": [],
+          "last": "Tuan",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Confident learning: Estimating uncertainty in dataset labels",
+      "authors": [
+        {
+          "first": "Curtis",
+          "middle": [],
+          "last": "Northcutt",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Isaac",
+          "middle": [],
+          "last": "Chuang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Journal of Artificial Intelligence Research"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Openai api",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Openai",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Towards a proactive {ML} approach for detecting backdoor poison samples",
+      "authors": [
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Tinghao",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Jiachen",
+          "suffix": ""
+        },
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Saeed",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Prateek",
+          "middle": [],
+          "last": "Mahloujifar",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mittal",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "32nd USENIX Security Symposium (USENIX Security 23)"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Learning transferable visual models from natural language supervision",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Jong",
+          "middle": [
+            "Wook"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Hallacy",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Goh",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "U-net: Convolutional networks for biomedical image segmentation",
+      "authors": [
+        {
+          "first": "Olaf",
+          "middle": [],
+          "last": "Ronneberger",
+          "suffix": ""
+        },
+        {
+          "first": "Philipp",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Brox",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Medical Image Computing and Computer-Assisted Intervention-MICCAI 2015: 18th International Conference"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Imagenet large scale visual recognition challenge",
+      "authors": [
+        {
+          "first": "Olga",
+          "middle": [],
+          "last": "Russakovsky",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Krause",
+          "suffix": ""
+        },
+        {
+          "first": "Sanjeev",
+          "middle": [],
+          "last": "Satheesh",
+          "suffix": ""
+        },
+        {
+          "first": "Sean",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiheng",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Andrej",
+          "middle": [],
+          "last": "Karpathy",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Khosla",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Bernstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International journal of computer vision"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Demon in the variant: Statistical analysis of {DNNs} for robust backdoor contamination detection",
+      "authors": [
+        {
+          "first": "Di",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaofeng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Haixu",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Kehuan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "30th USENIX Security Symposium (USENIX Security 21)"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Spectral signatures in backdoor attacks",
+      "authors": [
+        {
+          "first": "Brandon",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "Jerry",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Aleksander",
+          "middle": [],
+          "last": "Madry",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Data collection and quality challenges in deep learning: A data-centric ai perspective",
+      "authors": [
+        {
+          "first": "Steven",
+          "middle": [
+            "Euijong"
+          ],
+          "last": "Whang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuji",
+          "middle": [],
+          "last": "Roh",
+          "suffix": ""
+        },
+        {
+          "first": "Hwanjun",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Jae-Gil",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The VLDB Journal"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Backdoorbench: A comprehensive benchmark of backdoor learning",
+      "authors": [
+        {
+          "first": "Baoyuan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Hongrui",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Mingda",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zihao",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Shaokui",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Danni",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Thirty-sixth Conference on Neural Information Processing Systems Datasets and Benchmarks Track"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Adversarial machine learning: A systematic survey of backdoor attack, weight attack and adversarial example",
+      "authors": [
+        {
+          "first": "Baoyuan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Zihao",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Qingshan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofeng",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Siwei",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "A comprehensive study on post-training quantization for large language models",
+      "authors": [
+        {
+          "first": "Zhewei",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoxia",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Youn",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxiong",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Delving into noisy label detection with clean data",
+      "authors": [
+        {
+          "first": "Chenglin",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Xinsong",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Weiwei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Rethinking the backdoor attacks' triggers: A frequency perspective",
+      "authors": [
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Won",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Morley",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Ruoxi",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF international conference on computer vision"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Data-centric ai: Perspectives and challenges",
+      "authors": [
+        {
+          "first": "Daochen",
+          "middle": [],
+          "last": "Zha",
+          "suffix": ""
+        },
+        {
+          "first": "Pervaiz",
+          "middle": [],
+          "last": "Zaid",
+          "suffix": ""
+        },
+        {
+          "first": "Kwei-Herng",
+          "middle": [],
+          "last": "Bhat",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "Xia",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 2023 SIAM International Conference on Data Mining (SDM)"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Detecting corrupted labels without training a model to predict",
+      "authors": [
+        {
+          "first": "Zhaowei",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Zihao",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International conference on machine learning"
+    }
+  ]
+}

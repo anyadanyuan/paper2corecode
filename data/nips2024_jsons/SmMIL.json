@@ -1,0 +1,1973 @@
+{
+  "paper_id": "SmMIL",
+  "title": "Sm: enhanced localization in Multiple Instance Learning for medical imaging classification",
+  "authors": [
+    {
+      "first": "Francisco",
+      "middle": [
+        "M"
+      ],
+      "last": "Castro-Macías",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Northwestern University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Pablo",
+      "middle": [],
+      "last": "Morales-Álvarez",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Northwestern University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yunan",
+      "middle": [],
+      "last": "Wu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Northwestern University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Rafael",
+      "middle": [],
+      "last": "Molina",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Northwestern University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Aggelos",
+      "middle": [
+        "K"
+      ],
+      "last": "Katsaggelos",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Northwestern University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Multiple Instance Learning (MIL) is widely used in medical imaging classification to reduce the labeling effort. While only bag labels are available for training, one typically seeks predictions at both bag and instance levels (classification and localization tasks, respectively). Early MIL methods treated the instances in a bag independently. Recent methods account for global and local dependencies among instances. Although they have yielded excellent results in classification, their performance in terms of localization is comparatively limited. We argue that these models have been designed to target the classification task, while implications at the instance level have not been deeply investigated. Motivated by a simple observation -that neighboring instances are likely to have the same label -we propose a novel, principled, and flexible mechanism to model local dependencies. It can be used alone or combined with any mechanism to model global dependencies (e.g., transformers). A thorough empirical validation shows that our module leads to state-of-the-art performance in localization while being competitive or superior in classification. Our code is at https://github.com/Franblueee/SmMIL.",
+  "body": {
+    "1_Introduction": "Over the last decades, medical imaging classification has benefited from advances in deep learning [35, 44] . However, the performance of these methods drops when the number of labeled samples is low, which is common in real-world medical scenarios [1] . To overcome this, Multiple Instance Learning (MIL) has emerged as a popular weakly supervised approach [14, 8, 12] .\nIn MIL, instances are arranged in bags. At train time, a label is available for the entire bag, while the instance labels remain unknown. The goal is to train a method that, given a test bag, can predict both at bag and instance levels (classification and localization tasks, respectively). This paradigm is well suited to the medical imaging domain [28] . In cancer detection from Whole Slide Images (WSIs), the WSI represents the bag, and the patches are the instances. In intracranial hemorrhage detection from Computerized Tomographic (CT) scans, the full scan represents the bag, and the slices at different heights are the instances. In these scenarios, making accurate predictions of instance labels is extremely important from a clinical viewpoint, as it translates into pinpointing the location of the lesion [7] .\nMost successful approaches in MIL build on the attention-based pooling [17] , a permutation-invariant operator that assigns an attention value to each instance independently. This method has been extended in different ways while maintaining the permutation-invariant property [21, 25, 39] . The aforementioned works pose a problem: the dependencies between the instances, which are important when making a diagnosis, are ignored. To account for this, TransMIL [32] proposed to model global dependencies using a transformer encoder. The idea is to use the self-attention mechanism to introduce interactions between each pair of instances. Based on it, other transformer-based approaches have emerged, also focusing on global dependencies [9, 22, 37] . More recently, several works have also incorporated natural local interactions, which are those between neighboring instances [14, 40, 41] .\nAlthough these methods accounting for dependencies have resulted in excellent performance at the bag level, the evaluation at the instance level has received less attention and the results are not comparatively good so far, see the very recent [14] . In this work, we argue that recent MIL methods have been designed with the classification task in mind, and we propose a new model that focuses on both the classification and localization tasks. Specifically, we propose a novel and theoretically grounded mechanism to introduce local dependencies, hereafter referred to as the smooth operator Sm. This is a flexible module that can be used alone on top of classical MIL approaches, or in combination with transformers to also account for global dependencies. In both cases, we show that the proposed operator achieves state-of-the-art localization results while being competitive in classification. We compare against a total amount of eight methods, including very recent ones [14, 40] . We utilize three different datasets of different nature and size, covering two different medical imaging problems (cancer detection in WSI images and hemorrhage detection in CT scans).\nOur main contributions are: (i) we provide a unified view of current deep MIL approaches; (ii) we propose a principled mechanism to introduce local interactions, which is a modular component that can be combined or not with global interactions; and (iii) we evaluate up to eight state-of-the-art MIL methods on three real-world MIL datasets in both classification and localization tasks, showing that the proposed method stands out in localization while being competitive or superior in classification.",
+    "2_Related_work": "In this work, we tackle the localization task in deep MIL methods using existing concepts and techniques from deep MIL and Graph Neural Networks (GNNs) theory.\nDeep Multiple Instance Learning. As explained by Song et al. [34] , deep MIL methods can be divided into two broad categories, namely instance-based or embedding-based, depending on the level at which a specific aggregation operator is applied. In this paper, we focus on the embedding-based category, and in particular attention-based ones.\nIlse et al. [17] proposed attention-based pooling to weigh each instance in the bag. To improve it, different modifications were proposed, including the use of clustering layers [25] , grouping the instances in pseudo-bags [39] , and using similarity measures to critical instances to compute the attention values [21] . However, these methods ignore the existing dependencies between the instances in a bag. To address this, Shao et al. [32] proposed to use a transformer-based architecture and the PPEG position encoding module. This has been extended with different transformer variations, including the deformable transformer architecture [22] , hierarchical attention [37] , and regional sampling [9] . Recently, these methods have been improved to include spatial information in different ways, including the use of a Graph Convolutional Network (GCN) before the transformer [41] , a neighbor-constrained attention module [14] , and a spatial-encoding transformer architecture [40] .\nIn the studies mentioned above, the objective is to obtain increasingly better bag-level results, while the evaluation at the instance level is usually performed qualitatively. In contrast, our work addresses both the instance localization task and the bag classification task, as both are of great importance for making a diagnosis. Moreover, our work is not limited to WSI classification; it is also valid for other medical imaging modalities.",
+    "3_Background:_A_unified_view_of_deep_MIL_approaches": "We first describe the binary MIL problem tackled in this paper. Then, we provide a unified view of the most popular deep MIL methods. As explained in Sec. 2, we focus on embedding-based approaches.\nIn MIL, the training set consists of pairs of the form (X, Y ), where X ∈ R N ×P is a bag of instances and Y ∈ {0, 1} is the bag label. We write X = [x 1 , . . . , x N ]\nT ∈ R N ×P , where x n ∈ R P are the instances. Each instance x n is associated to a label y n ∈ {0, 1}, not available during training. It is assumed that Y = max {y 1 , . . . , y N }, i.e., a bag X is considered positive if and only if there is at least one positive instance in the bag.\nGiven a previously unseen bag (e.g., a medical image), the goal at test time is to: i) predict the bag label (classification task) and ii) obtain predictions or estimates for the instance labels (localization task). In general, deep MIL models output a bag-level prediction Ŷ , as well as instance-level scalars f n that are used for instance-level prediction. This general process is depicted in Fig. 1a . In many approaches, these f n are the so-called attention values (e.g., ABMIL [17] , TransMIL [32] , CAMIL [14] ), but they can be obtained in different ways (e.g., through GraphCAM in GTP [41] ). Within the general process in Fig. 1a , deep MIL models can be categorized into three families, depending on how instances interact with each other, see Fig. 1b , Fig. 1c , and Fig. 1d .\nIn the first family, shown in Fig. 1b , the instances are encoded independently and then aggregated. The well-known ABMIL [17] fits in this paradigm. Subsequent works introduce slight modifications to ABMIL, while still encoding each instance independently [21, 25, 39] . ABMIL, on which we will rely to introduce our model, is depicted in Fig. 3a . First, a bag of embeddings H = [h 1 , . . . , h N ] ∈ R N ×D is obtained by applying a neural network independently to each instance. Then, the attention-based pooling computes the attention values f and the bag embedding z according to\nEQUATION\nEQUATION\nwhere W ∈ R L×D , w ∈ R L are trainable weights. Last, Ŷ is obtained by applying a linear classifier on z.\nThe second family accounts for global interactions between instances, possibly long-range ones, see Fig. 1c . These works treat instances as tokens that interact through the self-attention mechanism. This way, global interactions between instances are learned. One of the most popular approaches in this family is TransMIL [32] , which was later extended in different directions [9, 22] . The third family complements the previous one with local interactions defined by a fixed neighborhood, see Figure 2 : WSIs are divided into patches. CT scans are provided as slices. They often show spatial dependencies: in a WSI, a patch is usually surrounded by patches with the same label, while in a CT scan, a slice is usually surrounded by slices with the same label. The red color indicates malignant/hemorrhage patches/slices.\nFig. 1d . They differ in how local interactions are represented, e.g., as a graph in CAMIL [14] and GTP [41] , or using a position-encoded feature map in SETMIL [40] .\nIn most of these works, the localization task is assessed qualitatively, e.g., by visually comparing the attention maps. This contrasts with the classification task, which is always evaluated quantitatively. As evidenced by Fourkioti et al. [14] , this has translated into comparatively poor performance in terms of localization. We notice that current models have been designed to target the classification task, and they excel at that. However, their model design is not as careful about the instance-level implications. For example, CAMIL [14] does not leverage any local information to obtain the instance-level attention values. Indeed, from their Eq. ( 8) one deduces that the a i values are obtained from the tile representations t i , which have not undergone any local interaction. Observe that local interactions take place in Eq. ( 4) and Eq. ( 5) in their paper, but these only affect the bag-level predictions, not the instance-level ones. Similarly, GTP [41] introduces local interactions through an off-the-shelf graph convolutional layer, the effect of which is not investigated at the instance level. In the following section, we propose a principled approach to account for meaningful local interactions based on the Dirichlet energy. The idea is motivated by a natural property often observed in the instance-level labels of medical images: the similarity between neighboring instances.",
+    "4_Method:_Introducing_smoothness_in_the_attention_values": {
+      "4.1_Modelling_the_smoothness": "We represent each bag as a graph, where the nodes are the instances and the edges represent the spatial connectivity between instances. Formally, we suppose that each bag X ∈ R N ×D has been assigned an adjacency matrix A = [A ij ] ∈ R N ×N , defined by A ij > 0 if instances x i and x j are neighbors, and A ij = 0 otherwise. We assume that the adjacency matrix is symmetric, i.e. A ij = A ji .\nThe Dirichlet energy is a well-known functional that measures the variability of a function defined on a graph [42, 43] . In our case, we think of this function as the attention values f ∈ R N , recall Fig. 1a . As we shall see below, it will be necessary to define the Dirichlet energy for multivariate graph functions. Given a multivariate graph function U = [u 1 , . . . , u N ] ⊤ ∈ R N ×D defined on the bag graph, the Dirichlet energy of U is given by\nEQUATION\nwhere ∥•∥ 2 denotes the Euclidean norm, L is the graph Laplacian matrix L = D -A, D ∈ R N ×N is the degree matrix, D = Diag (D 1 , . . . , D N ), D n = i A ni . When D = 1 we obtain the definition for univariate graph functions, such as the attention values f .",
+      "4.2_The_smooth_operator": "Our goal now turns into finding an operator Sm : R N ×D → R N ×D that, given a bag graph multivariate function U ∈ R N ×D , returns another bag graph multivariate function Sm (U) ∈ R N ×D such that its Dirichlet energy is lower without losing the information present in the original U. Following seminal works [42, 43] , we cast this as an optimization problem,\nEQUATION\nEQUATION\nwhere α ∈ [0, 1) accounts for the trade off between both terms, and ∥•∥ F denotes the Frobenius norm. The first term in the above equation penalizes functions with too much variability, while the second term penalizes functions that differ too much from the original U. Note that this can be interpreted as a maximum a posteriori formulation, where the first term corresponds to the prior distribution and the second to the observation model, see [30] . The objective function E is strictly convex, and therefore admits a unique solution, given by\nEQUATION\nwhere γ = α/(1α). Unfortunately, the expression in Eq. ( 7), although elegant, incurs prohibitive computational and memory costs, especially when the number of instances in the bag is large (which is the case of WSIs). Instead, we can take an iterative approach, defining\nEQUATION\nAs demonstrated by Zhou et al. [43] , the sequence {G(t)} converges to the optimal solution in Eq. 7. As studied by Gasteiger et al. [16] , it is enough to use a small number of iterations T to approximate the exact solution. Therefore, in this work, we will adopt the iterative approach described by Eq. 8. Based on previous work [16] , we will use T = 10, and α will be set as a trainable parameter initialized at α = 0.5. See Sec. B.3 for a study on the effects of these hyperparameters and Fig. 12 for a visual comparison of the effect that α has on the attention maps.\nTheoretical guarantees via the normalized Laplacian. We present a result that informs us about the rate at which the Dirichlet energy decreases when applying Sm. Let us define λ * γ = max (1 + γλ n )\n-2 : λ n ∈ Λ \\ {0} , where Λ = {λ 1 , . . . , λ N } are the eigenvalues of the bag graph Laplacian matrix. Then, we have the following inequality,\nEQUATION\n)\nThe proof is inspired by Cai and Wang [6] , see Appendix A. If λ * γ < 1, then the smooth operator effectively decreases the Dirichlet energy. If we replace the Laplacian matrix by the normalized Laplacian matrix, L = D -1/2 LD -1/2 , it is known that its eigenvalues lie in the interval [0, 2), and then λ * γ < 1 holds. This motivates the use of the normalized Laplacian in our experiments. The smooth operator Sm only introduces one parameter to be estimated, α. Also, it is differentiable with respect to its input. Therefore, it can be integrated into simple attention-based MIL models, such as ABMIL, to account for local dependencies.\nX H f x1 x2 . . . xN h1 h2 . . . hN f1 f2 . . . fN z Ŷ Att. Pooling Classifier NeuralNet NeuralNet NeuralNet (a) ABMIL. X H f x1 x2 . . . xN h1 h2 . . . hN f1 f2 . . . fN z Ŷ Att. Pooling + Sm Classifier NeuralNet NeuralNet NeuralNet (b) SmAP. X H f x1 x2 . . . xN h1 h2 . . . hN f1 f2 . . . fN z Ŷ Transformer + Sm Att. Pooling + Sm Classifier (c) SmTAP. ",
+      "4.3_The_proposed_model": "Here we propose how to leverage the operator Sm in the context of MIL. We build on top of the well-known ABMIL. First, we introduce SmAP, which integrates ABMIL with Sm and only accounts for local interactions. Second, we introduce SmTAP, which equips SmAP with a transformer encoder to account for global dependencies. The proposed models are depicted in Fig. 3b and Fig. 3c . The details about the architecture we have used can be found in Sec. B.2.\nSmAP: Smooth Attention Pooling. This is represented in Fig. 3b . First, the bag of embeddings H is obtained as in ABMIL [17] , i.e. treating the instances independently. Then, the operator Sm is integrated within the attention pooling. Based on Eq. 4, this can be done on the attention values themselves or on previous representations. We consider three different variants: SmAP-late, SmAP-mid, SmAP-early. They act, respectively, on f (the attention values themselves), on F (i.e. before entering the last layer), and on H (i.e. before entering the attention-based pooling). Formally, late:\nEQUATION\nEQUATION\nearly:\nEQUATION\nWhile SmAP-late and SmAP-mid act on the computation of the attention values, SmAP-early acts on the embedding that is passed to the attention-based pooling, see Fig. 8 in Appendix C. We use SmAP-early by default. Sec. 5.3 shows that results do not differ much among configurations.\nSmTAP: Smooth Transformer Attention Pooling. This is represented in Fig. 3c . The only difference with SmAP is that the neural network acting independently on the instance embeddings is replaced by a transformer encoder to account for global dependencies. Based on the idea that smoothness can be imposed at previous locations, recall Eq. 4, we propose to also apply Sm to the transformer output:\nEQUATION\nwhere q, k, and v are the standard queries, keys, and values in the dot product self-attention [4] .\nNotice that SmTAP uses Sm in two places: the first after the transformer encoder and the second in the aggregator. Naturally, one could think of other variants that use Sm in only one place or the other. In Sec. 5.3 we ablate these different configurations, leading to similar results.",
+      "_text": "In medical imaging, instance labels are a priori expected to exhibit local dependencies with their neighboring instances: an instance is likely to be surrounded by instances with the same label, see Fig. 2 . Recall that attention values are commonly used as a proxy to estimate these labels, so they should inherit this property. Based on these observations, our intuitive idea is to favor a smoothness property on the attention values. To this end, Sec. 4.1 formalizes the notion of smoothness through the Dirichlet energy. Sec. 4.2 presents the proposed smoothing operator Sm, which encourages smoothness as well as fidelity to the original signal. Sec. 4.3 proposes how to leverage Sm in the context of MIL, both in combination with global interactions (via transformers), and without them. We will build on top of the well-known and simple ABMIL to isolate the effect of Sm and avoid over-sophisticated models."
+    },
+    "5_Experiments": {
+      "5.1_Localization:_instance_level_results": "In this subsection, we analyze the ability of each model to predict the label of the instances inside a bag. As explained in Sec. 3, deep MIL models assign a scalar value f n to each instance x n , see Fig. 1a . Although these can be obtained in different ways, for simplicity we will refer to them as attention values. Thus, we compare the attention values with the ground truth instance labels, which are available for the test set only for evaluation purposes.",
+      "5.2_Classification:_bag_level_results.": "In this subsection, we show that the use of the smooth operator does not deteriorate the bag classification results. On the contrary, in some cases, it improves them. Again, we focus on the AUROC and F1 scores, measured by comparing the true bag labels with the methods' bag label predictions. The threshold for the F1 score is 0.5. We also report the mean rank achieved by each model.\nTable 2 shows the results. The proposed models achieve the best performance overall. As in the localization task, ABMIL performs better than SmAP in RSNA. Again, we believe it to be a consequence of the CT scan's low-complexity structure. DFTD-MIL obtains the best result in CAMELYON16, but ranks second or third in the other two datasets. GTP and SETMIL outperform the proposed SmTAP in PANDA, but their performance significantly decreases in CAMELYON16, obtaining the worst results. Overall, our methods provide the most consistent performance, achieving an aggregated mean rank of 1.833.",
+      "5.3_Ablation_study": {
+        "5.3.1_Placement_of_Sm": "Recall that SmAP leverages by default the early variation, but we also described SmAP-mid and SmAP-late. Likewise, we discussed different variants for SmTAP. Table 3 summarizes the impact of these choices on the final performance.\nSm without the transformer encoder (SmAP). These variants differ in the place where Sm is located inside the attention pool, recall Eq. 10-Eq. 12. We include ABMIL since we build our model on top of it. We see that using SmAP improves the performance at both instance and bag levels. This improvement is more noticeable in PANDA and CAMELYON. We attribute it to the bag graph structure being more complex in WSIs than in CT scans. Also, the Dirichlet energy is lower when the smooth operator is used, as theoretically expected. We observe that the proposed method is robust to different placement configurations, which is consistent with the theoretical guarantees presented in Sec. 4.1. However, none of the variants consistently outperforms the others.\nSm with the transformer encoder (SmTAP). Recall that SmTAP leverages Sm both after the transformer encoder and inside the attention pooling. Here we will refer to it as SmT+SmAP, and will compare it against T+SmAP and SmT+AP (using Sm only in one of the components) and against T+AP (not using Sm). We observe that Sm has no significant effect on bag-level performance. At instance-level we do observe differences: the baseline T+AP is outperformed as long as Sm is used within the attention pooling.",
+        "5.3.2_Sm_hyperparameters": "In the following we study the influence of the trade-off parameter α and of the spectral normalization. Due to space limitations, the analysis for the number of approximation steps T is in Sec. B.3.\nThe trade-off parameter α. From Eq. 6 we see that α ∈ [0, 1) controls the amount of smoothness enforced by Sm. Note that α = 0 in Eq. 7 produces no smoothness, turning Sm into the identity operator. In Fig. 6a we show the performance obtained for different values of α in CAMELYON16. Each choice of this hyperparameter improves upon the baseline ABMIL (α = 0). We see that better localization results are obtained when α is lower, while better classification results are obtained when\n0.00 0.25 0.50 0.75 α 0.7 0.8 0.9 1.0 Inst. AUROC 0.00 0.25 0.50 0.75 α 0.90 0.92 0.94 0.96 0.98 1.00 Bag AUROC early mid late α = trainable (a) Trade-off parameter α. No Yes Uses spectral normalization 0.7 0.8 0.9 1.0 Inst. AUROC No Yes Uses spectral normalization 0.90 0.92 0.94 0.96 0.98 1.00 Bag AUROC early mid ABMIL (b) Spectral normalization.\nFigure 6 : Influence of the trade-off parameter α (left) and of spectral normalization (right) in CAMELYON16. Setting α > 0 improves upon the baseline ABMIL (α = 0) and is a trade-off between better localization results (lower α) or better classification results (higher α). Likewise, Sm without spectral normalization already improves the results upon the baseline (ABMIL), but the best performance is obtained when they are used together.\nα is higher. Fixing α = 0.5 is a compromise between the two, and produces very similar results as setting it as a trainable parameter initialized at α = 0.5. Fig. 12 provides a visual comparison of the effect that α has on the attention maps.\nThe effect of spectral normalization. Spectral normalization forces the norm of the multi-layer perceptron weights to remain constant. In this work, this is a key design choice that helps Sm to obtain attention maps with lower Dirichlet energy. In our experiments, we have used spectral normalization in the layers immediately after Sm. Note that the late variant does not require spectral normalization, since it applies Sm directly to the attention values. In Fig. 6b we show the results obtained with and without spectral normalization in CAMELYON16. We observe that, even without spectral normalization, Sm improves upon the baseline. The improvement is more significant when Sm is paired with spectral normalization, especially at the instance level.",
+        "_text": "The proposed Sm comes with different design choices and hyperparameters: the placement of Sm, the trade-off parameter α, the number of approximation steps T , and the use of spectral normalization. We analyze them in the following, showing that Sm leads to enhanced results almost under any choice. This supports that our hypothesis -that neighboring instances are likely to have the same label -is a powerful inductive bias worth exploring. "
+      },
+      "_text": "We validate the proposed Sm in three medical MIL datasets: RSNA [13] , PANDA [5] , and CAME-LYON16 [2] . We evaluate the effectiveness of our approach by a quantitative and qualitative analysis. All experiments have been conducted under fair and reproducible conditions. Details on the datasets and experimental setup can be found in Appendix B. The code is available at https://github.com/Franblueee/SmMIL.\nWe compare our approaches with state-of-the-art deep MIL methods. We consider two groups of methods, depending on the presence/absence of a transformer block to model global dependencies. In the first group, we include those models that do not use this block: the proposed SmAP, ABMIL [17] , CLAM [25] , DSMIL [21] , and DFTD-MIL [39] . The second group consists of models that do use the transformer encoder: the proposed SmTAP, TransMIL [32] , SETMIL [40] , GTP [41] , and CAMIL [14] . These groups ensure a fair comparison in terms of model capabilities and complexity. In Sec. B.3 we report the results of three more methods: DeepGraphSurv [24] , PathGCN [11] , and IIBMIL [29] . Note that the performance obtained by these methods does not affect the conclusions we will obtain in this section.\nIn Sec. 5.1 we consider the localization task. In Sec. 5.2 we turn to the classification task. Sec. 5.3 shows an ablation study on how different uses of the smooth operator affect the proposed model."
+    },
+    "6_Discussion_and_conclusion": "The main goal of this paper is to draw attention to the study of MIL methods at the instance level.\nTo that end, we revised current deep MIL methods and provided a unified perspective on them. We proposed the smooth operator Sm to introduce local interactions in a principled way. By design, it produces smooth attention maps that resemble the ground truth instance labels. We conducted an exhaustive experimental validation with three real-world MIL datasets and up to eight state-of-the-art methods in both classification and localization tasks. This study showed that our method provides the best performance in localization while being highly competitive (best or second best) at classification.\nDespite its advantages, our method has some limitations. The first is that, as with every other operator in GNNs, the computational costs of the smooth operator scale with the size of the bag. Fortunately, it can be paired with existing subgraph sampling techniques to mitigate this problem. The second limitation is that we do not have a definite answer for where it is better to use the proposed operator.\nWe have shown that it leads to improvements in almost every place, but the optimal location may be problem-dependent and has to be tailored by the practitioner.\nFinally, we hope that our work will draw more attention to the localization problem, which is very important for the deployment of computer-aided systems in the real world. In this sense, safely deploying the proposed methods in clinical practice requires evaluating them in a wider range of medical problems and quantifying their uncertainty. For the latter, we believe that the smooth operator could also benefit from a probabilistic formulation."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Diagnostic accuracy of deep learning in medical imaging: a systematic review and meta-analysis",
+      "authors": [
+        {
+          "first": "Ravi",
+          "middle": [],
+          "last": "Aggarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Viknesh",
+          "middle": [],
+          "last": "Sounderajah",
+          "suffix": ""
+        },
+        {
+          "first": "Guy",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "W"
+          ],
+          "last": "Daniel",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [],
+          "last": "Ting",
+          "suffix": ""
+        },
+        {
+          "first": "Dominic",
+          "middle": [],
+          "last": "Karthikesalingam",
+          "suffix": ""
+        },
+        {
+          "first": "Hutan",
+          "middle": [],
+          "last": "King",
+          "suffix": ""
+        },
+        {
+          "first": "Ara",
+          "middle": [],
+          "last": "Ashrafian",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Darzi",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "NPJ digital medicine"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Diagnostic assessment of deep learning algorithms for detection of lymph node metastases in women with breast cancer",
+      "authors": [
+        {
+          "first": "Ehteshami",
+          "middle": [],
+          "last": "Babak",
+          "suffix": ""
+        },
+        {
+          "first": "Mitko",
+          "middle": [],
+          "last": "Bejnordi",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [
+            "Johannes"
+          ],
+          "last": "Veta",
+          "suffix": ""
+        },
+        {
+          "first": "Bram",
+          "middle": [],
+          "last": "Van Diest",
+          "suffix": ""
+        },
+        {
+          "first": "Nico",
+          "middle": [],
+          "last": "Van Ginneken",
+          "suffix": ""
+        },
+        {
+          "first": "Geert",
+          "middle": [],
+          "last": "Karssemeijer",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Litjens",
+          "suffix": ""
+        },
+        {
+          "first": "Awm",
+          "middle": [],
+          "last": "Jeroen",
+          "suffix": ""
+        },
+        {
+          "first": "Meyke",
+          "middle": [],
+          "last": "Van Der Laak",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hermsen",
+          "suffix": ""
+        },
+        {
+          "first": "Maschenka",
+          "middle": [],
+          "last": "Quirine F Manson",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Balkenhol",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Jama"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Semi-supervised learning on manifolds",
+      "authors": [
+        {
+          "first": "Mikhail",
+          "middle": [],
+          "last": "Belkin",
+          "suffix": ""
+        },
+        {
+          "first": "Partha",
+          "middle": [],
+          "last": "Niyogi",
+          "suffix": ""
+        }
+      ],
+      "year": 2002,
+      "venue": "Machine Learning Journal"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Deep Learning -Foundations and Concepts",
+      "authors": [
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Michael",
+          "suffix": ""
+        },
+        {
+          "first": "Bishop",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Hugh",
+          "middle": [],
+          "last": "Bishop",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Artificial intelligence for diagnosis and gleason grading of prostate cancer: the panda challenge",
+      "authors": [
+        {
+          "first": "Wouter",
+          "middle": [],
+          "last": "Bulten",
+          "suffix": ""
+        },
+        {
+          "first": "Kimmo",
+          "middle": [],
+          "last": "Kartasalo",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Po-Hsuan Cameron Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Hans",
+          "middle": [],
+          "last": "Ström",
+          "suffix": ""
+        },
+        {
+          "first": "Kunal",
+          "middle": [],
+          "last": "Pinckaers",
+          "suffix": ""
+        },
+        {
+          "first": "Yuannan",
+          "middle": [],
+          "last": "Nagpal",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "F"
+          ],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Hester",
+          "middle": [],
+          "last": "Steiner",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Van Boven",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Vink",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Nature medicine"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "A note on over-smoothing for graph neural networks",
+      "authors": [
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Yusu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Clinical-grade computational pathology using weakly supervised deep learning on whole slide images",
+      "authors": [
+        {
+          "first": "Gabriele",
+          "middle": [],
+          "last": "Campanella",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [
+            "G"
+          ],
+          "last": "Hanna",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Geneslaw",
+          "suffix": ""
+        },
+        {
+          "first": "Allen",
+          "middle": [],
+          "last": "Miraflor",
+          "suffix": ""
+        },
+        {
+          "first": "Vitor",
+          "middle": [],
+          "last": "Werneck Krauss",
+          "suffix": ""
+        },
+        {
+          "first": "Klaus",
+          "middle": [
+            "J"
+          ],
+          "last": "Silva",
+          "suffix": ""
+        },
+        {
+          "first": "Edi",
+          "middle": [],
+          "last": "Busam",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Brogi",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Victor",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "S"
+          ],
+          "last": "Reuter",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [
+            "J"
+          ],
+          "last": "Klimstra",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Fuchs",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Nature medicine"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Multiple instance learning: A survey of problem characteristics and applications",
+      "authors": [
+        {
+          "first": "Marc-André",
+          "middle": [],
+          "last": "Carbonneau",
+          "suffix": ""
+        },
+        {
+          "first": "Veronika",
+          "middle": [],
+          "last": "Cheplygina",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Granger",
+          "suffix": ""
+        },
+        {
+          "first": "Ghyslain",
+          "middle": [],
+          "last": "Gagnon",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Pattern Recognition"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Towards hierarchical regional transformer-based multiple instance learning",
+      "authors": [
+        {
+          "first": "Josef",
+          "middle": [],
+          "last": "Cersovsky",
+          "suffix": ""
+        },
+        {
+          "first": "Sadegh",
+          "middle": [],
+          "last": "Mohammadi",
+          "suffix": ""
+        },
+        {
+          "first": "Dagmar",
+          "middle": [],
+          "last": "Kainmueller",
+          "suffix": ""
+        },
+        {
+          "first": "Johannes",
+          "middle": [],
+          "last": "Hoehne",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Cluster kernels for semi-supervised learning",
+      "authors": [
+        {
+          "first": "Olivier",
+          "middle": [],
+          "last": "Chapelle",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Weston",
+          "suffix": ""
+        },
+        {
+          "first": "Bernhard",
+          "middle": [],
+          "last": "Schölkopf",
+          "suffix": ""
+        }
+      ],
+      "year": 2002,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Whole slide images are 2d point clouds: Context-aware survival prediction using patch-based graph convolutional networks",
+      "authors": [
+        {
+          "first": "Ming",
+          "middle": [
+            "Y"
+          ],
+          "last": "Richard J Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Muhammad",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Chengkuan",
+          "middle": [],
+          "last": "Shaban",
+          "suffix": ""
+        },
+        {
+          "first": "Tiffany",
+          "middle": [
+            "Y"
+          ],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Drew Fk",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Faisal",
+          "middle": [],
+          "last": "Williamson",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mahmood",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Medical Image Computing and Computer Assisted Intervention-MICCAI 2021: 24th International Conference"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Solving the multiple instance problem with axis-parallel rectangles",
+      "authors": [
+        {
+          "first": "Richard",
+          "middle": [
+            "H"
+          ],
+          "last": "Thomas G Dietterich",
+          "suffix": ""
+        },
+        {
+          "first": "Tomás",
+          "middle": [],
+          "last": "Lathrop",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Lozano-Pérez",
+          "suffix": ""
+        }
+      ],
+      "year": 1997,
+      "venue": "Artificial intelligence"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Construction of a machine learning dataset through collaboration: the rsna 2019 brain ct hemorrhage challenge",
+      "authors": [
+        {
+          "first": "Luciano",
+          "middle": [
+            "M"
+          ],
+          "last": "Adam E Flanders",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Prevedello",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Shih",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Safwan",
+          "suffix": ""
+        },
+        {
+          "first": "Jayashree",
+          "middle": [],
+          "last": "Halabi",
+          "suffix": ""
+        },
+        {
+          "first": "Robyn",
+          "middle": [],
+          "last": "Kalpathy-Cramer",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ball",
+          "suffix": ""
+        },
+        {
+          "first": "Anouk",
+          "middle": [],
+          "last": "John T Mongan",
+          "suffix": ""
+        },
+        {
+          "first": "Felipe",
+          "middle": [
+            "C"
+          ],
+          "last": "Stein",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kitamura",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Matthew P Lungren",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Radiology: Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "CAMIL: Context-aware multiple instance learning for cancer detection and subtyping in whole slide images",
+      "authors": [
+        {
+          "first": "Olga",
+          "middle": [],
+          "last": "Fourkioti",
+          "suffix": ""
+        },
+        {
+          "first": "Matt",
+          "middle": [
+            "De"
+          ],
+          "last": "Vries",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Bakal",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "p-laplacian based graph neural networks",
+      "authors": [
+        {
+          "first": "Guoji",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Peilin",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Yatao",
+          "middle": [],
+          "last": "Bian",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Predict then propagate: Graph neural networks meet personalized pagerank",
+      "authors": [
+        {
+          "first": "Johannes",
+          "middle": [],
+          "last": "Gasteiger",
+          "suffix": ""
+        },
+        {
+          "first": "Aleksandar",
+          "middle": [],
+          "last": "Bojchevski",
+          "suffix": ""
+        },
+        {
+          "first": "Stephan",
+          "middle": [],
+          "last": "Günnemann",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Attention-based deep multiple instance learning",
+      "authors": [
+        {
+          "first": "Maximilian",
+          "middle": [],
+          "last": "Ilse",
+          "suffix": ""
+        },
+        {
+          "first": "Jakub",
+          "middle": [],
+          "last": "Tomczak",
+          "suffix": ""
+        },
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Benchmarking self-supervised learning on diverse pathology datasets",
+      "authors": [
+        {
+          "first": "Mingu",
+          "middle": [],
+          "last": "Kang",
+          "suffix": ""
+        },
+        {
+          "first": "Heon",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Seonwook",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Donggeun",
+          "middle": [],
+          "last": "Yoo",
+          "suffix": ""
+        },
+        {
+          "first": "Sérgio",
+          "middle": [],
+          "last": "Pereira",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Adam: A method for stochastic optimization",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Diederik",
+          "suffix": ""
+        },
+        {
+          "first": "Jimmy",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Semi-supervised classification with graph convolutional networks",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Thomas",
+          "suffix": ""
+        },
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Kipf",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Dual-stream multiple instance learning network for whole slide image classification with self-supervised contrastive learning",
+      "authors": [
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [
+            "W"
+          ],
+          "last": "Eliceiri",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Dt-mil: deformable transformer for multi-instance learning on histopathological image",
+      "authors": [
+        {
+          "first": "Hang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohan",
+          "middle": [],
+          "last": "Xing",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Mingxuan",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Junzhou",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Liansheng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jianhua",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Medical Image Computing and Computer Assisted Intervention-MICCAI 2021: 24th International Conference"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Deeper insights into graph convolutional networks for semi-supervised learning",
+      "authors": [
+        {
+          "first": "Qimai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zhichao",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Xiao-Ming",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Graph cnn for survival analysis on whole slide pathological images",
+      "authors": [
+        {
+          "first": "Ruoyu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jiawen",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Xinliang",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Yeqing",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Junzhou",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Medical Image Computing and Computer-Assisted Intervention"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Data-efficient and weakly supervised computational pathology on whole-slide images",
+      "authors": [
+        {
+          "first": "Ming Y",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Tiffany",
+          "middle": [
+            "Y"
+          ],
+          "last": "Drew Fk Williamson",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [
+            "J"
+          ],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Matteo",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Faisal",
+          "middle": [],
+          "last": "Barbieri",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mahmood",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Nature biomedical engineering"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Spectral normalization for generative adversarial networks",
+      "authors": [
+        {
+          "first": "Takeru",
+          "middle": [],
+          "last": "Miyato",
+          "suffix": ""
+        },
+        {
+          "first": "Toshiki",
+          "middle": [],
+          "last": "Kataoka",
+          "suffix": ""
+        },
+        {
+          "first": "Masanori",
+          "middle": [],
+          "last": "Koyama",
+          "suffix": ""
+        },
+        {
+          "first": "Yuichi",
+          "middle": [],
+          "last": "Yoshida",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "On spectral clustering: Analysis and an algorithm",
+      "authors": [
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Ng",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Jordan",
+          "suffix": ""
+        },
+        {
+          "first": "Yair",
+          "middle": [],
+          "last": "Weiss",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Multiple-instance learning for medical image and video analysis",
+      "authors": [
+        {
+          "first": "Gwenolé",
+          "middle": [],
+          "last": "Quellec",
+          "suffix": ""
+        },
+        {
+          "first": "Guy",
+          "middle": [],
+          "last": "Cazuguel",
+          "suffix": ""
+        },
+        {
+          "first": "Béatrice",
+          "middle": [],
+          "last": "Cochener",
+          "suffix": ""
+        },
+        {
+          "first": "Mathieu",
+          "middle": [],
+          "last": "Lamard",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "IEEE reviews in biomedical engineering"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Iib-mil: Integrated instance-level and bag-level multiple instances learning with label disambiguation for pathological image analysis",
+      "authors": [
+        {
+          "first": "Qin",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Bingzhe",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Sijie",
+          "middle": [],
+          "last": "Mai",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Yueshan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghong",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Junzhou",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Jianhua",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Medical Image Computing and Computer-Assisted Intervention"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Spatial statistics",
+      "authors": [
+        {
+          "first": "Brian D",
+          "middle": [],
+          "last": "Ripley",
+          "suffix": ""
+        }
+      ],
+      "year": 1981,
+      "venue": "Wiley Series in Probability and Statistics"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Learning with labeled and unlabeled data",
+      "authors": [
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Seeger",
+          "suffix": ""
+        }
+      ],
+      "year": 2000,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Transmil: Transformer based correlated multiple instance learning for whole slide image classification",
+      "authors": [
+        {
+          "first": "Zhuchen",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Bian",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yifeng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyang",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Self-learning for weakly supervised gleason grading of local patterns",
+      "authors": [
+        {
+          "first": "Julio",
+          "middle": [],
+          "last": "Silva-Rodriguez",
+          "suffix": ""
+        },
+        {
+          "first": "Adrián",
+          "middle": [],
+          "last": "Colomer",
+          "suffix": ""
+        },
+        {
+          "first": "Jose",
+          "middle": [],
+          "last": "Dolz",
+          "suffix": ""
+        },
+        {
+          "first": "Valery",
+          "middle": [],
+          "last": "Naranjo",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE journal of biomedical and health informatics"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Artificial intelligence for digital and computational pathology",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Andrew",
+          "suffix": ""
+        },
+        {
+          "first": "Guillaume",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Jaume",
+          "suffix": ""
+        },
+        {
+          "first": "Ming",
+          "middle": [
+            "Y"
+          ],
+          "last": "Drew Fk Williamson",
+          "suffix": ""
+        },
+        {
+          "first": "Anurag",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Tiffany",
+          "middle": [
+            "R"
+          ],
+          "last": "Vaidya",
+          "suffix": ""
+        },
+        {
+          "first": "Faisal",
+          "middle": [],
+          "last": "Miller",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mahmood",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Nature Reviews Bioengineering"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Analysis of 3D pathology samples using weakly supervised AI",
+      "authors": [
+        {
+          "first": "Andrew",
+          "middle": [
+            "H"
+          ],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Mane",
+          "middle": [],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "K"
+          ],
+          "last": "Drew",
+          "suffix": ""
+        },
+        {
+          "first": "Sarah",
+          "middle": [
+            "S L"
+          ],
+          "last": "Williamson",
+          "suffix": ""
+        },
+        {
+          "first": "Guillaume",
+          "middle": [],
+          "last": "Chow",
+          "suffix": ""
+        },
+        {
+          "first": "Gan",
+          "middle": [],
+          "last": "Jaume",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Bowen",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [
+            "S"
+          ],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Baras",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Serafin",
+          "suffix": ""
+        },
+        {
+          "first": "Michelle",
+          "middle": [
+            "R"
+          ],
+          "last": "Colling",
+          "suffix": ""
+        },
+        {
+          "first": "Xavier",
+          "middle": [],
+          "last": "Downes",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Farré",
+          "suffix": ""
+        },
+        {
+          "first": "Clare",
+          "middle": [],
+          "last": "Humphrey",
+          "suffix": ""
+        },
+        {
+          "first": "Lawrence",
+          "middle": [
+            "D"
+          ],
+          "last": "Verrill",
+          "suffix": ""
+        },
+        {
+          "first": "Anil",
+          "middle": [
+            "V"
+          ],
+          "last": "True",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [
+            "T C"
+          ],
+          "last": "Parwani",
+          "suffix": ""
+        },
+        {
+          "first": "Faisal",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mahmood",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Cell"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Combining attention-based multiple instance learning and gaussian processes for ct hemorrhage detection",
+      "authors": [
+        {
+          "first": "Yunan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Arne",
+          "middle": [],
+          "last": "Schmidt",
+          "suffix": ""
+        },
+        {
+          "first": "Enrique",
+          "middle": [],
+          "last": "Hernández-Sánchez",
+          "suffix": ""
+        },
+        {
+          "first": "Rafael",
+          "middle": [],
+          "last": "Molina",
+          "suffix": ""
+        },
+        {
+          "first": "Aggelos",
+          "middle": [
+            "K"
+          ],
+          "last": "Katsaggelos",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Medical Image Computing and Computer-Assisted Intervention"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Diagnose like a pathologist: Transformer-enabled hierarchical attention-guided multiple instance learning for whole slide image classification",
+      "authors": [
+        {
+          "first": "Conghao",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph Jy",
+          "middle": [],
+          "last": "Sung",
+          "suffix": ""
+        },
+        {
+          "first": "Irwin",
+          "middle": [],
+          "last": "King",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Barlow twins: Selfsupervised learning via redundancy reduction",
+      "authors": [
+        {
+          "first": "Jure",
+          "middle": [],
+          "last": "Zbontar",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Jing",
+          "suffix": ""
+        },
+        {
+          "first": "Ishan",
+          "middle": [],
+          "last": "Misra",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        },
+        {
+          "first": "Stéphane",
+          "middle": [],
+          "last": "Deny",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Dtfd-mil: Double-tier feature distillation multiple instance learning for histopathology whole slide image classification",
+      "authors": [
+        {
+          "first": "Hongrun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yanda",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Yitian",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Yihong",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoyun",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Sarah",
+          "middle": [
+            "E"
+          ],
+          "last": "Coupland",
+          "suffix": ""
+        },
+        {
+          "first": "Yalin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Setmil: spatial encoding transformer-based multiple instance learning for pathological image analysis",
+      "authors": [
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenyu",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Yidan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Junzhou",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Liansheng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jianhua",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Medical Image Computing and Computer-Assisted Intervention"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "A graph-transformer for whole slide image classification",
+      "authors": [
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Rushin",
+          "suffix": ""
+        },
+        {
+          "first": "Emily",
+          "middle": [
+            "J"
+          ],
+          "last": "Gindra",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "J"
+          ],
+          "last": "Green",
+          "suffix": ""
+        },
+        {
+          "first": "Margrit",
+          "middle": [],
+          "last": "Burks",
+          "suffix": ""
+        },
+        {
+          "first": "Jennifer",
+          "middle": [
+            "E"
+          ],
+          "last": "Betke",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Beane",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Vijaya",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kolachalama",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE transactions on medical imaging"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Regularization on discrete spaces",
+      "authors": [
+        {
+          "first": "Dengyong",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Bernhard",
+          "middle": [],
+          "last": "Schölkopf",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": "Joint Pattern Recognition Symposium"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Learning with local and global consistency",
+      "authors": [
+        {
+          "first": "Dengyong",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Olivier",
+          "middle": [],
+          "last": "Bousquet",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Lal",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Weston",
+          "suffix": ""
+        },
+        {
+          "first": "Bernhard",
+          "middle": [],
+          "last": "Schölkopf",
+          "suffix": ""
+        }
+      ],
+      "year": 2003,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "A review of deep learning in medical imaging: Imaging traits, technology trends, case studies with progress highlights, and future promises",
+      "authors": [
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Hayit",
+          "middle": [],
+          "last": "Greenspan",
+          "suffix": ""
+        },
+        {
+          "first": "Christos",
+          "middle": [],
+          "last": "Davatzikos",
+          "suffix": ""
+        },
+        {
+          "first": "Bram",
+          "middle": [],
+          "last": "James S Duncan",
+          "suffix": ""
+        },
+        {
+          "first": "Anant",
+          "middle": [],
+          "last": "Van Ginneken",
+          "suffix": ""
+        },
+        {
+          "first": "Jerry",
+          "middle": [
+            "L"
+          ],
+          "last": "Madabhushi",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Prince",
+          "suffix": ""
+        },
+        {
+          "first": "Ronald",
+          "middle": [
+            "M"
+          ],
+          "last": "Rueckert",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Summers",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE"
+    }
+  ]
+}

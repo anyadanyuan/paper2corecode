@@ -1,0 +1,3106 @@
+{
+  "paper_id": "ACT",
+  "title": "Unveiling and Harnessing Hidden Attention Sinks: Enhancing Large Language Models without Training through Attention Calibration",
+  "authors": [
+    {
+      "first": "Zhongzhi",
+      "middle": [],
+      "last": "Yu",
+      "affiliation": {}
+    },
+    {
+      "first": "Zheng",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {}
+    },
+    {
+      "first": "Yonggan",
+      "middle": [],
+      "last": "Fu",
+      "affiliation": {}
+    },
+    {
+      "first": "Huihong",
+      "middle": [],
+      "last": "Shi",
+      "affiliation": {}
+    },
+    {
+      "first": "Khalid",
+      "middle": [],
+      "last": "Shaikh",
+      "affiliation": {}
+    },
+    {
+      "first": "Celine",
+      "middle": [],
+      "last": "Lin",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "Attention is a fundamental component behind the remarkable achievements of large language models (LLMs). However, our current understanding of the attention mechanism, especially regarding how attention distributions are established, remains limited. Inspired by recent studies * Equal contribution 1 Georgia Institute of Technology. Correspondence to: Yingyan (Celine) Lin <celine.",
+  "body": {
+    "4._Unveil_and_Harness_Hidden_Attention_Sinks": "Overview. We aim to investigate the general existence of attention sinks and explore their impact on the reasoning and generation process of LLMs. To achieve this goal, we adopt a deductive approach by sequentially addressing three intriguing research questions outlined in Sec. 1: Firstly, we address Q1 to investigate whether attention sinks are limited to the initial token or if they persist in various locations, as discussed in Sec. 4.1. Secondly, we explore Q2 to shed light on the effects of these identified attention sinks on the achievable accuracy of LLMs, as discussed in Sec. 4.2. Finally, building upon the findings gained from Q1 and Q2, we address Q3 by developing the ACT to enhance the performance of LLMs in a training-free manner during inference, as discussed in Sec. 4.3. Unless otherwise specified, for the remainder of this section, our exploration is based on one of the SOTA LLMs, Llama2-7B-chat (Touvron et al., 2023b) . 4.1. Q1: Do attention sinks only exist in the initial token?\nThe attention sink has been observed at the initial token of LLMs (Xiao et al., 2023) . However, the presence and distribution of attention sinks in later tokens remain an open yet crucial question, especially considering that these tokens contain ample semantic information. Therefore, our objective is to investigate the overall existence of attention sinks that consistently draw significant attention across the entire input sequence.\nSettings. To address Q1, we first visualize two metrics:\n(1) the averaged attention maps across all heads and layers, denoted as (\nH h=1 L l=1 A l h )/(H • L)\n, on different datasets, and (2) the averaged attention maps of each layer, i.e., ( H h=1 A l h )/H), when processing a single input sample, as illustrated in Fig. 1 . Additional visualizations on various datasets and models can be found in Appendix C. To generalize these observations across a larger range of datasets, we first visualize the distribution of token-wise attention scores across different datasets to validate the significant gap between high-attention and normal tokens. We further determine that the i-th token has a significantly higher attention score if a l h [i] > α/N (i.e., more than α times the average attention score) and is considered an attention sink. Specifically, we set α = 5 based on our upcoming visualization in Fig. 2 unless otherwise specified. We summarize the frequency of tokens exhibiting significantly higher attention scores across all samples in a mixed dataset comprising 100 samples collected from each of the 18 datasets mentioned in Sec. 5.1.\nObservations. We can draw the following observations from Fig. 1 : Obs-(1) several tokens consistently attract significantly higher attention values than other tokens. Moreover, as visualized in Fig. 2 , the distribution of highattention tokens' attention values has a notable boundary with those of other tokens across different datasets, validating that the difference in attention scores between identified high-attention tokens and other tokens is significant; Obs-(2) as illustrated in Table 1 , aside from the initial token <S>, which corresponds exactly to the attention sink observed in StreamLLM (Xiao et al., 2023) , there also exist a nontrivial number of other attention sinks that contain limited semantic information (e.g., \".\", \":\", and \"< 0x0A >\"), yet frequently draw significantly higher attention scores at vari- ous locations; and Obs-(3) attention sinks often manifest in the intermediate layers of LLMs, while the first two layers exhibit more evenly distributed attention scores, and the final layer focuses more on local information with diagonal attention patterns.\nOur answer to Q1. In complement to the observations made in StreamLLM, we conclude that attention sinks are found not only in the initial token but also in later tokens, particularly during the intermediate layers of LLMs.",
+    "2.1._Large_language_models": "Transformer-based language models (Vaswani et al., 2017; Devlin et al., 2018; Raffel et al., 2020; Roberts et al., 2022) have demonstrated their remarkable ability to effectively extract relationships among tokens from complex input sequences, thanks to the utilization of the attention mechanism in their model architecture. Furthermore, their attentioncentric design enables decent scalability (Qin et al., 2023; Kaplan et al., 2020; Biderman et al., 2023) : as the model size and pretraining dataset scale increase, the performance of transformer-based language models continues to improve. This phenomenon has given rise to the emergence of LLMs.\nOne of the earliest impressive LLMs is GPT-3 (Brown et al., 2020) , which showcases remarkable zero-shot and fewshot in-context learning capabilities. This achievement has further fueled the development of various LLMs, such as OPT (Zhang et al., 2022) , Llama (Touvron et al., 2023a) , Llama2 (Touvron et al., 2023b) , BLOOM (Workshop et al., 2022) , GPT-J (Wang & Komatsuzaki, 2021) , Pythia (Biderman et al., 2023) , and GLM (Du et al., 2021) . These models have further pushed the boundaries of deep learning, gradually moving us toward achieving artificial general intelligence.",
+    "6._Conclusion": "In this paper, we conduct comprehensive visualizations of the attention distributions in LLMs during inference across various inputs and tasks. Based on these visualizations, for the first time, we discover that (1) attention sinks occur not only at the start of sequences but also within later tokens of the input, and (2) not all attention sinks have a positive impact on the achievable accuracy of LLMs. Building upon our findings, we propose a training-free technique, dubbed ACT, that automatically optimizes the attention distributions on the fly during inference in an input-adaptive manner. Extensive experiments validate that ACT consistently enhances the accuracy of various LLMs across different applications.",
+    "5.2._Enhancing_LLM_accuracy_with_ACT": "Domain-specific multiple choice. We first validate ACT on a set of commonly used domain-specific multiplechoice datasets under different settings as shown in Table 2. ACT on average achieves an accuracy improvement of 0.30%∼7.30% across different models and numbers of shots. The accuracy improvement can be as high as 13.26% on a single dataset (i.e., leveraging ACT to boost Llama-30B on Hellaswag (Zellers et al., 2019) under the zero-shot setting), and applying ACT for PIQA (Bisk et al., 2020) under a zero-shot setting can achieve a 1.96% higher accuracy than the vanilla inference baseline under the 5-shot in-context learning setting. Moreover, it is worth noticing that ACT has a strong ability to adapt to different evaluation settings. Specifically, although ACT only performs head filtering using samples with a zero-shot setting, ACT not only achieves average accuracy improvements of 1.72% and 2.61% when applied to Llama2-7B-chat and Llama2-13B-chat under the zero-shot setting, respectively, but also achieves average accuracy improvements of 1.26%, 0.66%, and 0.65% when enhancing the two models under 1/3/5-shots, respectively.\nTo further validate ACT's versatility and effectiveness in enhancing the performance of different types of LLMs, we apply ACT to four different kinds of LLMs including Llama2-7B-chat (Touvron et al., 2023b) , GPT-J-6B (Wang & Komatsuzaki, 2021) , OPT-2.7B (Zhang et al., 2022) , and Vicuna-7B (Chiang et al., 2023) , and evaluate their achieved accuracy on the representative MMLU dataset (Hendrycks et al., 2020) . As shown in Table 3 , despite different model se- Text classification. We further validate ACT on a set of text classification datasets under different numbers of shots and across Llama2-7B/13B-chat as shown in Table 4 . ACT shows consistent accuracy improvement over the vanilla inference baseline across different numbers of shots, datasets, and models. Under the zero-shot setting, ACT achieves average accuracy improvements of 1.29%, 3.16%, 0.74%, and 5.12% for Llama2-7B-chat, Llama2-13B-chat, Mistral-7B, and Llama-30B, respectively. Remarkably, the application of ACT leads to a peak accuracy improvement of 16.16% when boosting the Llama-30B model on the AG-News dataset (Zhang et al., 2015) under the zero-shot condition. This set of experiments further validates the robustness of ACT in transferring between different validation scenarios. Despite its primary application of head filtering in the zero-shot scenario, ACT not only procures average accuracy improvements of 1.29% and 3.16% with the Llama2-7B-chat and Llama2-13B-chat models, respectively, under zero-shot conditions, but also facilitates average accuracy gains of 1.38%, 1.43%, and 0.58% across 1-shot, 3-shot, and 5-shot settings for the Llama2-7B-chat. Similarly, for the Llama2-13B-chat model, ACT achieves average accuracy enhancements of 1.37%, 1.21%, and 0.64% across the 1-shot, 3-shot, and 5-shot configurations, respectively.",
+    "3._Preliminaries": "LLMs and multi-head attention. LLMs (Touvron et al., 2023a; Brown et al., 2020; OpenAI, 2023b) are typically constructed by stacking L transformer blocks, each comprising a feed-forward network (FFN) and a multi-head attention (MHA) module that captures the pairwise relationships among all N input tokens in the input sequence. Specifically, for a given input X l ∈ R N ×d to the l-th block, the output feature F l h ∈ R N ×d generated at head h can be represented as:\nEQUATION\nwhere f l Q , f l K , and f l V are projection layers, d k = d/h is the embedding dimension of each head, and A l h ∈ R N ×N is the attention map generated at head h. Each element A l h [i, j] represents the relationship between the i-th and j-th tokens in X l . The attention score is defined as\na l h = [ i j=1 A l h [i, j]/i, ∀i ∈ {1, • • • , N }]\n, and a l h [i] denotes the attention score for the i-th token at head h, layer l.\nNext, the features F l h of each head h are combined to generate the output O l of MHA by\nEQUATION\nwhere f l O represents a projection layer. In the remainder of this paper, we primarily utilize the distribution of A l h generated by various inputs X l for all h and l within the LLM as the key knob to address the three research questions outlined in Sec. 1.\nStreamLLM and the attention sink. StreamLLM (Xiao et al., 2023) identifies the presence of an attention sink, which is a token that receives a significantly higher attention score than other tokens but provides limited semantic information. StreamLLM observes that the attention sink only exists in the initial token and suggests always preserving these tokens when processing long input sequences to prevent forgetting.",
+    "2.2._Parameter-efficient_tuning": "Despite the promising zero-shot and few-shot capabilities of LLMs, one common approach to achieving strong performance in real-world applications is to finetune pretrained LLMs for downstream tasks. However, the enormous size of LLMs makes traditional weight tuning computationally expensive, requiring significant storage and memory overhead.\nTo address this challenge, various parameter-efficient tuning (PET) methods have been proposed (Hu et al., 2021; Lester et al., 2021; Zhang et al., 2020; Sung et al., 2022; Yu et al., 2023a; Fu et al., 2022) . Specifically, instead of updating all parameters in the target LLM, PET selectively updates a small set of learnable modules during finetuning (Qi et al., 2023; Xia et al., 2024; Zhao et al., 2024; Yu et al., 2023b; 2024; Zhang et al., 2023a; Li et al., 2023) . While PET methods can reduce computational, storage, and memory overheads, even state-of-the-art (SOTA) PET methods still face challenges in efficiently finetuning LLMs (Dettmers et al., 2023) . Our proposed method is orthogonal to PET: we aim to enhance the performance of LLMs by directly optimizing attention distributions on the fly during inference, eliminating the need for weight finetuning.",
+    "5.3._Ablation_studies": "Ways to calibrate attention. We further validate whether our answers to Q2 in Sec. 4.2 and Q3 in Sec. 4.3 is correct. Specifically, we assess whether reducing the attention score at attention sinks helps improve LLM performance. To this end, we evaluate the performance of our method against three other methods: (1) Temp, which directly applies a temperature θ = 1.1 to all tokens except the attention sink at the initial token;\n(2) Inv-temp, similar to temp but with θ = 1/1.1; and (3) Inv-ours, the inverse process of our proposed method, which reduces the attention value of other tokens and redistributes it to the attention sink. As shown in Table 6 : (1) Our method achieves better results on MMLU compared to Temp. We attribute this improvement to our method's superior ability to preserve the original attention distribution across other tokens. (2) Inv-temp and inv-ours perform worse than temp and our method, respectively, on MMLU, indicating the importance of reducing the attention values of attention sinks in the middle part of the input.\nWays to distribute the additional attention. After reducing the excessive attention value at attention sinks, how to distribute them across other tokens is an important question. Considering that the input of the multiple-choice dataset MMLU consists of a question and a set of choices, we evaluate three different ways to distribute the additional attention on MMLU: (1) uniform, where we uniformly distribute the additional attention across all tokens;\n(2) question-only, where we apply the additional attention only to the tokens corresponding to the questions; and (3) choice-only, where we apply the additional attention only to the tokens corresponding to the provided choices. As shown in Table 7 , we observe that distributing attention to all tokens (i.e., uniform and our method) is important for preserving performance.\nWe suspect this is because drastically changing the attention distribution across too many tokens should be avoided.\nα selection. α defines the criteria of attention sink in ACT.\nIn this paper, we empirically set α = 5 based on the visualization of the attention score distribution across different tokens, as shown in Fig. 2 . To better understand the robustness of ACT across different selections of α, we test ACT under the zero-shot setting with Llama2-7B-chat using various values of α. As shown in Table 8 , despite different selections of α, ACT consistently achieves similar performance with a steady 1.24%∼1.29% higher average accuracy than the vanilla Llama2-7B-chat baseline. This demonstrates that the attention sinks identified in our work have distinct values compared to other non-attention sink tokens, and thus, the selection of α plays a minor role in the performance of ACT.\nβ selection. β determines how drastically we want to reduce the attention sinks that occur in the middle of the input.\nIn this paper, we set β = 0.4, but we want to explore the impact of β selection on the final achieved accuracy on MMLU with Llama2-7B-chat. As shown in Table 9 , despite different selections of β result in varied accuracies, they all achieve better accuracies than the vanilla inference baseline, showing ACT is robust to different hyperparameter selections.\nSize of C. We ablate the appropriate size of ∥C∥, which controls nearly the only source of overhead in ACT. We ablate different selections of ∥C∥ by sampling different numbers of samples in each D q ∈ Q (i.e., ∥C∥/Q) and evaluating their achieved accuracy on the MMLU dataset using Llama2-7Bchat. As shown in Table 10 , a larger C helps with ACT's performance, but when ∥C∥/Q scales up to around 1000 (e.g., more than 10 times smaller than the validation dataset), the further performance improvement is marginal.",
+    "4.3._Q3:_Can_we_enhance_LLMs'_accuracy_by_solely_manipulating_attention_sinks_without_finetuning?": "The observations in Sec. 4.2 highlight the potential for enhancing LLMs' achievable accuracy by simply calibrating attention sinks in specific heads, even without fine-tuning. This introduces a new design parameter for improving LLMs' accuracy. However, the challenge lies in identifying the heads that require calibration, especially given that improperly reducing attention sinks in certain heads can significantly degrade LLMs' accuracy. Therefore, the remaining research question pertains to developing a technique that can automatically identify and calibrate attention sinks in the appropriate heads to enhance LLM accuracy. Our solution to addressing Q3. To enhance LLMs' accuracy without the need for finetuning, by directly optimizing attention sinks, we introduce an effective and low-cost attention calibration technique, dubbed ACT. ACT first filters out the heads that need to preserve all the corresponding attention sinks they process offline and then calibrates the attention in the remaining heads during inference.\nSpecifically, in the first head filtering step, we aim to determine the set of attention heads that need to preserve all the processed attention sinks, meaning that these heads should not undergo any attention calibration during inference. This filtering process can be formally described as follows: For each task T = {D 1 , • • • , D Q }, consisting of Q different datasets, we initially create a small held-out dataset C by uniformly sampling data samples from each dataset D q ∈ T , ensuring that ∥C ∩ D q ∥ = M, ∀D q ∈ T (i.e., each dataset D q has M samples in C). Next, we execute the attention calibration steps as proposed in Sec. 4.2, individually on each attention head, and evaluate the resulting performance on the held-out dataset C. Finally, we can identify a set of heads H that can enhance the accuracy of the target LLM after the calibration process.\nIn the second attention calibration step, we calibrate all a l h [t] ∀(l, h) ∈ H on the fly during inference in an inputadaptive manner, leveraging the proposed attention calibration steps in Sec. 4.2 to reduce excessive attention at attention sinks.",
+    "5.1._Evaluation_settings": "Models, tasks, and datasets. Models: We evaluate ACT on seven models, including Llama2-7B/13B-chat (Tou- (Jiang et al., 2023) , Llama-30B (Touvron et al., 2023a) , GPT-J-6B (Wang & Komatsuzaki, 2021) , OPT-2.7B (Zhang et al., 2022) , and Vicuna-7B (Chiang et al., 2023) . Tasks and datasets: To provide a thorough evaluation of ACT, we benchmark ACT on three types of commonly used tasks with 18 different datasets, including Hellaswag (Zellers et al., 2019) , ARCE (Clark et al., 2018) , PIQA (Bisk et al., 2020) , OB (Mihaylov et al., 2018) , ARCC (Clark et al., 2018) , COPA (Wang et al., 2019) , CQA (Talmor et al., 2018) , and MMLU (Hendrycks et al., 2020) for domain-specific multiple-choice; SST2 (Socher et al., 2013) , SST5 (Socher et al., 2013) , MR (Pang & Lee, 2005) , AGNews (Zhang et al., 2015) , TREC (Voorhees & Tice, 2000) , CB (De Marneffe et al., 2019), and BoolQ (Clark et al., 2019a ) for text classification; and MT-Bench (Zheng et al., 2024) , SQuADv1 (Rajpurkar et al., 2016) , and SQuADv2 (Rajpurkar et al., 2018) for open-ended question answering. Baselines and evaluation metrics. Baselines: We benchmark ACT against the vanilla inference baseline under different shot settings, including zero-shot and 1/3/5-shot incontext learning as the baseline settings. Evaluation metrics: We use accuracy as the metric for domain-specific multiple choice and text classification tasks, and F1 score with exact match score for the open-ended question-answering task.\nImplementation details. We implement our ACT framework on top of PyTorch and Huggingface. For all datasets, we use the standard prompting template provided in (Ouyang et al., 2022; Sanh et al., 2021; Hao et al., 2022) .\nDetailed prompts we used can be found in Appendix B. In all our experiments, unless otherwise specified, we use β = 0.4 and ∥C∥ = 1000×Q, which is less than 10% of the size of the validation datasets. During head filtering, regardless of the number of shots we evaluate, we only perform head filtering with samples using zero-shot prompts.",
+    "5.4._Attention_map_visualization_before_and_after_ACT": "To better understand the role of our proposed ACT in reducing the excessive attention at attention sinks in the middle of inputs, we further visualize the attention map of Llama2-7B-chat before and after performing ACT with the same input sample. As shown in Fig. 4 , after performing ACT, the original attention sink that occurs in the middle of the input sequence is almost eliminated, while the attention distribution of other tokens remains the same.",
+    "4.2._Q2:_Will_preserving_attention_sinks_always_benefit": "LLMs' accuracy in different scenarios?\nConsidering that the newly identified attention sinks in later tokens, with their substantial attention values, divert a significant portion of attention away from other non-attentionsink tokens, it is imperative to investigate the impact of this notable diversion on the reasoning and generation capabilities of LLMs. While StreamLLM (Xiao et al., 2023) suggests preserving the attention sink of the initial token, it remains unclear whether preserving later attention sinks also enhances the accuracy of LLMs. Therefore, in this subsection, we delve into the impact of attention sinks on LLMs' accuracy in downstream tasks.\nSettings. We make a heuristic attempt to verify the influence of attention sinks by decreasing the attention scores of each attention head associated with attention sinks and examining whether this can enhance the accuracy achieved by LLMs on the MMLU dataset (Hendrycks et al., 2020) . Taking into account the various layer-wise attention patterns discussed in Sec. 4.1-Obs-(3), we only apply this operation to attention heads between the third layer and the second-to-last layer.\nTo effectively reduce the attention scores of attention sink tokens and leverage the reduced attention scores to improve the achievable performance of the target LLM by distribut-ing them across other tokens, we propose a simple calibration technique comprising three steps:\n1. Identify a set of attention sink tokens S l h = {t ∈ {1, • • • , T } | a l h [t] > α • 1/N }, where α = 5 by default.\n2. Reduce the attention scores of attention sinks located in later tokens by setting Âl h [k, s] = A l h [k, s] × β for all s ∈ S l h for each row k in the attention map A l h , where β is a hyperparameter controlling the extent to which we want to eliminate the excessive attention scores of attention sinks.\n3. To leverage the reduced attention scores, we propose to maintain the target LLM's original attention distribution to preserve token-wise relationships while slightly increasing the attention scores to enforce greater focus on the semantic information of non-attention sink tokens by setting\nÂl h [k, s] = A l h [k, t] + ( s∈S l h Âl h [k, s] -A l h [k, s]) × A l h [k, t] i∈1,••• ,T -S l h\nA l h [k, i] for all s / ∈ S l h , which ensures that the sum of each row k remains one.\nObservations. As demonstrated in Fig. 3 , we can make two observations: Obs-(1) despite the simplicity of the calibration technique we propose, in more than 76.8% of cases, the LLM after attention calibration can achieve better accuracy compared to the vanilla inference baseline; and Obs-(2) not all heads can benefit from the calibration, for instance, calibrating certain heads can result in an accuracy drop as significant as 0.39%.\nOur answer to Q2. In contrast to the observation made in StreamLLM (Xiao et al., 2023) that suggests preserving attention sinks to enhance LLMs' achievable accuracy, we highlight that not all attention sinks are beneficial for LLMs. Specifically, for the majority of attention sinks occurring in the middle or later parts of inputs, reducing their attention scores can result in improved accuracy. We suspect this is because frequently occurring attention sinks excessively divert attention and reducing them can effectively allocate more attention to tokens with richer semantic information.",
+    "1._Introduction": "In recent days, large language models (LLMs) have garnered significant attention due to their impressive performance across a wide range of tasks (Touvron et al., 2023a; b; Ope-nAI, 2023a; Waisberg et al., 2023; Fu et al., 2023; OpenAI, 2023b) . One of the key components contributing to the remarkable performance of LLMs is the attention mechanism, which effectively identifies relationships among tokens in a sequence. This ability enables LLMs to comprehend intricate contexts and details, greatly enhancing their capacity to process and generate text that closely resembles human language (Vaswani et al., 2017; Radford et al., 2018) . However, despite the immense potential of the attention mechanism, our current understanding of how attention distributions are established and their relationship to the achievable performance of LLMs remains inadequately explored.\nAlong this direction, a pioneering study, StreamLLM (Xiao et al., 2023) , has undertaken an initial investigation and improved our understanding of attention distributions by uncovering the existence of attention sinks. In particular, they find that the initial token of an input text receives a disproportionately large attention score, despite often lacking semantic significance. This phenomenon arises from the visibility of the initial token to almost all subsequent tokens in autoregressive language modeling, causing them to become the recipients of these \"unnecessary\" attention values. Motivated by the impact of attention sinks on attention distributions, we aim to delve deeper into their general existence to gain a better understanding of how they affect LLMs' reasoning and generation capabilities. This, in turn, will inspire new strategies to enhance the achievable accuracy of LLMs. To achieve this goal, we pose the following three intriguing research questions: Q1: Does an attention sink only exist in the initial token? Q2: Will preserving attention sinks always benefit LLMs' accuracy in different scenarios? Q3: Can we enhance LLMs' accuracy by solely manipulating attention sinks without any weight finetuning?\nIn our endeavor to address the aforementioned three questions, we make the following contributions:\n• We conduct comprehensive visualizations of the attention distributions in LLMs across a variety of tasks and inputs. To the best of our knowledge, we are the first to discover that attention sinks manifest not only in the initial token but also within subsequent tokens throughout the input context. Intriguingly, similar to the attention sink observed in the initial token by (Xiao et al., 2023) , attention sinks in later tokens also tend to be concentrated on tokens of less semantic importance.\n• Excited by the above observation, we further probe into the relationship between attention sinks at different locations and the accuracy of the generated content at those respective locations. Interestingly, we discover that not all attention sinks have a positive impact on maintaining LLMs' performance, which complements the findings in (Xiao et al., 2023) .\n• Leveraging the findings above, we have developed a training-free Attention Calibration Technique, named ACT, that automatically optimizes attention distributions on the fly during inference in an input-adaptive manner, improving the achievable accuracy of pretrained LLMs on downstream tasks. Additionally, it can even lead to a comparable accuracy as compared to the commonly used in-context learning technique, and further be combined with the latter for boosted accuracy. As such, our ACT has provided an alternative new design knob for LLM enhancement.\n• Extensive experiments and ablation studies validate that our proposed method can achieve up to a 7.30% higher accuracy than the vanilla inference baseline across various tasks. Furthermore, ACT is capable of improving LLMs' performance in challenging multiround conversation tasks. Specifically, applying ACT to different variants of Llama2 boosts the achievable score by up to 0.13 on the challenging MT-Bench dataset.",
+    "2.3._Observations_regarding_LLMs'_attention": "Despite being one of the key components of LLMs, the understanding of the attention mechanism has been slow to evolve compared to the rapid advancement of LLMs themselves. Early works focus on studying attention in small-scale transformers. For instance, (Clark et al., 2019b) visualizes specific types of attention patterns in pretrained BERT (Devlin et al., 2018) , and (Vig, 2019) identifies biases and localized relevant attention heads. Additionally, (Sun & Lu, 2020) discovers that the degree of association between a word token and a class label affects their attention score. However, the exploration of the unique attention distribution in LLMs with larger model sizes and datasets is still in its infancy. Along this trajectory, some pioneering works have made interesting observations related to the attention mechanism in LLMs. For instance, (Kou et al., 2023) finds that the attention distribution in LLMs differs from that in humans, and (Zhang et al., 2023b) observes that increasing the attention score of manually defined tokens at specific heads can improve LLMs' ability to follow instructions. However, determining the relationship between attention distributions and the achievable performance of LLMs, as well as automating the enhancement of LLMs' performance by calibrating attention distributions during inference, still remain open challenges. "
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Pythia: A suite for analyzing large language models across training and scaling",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Biderman",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Schoelkopf",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [
+            "G"
+          ],
+          "last": "Anthony",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Bradley",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "O'brien",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hallahan",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "A"
+          ],
+          "last": "Khan",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Purohit",
+          "suffix": ""
+        },
+        {
+          "first": "U",
+          "middle": [
+            "S"
+          ],
+          "last": "Prashanth",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Raff",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Piqa: Reasoning about physical commonsense in natural language",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bisk",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Zellers",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Language models are few-shot learners",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Ryder",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Subbiah",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "D"
+          ],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Neelakantan",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Shyam",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "An open-source chatbot impressing gpt-4 with 90%* chatgpt quality",
+      "authors": [
+        {
+          "first": "W.-L",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "E"
+          ],
+          "last": "Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Stoica",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "P"
+          ],
+          "last": "Xing",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Vicuna",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Exploring the surprising difficulty of natural yes/no questions",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "M.-W",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Kwiatkowski",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Collins",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Toutanova",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Boolq",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "What does bert look at? an analysis of bert's attention",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "U",
+          "middle": [],
+          "last": "Khandelwal",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Think you have solved question answering? try arc, the ai2 reasoning challenge",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Cowhey",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Etzioni",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Khot",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sabharwal",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Schoenick",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Tafjord",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "The commitmentbank: Investigating projection in naturally occurring discourse",
+      "authors": [
+        {
+          "first": "M.-C",
+          "middle": [],
+          "last": "De Marneffe",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Simons",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tonhauser",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "proceedings of Sinn und Bedeutung"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Efficient finetuning of quantized llms",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Dettmers",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Pagnoni",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Holtzman",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Qlora",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Pre-training of deep bidirectional transformers for language understanding",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Devlin",
+          "suffix": ""
+        },
+        {
+          "first": "M.-W",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Toutanova",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bert",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "General language model pretraining with autoregressive blank infilling",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Qian",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Glm",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Losses can be blessings: Routing selfsupervised speech representations towards efficient multilingual and multitask speech processing",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Qian",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "C.-I",
+          "middle": [
+            "J"
+          ],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Gpt4aigchip: Towards next-generation ai accelerator design automation via large language models",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Wan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "C"
+          ],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE/ACM International Conference on Computer Aided Design (ICCAD)"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Structured prompting: Scaling in-context learning to 1,000 examples",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Hao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Measuring massive multitask language understanding",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Burns",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Basart",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Mazeika",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Low-rank adaptation of large language models",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [
+            "J"
+          ],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Wallis",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Allen-Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Lora",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Mistral 7b",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "Q"
+          ],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sablayrolles",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mensch",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Bamford",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "S"
+          ],
+          "last": "Chaplot",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "D"
+          ],
+          "last": "Casas",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Bressand",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Lengyel",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Lample",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Saulnier",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Scaling laws for neural language models",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Mccandlish",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "B"
+          ],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Chess",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Child",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gray",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Is model attention aligned with human attention? an empirical study on large language models for code generation",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Kou",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "The power of scale for parameter-efficient prompt tuning",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Lester",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Al-Rfou",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Constant",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Loftq: Lora-fine-tuning-aware quantization for large language models",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Karampatziakis",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Can a suit of armor conduct electricity? a new dataset for open book question answering",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Mihaylov",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Khot",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sabharwal",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Chatgpt: Language model for dialogue generation",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Openai",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Training language models to follow instructions with human feedback",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Almeida",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Wainwright",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Slama",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ray",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Seeing stars: Exploiting class relationships for sentiment categorization with respect to rating scales",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Pillow: Enhancing efficient instruction fine-tuning via prompt matching",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Qu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Scaling transnormer to 175 billion parameters",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Lv",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Improving language understanding by generative pre-training",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Narasimhan",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Exploring the limits of transfer learning with a unified text-to-text transformer",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Raffel",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Roberts",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Narang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Matena",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "J"
+          ],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF29",
+      "title": ",000+ questions for machine comprehension of text",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Rajpurkar",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lopyrev",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Squad",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Know what you don't know: Unanswerable questions for squad",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Rajpurkar",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Scaling up models and data with t5x and seqio",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Roberts",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "W"
+          ],
+          "last": "Chung",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Levskaya",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Andor",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Narang",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Lester",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Gaffney",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mohiuddin",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Hawthorne",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lewkowycz",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Salcianu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Van Zee",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Austin",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Goodman",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "B"
+          ],
+          "last": "Soares",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Tsvyashchenko",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Chowdhery",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bastings",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bulian",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Garcia",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ni",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Kenealy",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "H"
+          ],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Garrette",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lee-Thorp",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Raffel",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ritter",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Bosma",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Passos",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Maitin-Shepard",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Fiedel",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Omernick",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Saeta",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Sepassi",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Spiridonov",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Newlan",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gesmundo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Multitask prompted training enables zero-shot task generalization",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Sanh",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Webson",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Raffel",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "H"
+          ],
+          "last": "Bach",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Sutawika",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Alyafeai",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Chaffin",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Stiegler",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "L"
+          ],
+          "last": "Scao",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Raja",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Recursive deep models for semantic compositionality over a sentiment treebank",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Perelygin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Chuang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "Y"
+          ],
+          "last": "Ng",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Potts",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Proceedings of the 2013 conference on empirical methods in natural language processing"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Understanding attention for text classification",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Lst: Ladder side-tuning for parameter and memory efficient transfer learning",
+      "authors": [
+        {
+          "first": "Y.-L",
+          "middle": [],
+          "last": "Sung",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Cho",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Bansal",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Commonsenseqa: A question answering challenge targeting commonsense knowledge",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Talmor",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Herzig",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Lourie",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Berant",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Llama: Open and efficient foundation language models",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Lavril",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Izacard",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Martinet",
+          "suffix": ""
+        },
+        {
+          "first": "M.-A",
+          "middle": [],
+          "last": "Lachaux",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Lacroix",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Rozière",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hambro",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Azhar",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Llama 2: Open foundation and fine-tuned chat models",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Albert",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Almahairi",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Babaei",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Bashlykov",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bhargava",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bhosale",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Ł",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "A multiscale visualization of attention in the transformer model",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Vig",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Building a question answering test collection",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [
+            "M"
+          ],
+          "last": "Voorhees",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "M"
+          ],
+          "last": "Tice",
+          "suffix": ""
+        }
+      ],
+      "year": 2000,
+      "venue": "Proceedings of the 23rd annual international ACM SIGIR conference on Research and development in information retrieval"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Google's ai chatbot \"bard\": a side-by-side comparison with chatgpt and its utilization in ophthalmology",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Waisberg",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ong",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Masalkhi",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Zaman",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sarker",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "G"
+          ],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Tavakkoli",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Eye"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Superglue: A stickier benchmark for general-purpose language understanding systems",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Pruksachatkun",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Nangia",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Michael",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Hill",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bowman",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Gpt-j-6b: A 6 billion parameter autoregressive language model",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Komatsuzaki",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Bloom: A 176b-parameter open-access multilingual language model",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Workshop",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "L"
+          ],
+          "last": "Scao",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Akiki",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Pavlick",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ilić",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Hesslow",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Castagné",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "S"
+          ],
+          "last": "Luccioni",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Yvon",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Chain of lora: Efficient finetuning of language models via residual learning",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hazan",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Efficient streaming language models with attention sinks",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Hintaug: Drawing hints from foundation vision transformers towards boosted few-shot parameter-efficient tuning",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "C"
+          ],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Master-asr: achieving multilingual scalability and low-resource adaptation in asr with modular learning",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Qian",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Wan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "C"
+          ],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Edge-llm: Enabling efficient large language model adaptation on edge devices via unified compression and adaptive layer voting",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "R"
+          ],
+          "last": "Bommu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "K"
+          ],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "C"
+          ],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Can a machine really finish your sentence",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Zellers",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Holtzman",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bisk",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hellaswag",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Side-tuning: a baseline for network adaptation via additive side networks",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "O"
+          ],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sax",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zamir",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Guibas",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Malik",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Computer Vision-ECCV 2020: 16th European Conference"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Lora-fa: Memory-efficient low-rank adaptation for large language models fine-tuning",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Tell your model where to attend: Post-hoc attention steering for llms",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Opt: Open pre-trained transformer language models",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Roller",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Artetxe",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Dewan",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Diab",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [
+            "V"
+          ],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Character-level convolutional networks for text classification",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Apt: Adaptive pruning and tuning pretrained language models for efficient training and inference",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Hajishirzi",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Judging llm-as-a-judge with mt-bench and chatbot arena",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "W.-L",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Xing",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Judging llm-as-a-judge with mt-bench and chatbot arena",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "W.-L",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Xing",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    }
+  ]
+}

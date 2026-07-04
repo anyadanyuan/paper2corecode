@@ -1,0 +1,2577 @@
+{
+  "paper_id": "openchat",
+  "title": "OPENCHAT: ADVANCING OPEN-SOURCE LANGUAGE MODELS WITH MIXED-QUALITY DATA",
+  "authors": [
+    {
+      "first": "Guan",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Tsinghua University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Sijie",
+      "middle": [],
+      "last": "Cheng",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Tsinghua University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Xianyuan",
+      "middle": [],
+      "last": "Zhan",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Tsinghua University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Xiangang",
+      "middle": [],
+      "last": "Li",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "AI",
+        "location": {
+          "addrLine": "01"
+        }
+      }
+    },
+    {
+      "first": "Sen",
+      "middle": [],
+      "last": "Song",
+      "affiliation": {
+        "laboratory": "Laboratory of Brain and Intelligence",
+        "institution": "Tsinghua University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yang",
+      "middle": [],
+      "last": "Liu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Tsinghua University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Nowadays, open-source large language models like LLaMA have emerged. Recent developments have incorporated supervised fine-tuning (SFT) and reinforcement learning fine-tuning (RLFT) to align these models with human goals. However, SFT methods treat all training data with mixed quality equally, while RLFT methods require high-quality pairwise or ranking-based preference data. In this study, we present a novel framework, named OpenChat, to advance open-source language models with mixed-quality data. Specifically, we consider the general SFT training data, consisting of a small amount of expert data mixed with a large proportion of sub-optimal data, without any preference labels. We propose the C(onditioned)-RLFT, which regards different data sources as coarse-grained reward labels and learns a class-conditioned policy to leverage complementary data quality information. Interestingly, the optimal policy in C-RLFT can be easily solved through single-stage, RL-free supervised learning, which is lightweight and avoids costly human preference labeling. Through extensive experiments on three standard benchmarks, our openchat-13b fine-tuned with C-RLFT achieves the highest average performance among all 13b open-source language models. Moreover, we use AGIEval to validate the model generalization performance, in which only openchat-13b surpasses the base model. Finally, we conduct a series of analyses to shed light on the effectiveness and robustness of OpenChat. Our code, data, and models are publicly available at https://github.",
+  "body": {
+    "1_INTRODUCTION": "Recently, there have been notable advancements in Large Language Models (LLMs), such as GPT-4 (OpenAI, 2023) and Chinchilla (Hoffmann et al., 2022) , demonstrating impressive performance in various downstream natural language processing (NLP) tasks (Zhao et al., 2023) . Despite the remarkable success of GPT-4, the specific techniques employed in its development remain shrouded in mystery. To gain a deeper understanding of the underlying technical aspects and to promote the widespread adoption of LLMs, a series of open-source base language models have emerged, especially LLaMA (Touvron et al., 2023a) and Llama 2 (Touvron et al., 2023b) . Building upon the released base language models, there are typically two methods to align these base models to specific abilities, including supervised fine-tuning (SFT) and reinforcement learning fine-tuning (RLFT).\nThe first line of methods (Chiang et al., 2023; Taori et al., 2023) use SFT to enhance instruction following abilities. Most existing methods primarily focus on designing SFT datasets. Some studies (Chiang et al., 2023; Geng et al., 2023) collect user-shared conversations as well as human feedback datasets from the public web, while others (Xu et al., 2023a; Ding et al., 2023) develop frameworks for automatically gathering extensive open-domain instructions spanning various difficulty levels. However, these constructed SFT datasets are generally mixed with limited expert data Figure 1 : Our proposed framework OpenChat with Conditioned-RLFT to advance the open-source language model fine-tuning with mixed-quality data, comparing to previous supervised fine-tuning (SFT) method and reinforcement learning fine-tuning (RLFT) method. MLE and RL denote maximum likelihood estimates and reinforcement learning, respectively. and a large proportion of sub-optimal data due to the high cost of human labor and API requests. Naturally, it is not advisable to indiscriminately feed all these mixed conversations to the base model, as the low-quality data are likely to negatively impact learning (Zhou et al., 2023; Xu et al., 2022) . However, this is largely neglected in previous methods, which often treat all training data equally.\nTo allow LLMs to go beyond modeling the training data distribution, recent LLMs (OpenAI, 2023; Touvron et al., 2023b) adopt RLFT to align better with the human desired behaviors, especially API-based models. The well-known reinforcement learning from human feedback (RLHF) method (Ouyang et al., 2022; Christiano et al., 2017; Bai et al., 2022b) first collects plenty of highquality preference feedback from human annotators to fit one or multiple reward models (typically also trained based on smaller LLMs), and then uses RL to maximize the estimated reward. The involvement of learning and optimizing with extra reward models using RL brings considerable computational and stability issues. Some recent studies (Rafailov et al., 2023; Yuan et al., 2023) partly address this problem by avoiding fitting the reward model and fusing preference modeling and LLM fine-tuning into a single-stage training process. However, all existing RLHF methods require highquality pairwise or ranking-based preference data for preference modeling, which inevitably require expensive human expert annotations (Casper et al., 2023) .\nTo address the aforementioned limitations, we propose a new framework, named OpenChat, to advance the open-source language model fine-tuning with mixed-quality data as shown in Fig. 1 . Here, we consider the general non-pairwise (nor ranking-based) SFT training data, consisting of a small amount of expert data and a large proportion of easily accessible sub-optimal data, without any preference labels. Specifically, we propose the Conditioned-RLFT (C-RLFT), which enables leveraging mixed-quality training data with very coarse-grained reward labels. The reward label can be as simple as a relative value differentiating different classes of data, i.e., expert and sub-optimal. We derive C-RLFT based on the KL-regularized RL framework (Jaques et al., 2019; Korbak et al., 2022) , which maximizes the reward while penalizing the difference between the fine-tuned policy and a reference policy. However, to remedy the imperfect reward signal, we learn the fine-tuned LLM itself as a class-conditioned policy (i.e., conditioning data source classes with distinct prompt tokens), and regularize it with a better and more informative class-conditioned reference policy instead of the original pre-trained LLM. The optimal policy for this RL problem can be shown as equivalent to a class-conditioned reward-weighted regression problem, which can be easily solved through single-stage supervised learning. C-RLFT provides several particularly desirable features for open-source LLM fine-tuning. First, it allows for simple and RL-free training, largely removing the complexities and instabilities in typical RLHF fine-tuning. Second, it has extremely low requirements for the quality of the reward and does not need costly human feedback collection.\nDespite being simple and lightweight, our proposed OpenChat with C-RLFT achieves great performance in a series of benchmark evaluations. Specifically, we leverage the ShareGPT conversations datasetfoot_0 following Vicuna (Chiang et al., 2023) and use llama-2-13b as the base model. It is worth noting that our proposed method can be applied to any mixed-quality datasets and arbitrary base language models. We conduct extensive experiments on three standard benchmarks to assess instruction following ability, including Alpaca-Eval (Li et al., 2023) , MT-bench (Zheng et al., 2023) and Vicuna-bench (Chiang et al., 2023) . The results demonstrate that openchat-13b significantly surpasses previous 13b open-source language models and can even outperform gpt-3.5-turbo in all three benchmarks. Furthermore, we also use AGIEval (Zhong et al., 2023) to prove the gen-eralization, where openchat-13b also achieves the top-1 average accuracy among all 13b opensource language models. Finally, we design a series of ablation studies and analyses to validate the contribution of different components, and performance consistency, providing insights into the effectiveness and robustness of OpenChat.",
+    "2_PRELIMINARIES": "Given a conversation dataset D = {(x i , y i )}, where x i indicates the instruction, y i is its corresponding response, the pre-trained language model π 0 (y|x) can be regarded as a probability distribution mapping from instructions to responses. There are two lines of research to adapt the pre-trained language model π 0 (y|x) to a fine-tuned language model π θ (y|x) with desirable features, including supervised fine-tuning and reinforcement learning fine-tuning.",
+    "3_OPENCHAT": {
+      "3.1_CLASS-CONDITIONED_DATASET_AND_REWARDS": "Given the SFT conversation datasets D exp D sub with different quality levels, we can replenish them with distinct sources as class labels (e.g., c i ∈ {GPT-4, GPT-3.5}) and construct a classconditioned dataset D c = {(x i , y i , c i )}. We use π c (y|x, c) to denote class-conditioned distribution over instructions x and responses y in the class-conditioned dataset D c , which can be perceived similarly as the behavior policy of a dataset in offline RL literature (Levine et al., 2020) , with the difference that π c is now a class-conditioned policy.\nAccording to the different overall quality with respect to class labels, we can naturally encode coarse-grained rewards r c (x, y) in D c as follows:\nEQUATION\nwhere we regard GPT-4 conversations as expert data D expert , and GPT-3.5 conversations as suboptimal data D sub . Meanwhile, we set α < 1 to guide the fine-tuned model to favor more of the high-quality responses.",
+      "3.2_FINE-TUNING_VIA_C(ONDITIONED)-RLFT": "As the rewards r c (x, y) in Eq. ( 3) are very coarse-grained, to reliably use them in RLFT, we need to provide additional sources of information to remedy their deficiencies. Here, we introduce C-RLFT, which is inspired by the insight from the goal-conditioned supervised learning in offline RL, that by conditioning on proper information in a supervised goal/outcome-conditioned policy, it is possible to recover optimized performance (Chen et al., 2021; Emmons et al., 2021) . C-RLFT contains two key ingredients: 1) fine-tuning the LLM as a class-conditioned policy π θ (y|x, c), and 2) regularizing π θ with respect to the class information augmented reference policy π c rather than the original base reference policy π 0 in the KL-regularized RL framework.\nClass-conditioned policy. Instead of directly fine-tuning an LLM from the pre-trained model π 0 as in existing methods, we model the LLM to be fine-tuned as a class-conditioned policy π θ (y|x, c). This can be easily implemented by conditioning each example from different data sources using distinct conversation templates as shown below.\n[GPT-4 Template] GPT4 User: Question<|end of turn|>GPT4 Assistant:\n[GPT-3.5 Template] GPT3 User: Question<|end of turn|>GPT3 Assistant:\nTo differentiate speakers, we introduce a new <|end of turn|> special token at the end of each utterance, following Zhou et al. (2023) . The <|end of turn|> token functions similarly to the EOS token for stopping generation while preventing confusion with the learned meaning of EOS during pretraining. We further discuss the effect of conversation template choice in App. A.",
+      "_text": "In this section, we introduce the OpenChat framework, which provides a new possibility to fine-tune open-source LLMs using easily collectable and mixed-quality training data without any preference labels. More specifically, we consider the setting where we are given a pre-trained LLM π 0 , a small set of high-quality/expert conversation data D exp , and a larger medium-quality or sub-optimal conversation dataset D sub , we aim to fine-tune an LLM policy π θ based on π 0 using only data from D exp D sub . Taking the most popular SFT dataset ShareGPT used in Vicuna (Chiang et al., 2023) as an example, the distinct data sources from GPT-4 and GPT-3.5 can be regarded as D exp and D sub , as the overall quality of GPT-3.5 conversations generally falls short when compared to that of GPT-4 conversations (OpenAI, 2023; Li et al., 2023) , where detailed comparison can be found in Sec. 5.1.\nObviously, it is not possible to derive accurate and fine-grained reward signals solely based on D exp and D sub . However, it should be noted that the quality difference between D exp and D sub itself can serve as implicit or weak reward signals. To make use of this coarse-grained reward information, we provide a new insight that by regularizing π θ with a better and more informative class-conditioned reference policy π c instead of the original base pre-trained LLM π 0 , we are likely to compensate for the potential deficiencies in the rewards and achieve good fine-tuning performance. In the following, we describe the details of OpenChat and its core algorithm -C-RLFT."
+    },
+    "4.1_EXPERIMENTAL_SETUPS": "Mixed-quality Data. Following Vicuna (Chiang et al., 2023) , we adopt a widely-used SFT dataset, the ShareGPT dataset. The ShareGPT dataset consists of approximately 70k user-shared conversations, including around 6k expert conversations generated by GPT-4 and the remaining sub-optimal conversations from GPT-3.5. We perform experiments to assess their varying quality in Sec. 5.1.",
+    "4.2_MAIN_RESULTS": "In the first set of results, we compare the win-rate (%) performance of openchat-13b and other popular LLMs on three standard benchmarks to assess the instruction-following ability. The results are presented in Table 1 . Among the API-based LLMs, the win rate of gpt-4 significantly outperforms all other models, demonstrating that gpt-4 maintains obvious advantages. The open-source language model llama-2-chat-70b, which employs both SFT and RLHF, is another powerful instruction-following model which surpasses claude and gpt-3.5-turbo. However, guanaco-65b and guanaco-33b lag behind other models larger than 13b. Regarding the series of 13b models, the open-source language models based on llama-13b, including vicuna-v1.1-13b, wizardlm-v1.0-13b and ultralm-13b, achieve approximately 50% average win rates across the three benchmarks. Meanwhile, the open-source language models based on llama-2-13b generally exhibit higher average win rates. Notably, wizardlm-v1.2-13b and llama-2-chat-13b achieve average win rate scores of 74.3 and 74.4, respectively, which is close to the 76.6 score of claude. Our proposed language model openchat-13b attains the highest win rate scores in both AlpacaEval and MT-bench benchmarks, and the second-highest win rate scores in Vicuna-bench. It is worth noting that the average win rate score of openchat-13b even surpasses that of claude.\nIn the second set of results, we present the MT-bench scores of openchat-13b and other baseline models in Fig. 2(a) . The overall trends are align closely with the win rate performance. For the API- based language models, gpt-4 continues to lead by a significant margin. Notably, all API-based language models perform better than open-source language models. Among the open-source language models, the series based on llama-2-13b generally surpasses those based on llama-13b.\nMeanwhile, our openchat-13b achieves the highest MT-bench score, even exceeding opensource language models with much larger parameters, such as llama-2-chat-70b.\nFinally, to further validate generalization rather than overfitting, we compare the AGIEval accuracy of the base model llama-2-13b and the corresponding fine-tuned models, as depicted in Although prior works (OpenAI, 2023; Zhao et al., 2023) have widely confirmed that GPT-4 demonstrates superior capabilities on a broad range of tasks compared to GPT-3.5, we further analyze the quality of collected GPT-3.5 and GPT-4 conversations in the ShareGPT dataset to validate our assumption of mixed-quality data. Specifically, we randomly sample 128 conversations from each data source. Then gpt-4 serves as the automatic evaluator, scoring the responses following Zheng et al. (2023) . As illustrated in Figure 3 , GPT-4 conversations contain more high-quality conversations and exhibit a higher overall score. The detailed scoring settings can be found in App. G.",
+    "5.2_ABLATION_STUDIES": "We conduct an ablation study on the two key components of the openchat-13b model to ascertain their individual contributions to the overall performance, including the coarse-grained rewards and the class-conditioned policy. Additionally, we introduce two important baselines. One series is only SFT which uses the same ShareGPT data as OpenChat with three filtering strategies (i.e., no-filtering, only GPT-3, and only GPT-3.5). The other is vicuna-v1.5-13b which SFT on about 125k ShareGPT data as a baseline. The results of ablation studies are detailed in Table 2 . Without coarse-grained rewards, the training phase treats different data sources equally, leading to performance decline. Similarly, without a class-conditioned policy, language models lack explicit signals to discern between expert and sub-optimal data, significantly reducing performance. We also conduct only SFT on different sources of ShareGPT data. It is worth noting that only SFT with GPT-4 data performs much better than with the entire ShareGPT data, indicating that the quality of data is much more important than quantity. However, openchat-13b still obviously outperforms all the only SFT methods, demonstrating that our proposed framework can better exploit the mixed-quality data. This indicates the significant contribution of both main components to model performance. Notably, expanding the SFT dataset from 70k to 125k has less impact on performance improvement than our proposed components, particularly the class-conditioned policy.",
+    "5.3_REVEALING_SECRETS_OF_C-RLFT": "Firstly, we visualize the representations of openchat-13b, and its ablation version, only SFT, to distinguish between our proposed C-RLFT and SFT. We randomly sample 2,000 GPT-4 and GPT-3.5 conversations. To obtain the representations of conversations, we compute the embeddings through mean pooling of all tokens in the last Transformer layer output following Xiao (2018) . These embeddings, depicted in Fig. 4 , are consequently mapped to 2-D space using UMAP (McInnes et al., 2018) . Multiple clusters are observed in both only SFT and openchat models, likely due to the diverse conversation domains in the ShareGPT dataset. More importantly, the GPT-4 and GPT-3.5 conversation representations in only SFT were intermingled. In contrast, openchat-13b clearly distinguished these representations according to their data sources, demonstrating the efficacy of our proposed C-RLFT in enriching input information. Secondly, given the significant impact of the classconditioned policy, we further explore its effects on model performance during the inference phases by examining the influence of class-conditioned prompt tokens. In the inference phase, we use the GPT-4 prompt to induce openchat-13b to generate high-quality responses. Here we further verify the impacts of different inference prompts by replacing the GPT-4 prompt with the GPT-3.5 prompt. The comparison results, illustrated in Fig. 5 , reveal a substantial performance decline when using the GPT-3.5 prompt instead of the GPT-4 prompt. This suggests that our openchat-13b model can dis-tinguish the quality of different data sources based on our class-conditioned policy, and it further indicates that the representation space of GPT-4 is superior to that of GPT-3.5.",
+    "5.4_EFFECTS_OF_DATA_SIZE": "Figure 6 : Effects of subsampling a specific class of data.\nIn this section, we investigate the impact of varying data sizes on model performance. Specifically, we sub-sample one class in GPT-3.5 or GPT-4 with the ratio varying from 60% to 100% in 10% increments, while keeping the other class unchanged. It is worth noting that the total number of GPT-3.5 data is more than ten times larger than that of GPT-4. The results are shown in Fig. 6 . Firstly, we observe that the overall decline in both average performances is relatively modest, indicating that our openchat-13b is robust to variation in data size. Secondly, although the number of GPT-4 data points changes much less than GPT-3.5, the effect of varying GPT-4 data size is even more pronounced. This phenomenon demonstrates that expert data, while limited in quantity, is extremely important.",
+    "6_RELATED_WORKS": "Large Language Models. Recent years have witnessed significant advancements in LLMs, with models such as GPT-4 (OpenAI, 2023), PaLM (Chowdhery et al., 2022) , and others comprising hundreds of billions or more parameters. This surge in LLMs extends beyond API-based models, as a suite of open-source language models like LLaMA (Touvron et al., 2023a) , LLaMA-2 (Touvron et al., 2023b) , and Falcon (Penedo et al., 2023) have emerged. This paper primarily focuses on the LLaMA base models, which are among the most popular open-source language models.",
+    "7_CONCLUSION_AND_FUTURE_WORK": "In this paper, we present OpenChat, an innovative framework featuring the Conditioned-RLFT method, tailored to advance open-source language models with mixed-quality data. Our model, openchat-13b, delivers the highest average performance on extensive benchmarks among all 13b open-source language models, demonstrating notable advantages such as simplicity, RL-free training, and minimal reward quality requirements. Despite these encouraging results, we acknowledge potential research areas for further improvement. Firstly, our assumption of different quality according to data sources may be overly simplistic, and the assigned coarse-grained rewards could be more finely tuned to reflect the actual quality of each data point. Secondly, while our model primarily focuses on enhancing instruction-following capabilities, exploring the application of OpenChat towards improving the reasoning abilities of LLMs offers a promising avenue for future work."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Training a helpful and harmless assistant with reinforcement learning from human feedback",
+      "authors": [
+        {
+          "first": "Yuntao",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Kamal",
+          "middle": [],
+          "last": "Ndousse",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Nova",
+          "middle": [],
+          "last": "Dassarma",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Drain",
+          "suffix": ""
+        },
+        {
+          "first": "Stanislav",
+          "middle": [],
+          "last": "Fort",
+          "suffix": ""
+        },
+        {
+          "first": "Deep",
+          "middle": [],
+          "last": "Ganguli",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Constitutional ai: Harmlessness from ai feedback",
+      "authors": [
+        {
+          "first": "Yuntao",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Saurav",
+          "middle": [],
+          "last": "Kadavath",
+          "suffix": ""
+        },
+        {
+          "first": "Sandipan",
+          "middle": [],
+          "last": "Kundu",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Jackson",
+          "middle": [],
+          "last": "Kernion",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Goldie",
+          "suffix": ""
+        },
+        {
+          "first": "Azalia",
+          "middle": [],
+          "last": "Mirhoseini",
+          "suffix": ""
+        },
+        {
+          "first": "Cameron",
+          "middle": [],
+          "last": "Mckinnon",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Open problems and fundamental limitations of reinforcement learning from human feedback",
+      "authors": [
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Casper",
+          "suffix": ""
+        },
+        {
+          "first": "Xander",
+          "middle": [],
+          "last": "Davies",
+          "suffix": ""
+        },
+        {
+          "first": "Claudia",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [
+            "Krendl"
+          ],
+          "last": "Gilbert",
+          "suffix": ""
+        },
+        {
+          "first": "Jérémy",
+          "middle": [],
+          "last": "Scheurer",
+          "suffix": ""
+        },
+        {
+          "first": "Javier",
+          "middle": [],
+          "last": "Rando",
+          "suffix": ""
+        },
+        {
+          "first": "Rachel",
+          "middle": [],
+          "last": "Freedman",
+          "suffix": ""
+        },
+        {
+          "first": "Tomasz",
+          "middle": [],
+          "last": "Korbak",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Lindner",
+          "suffix": ""
+        },
+        {
+          "first": "Pedro",
+          "middle": [],
+          "last": "Freire",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Alpagasus: Training a better alpaca with fewer data",
+      "authors": [
+        {
+          "first": "Lichang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Shiyang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Hai",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Kalpa",
+          "middle": [],
+          "last": "Gunaratna",
+          "suffix": ""
+        },
+        {
+          "first": "Vikas",
+          "middle": [],
+          "last": "Yadav",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Vijay",
+          "middle": [],
+          "last": "Srinivasan",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Heng",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Decision transformer: Reinforcement learning via sequence modeling",
+      "authors": [
+        {
+          "first": "Lili",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Aravind",
+          "middle": [],
+          "last": "Rajeswaran",
+          "suffix": ""
+        },
+        {
+          "first": "Kimin",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Grover",
+          "suffix": ""
+        },
+        {
+          "first": "Misha",
+          "middle": [],
+          "last": "Laskin",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "Aravind",
+          "middle": [],
+          "last": "Srinivas",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Mordatch",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Vicuna: An open-source chatbot impressing gpt-4 with 90%* chatgpt quality",
+      "authors": [
+        {
+          "first": "Wei-Lin",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuohan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "Zhanghao",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Lianmin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Siyuan",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghao",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [
+            "E"
+          ],
+          "last": "Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "Ion",
+          "middle": [],
+          "last": "Stoica",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "P"
+          ],
+          "last": "Xing",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Palm: Scaling language modeling with pathways",
+      "authors": [
+        {
+          "first": "Aakanksha",
+          "middle": [],
+          "last": "Chowdhery",
+          "suffix": ""
+        },
+        {
+          "first": "Sharan",
+          "middle": [],
+          "last": "Narang",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Devlin",
+          "suffix": ""
+        },
+        {
+          "first": "Maarten",
+          "middle": [],
+          "last": "Bosma",
+          "suffix": ""
+        },
+        {
+          "first": "Gaurav",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Roberts",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Barham",
+          "suffix": ""
+        },
+        {
+          "first": "Hyung",
+          "middle": [
+            "Won"
+          ],
+          "last": "Chung",
+          "suffix": ""
+        },
+        {
+          "first": "Charles",
+          "middle": [],
+          "last": "Sutton",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Gehrmann",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Deep reinforcement learning from human preferences",
+      "authors": [
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Paul F Christiano",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Leike",
+          "suffix": ""
+        },
+        {
+          "first": "Miljan",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Shane",
+          "middle": [],
+          "last": "Martic",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Legg",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Qlora: Efficient finetuning of quantized llms",
+      "authors": [
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Dettmers",
+          "suffix": ""
+        },
+        {
+          "first": "Artidoro",
+          "middle": [],
+          "last": "Pagnoni",
+          "suffix": ""
+        },
+        {
+          "first": "Ari",
+          "middle": [],
+          "last": "Holtzman",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Enhancing chat language models by scaling high-quality instructional conversations",
+      "authors": [
+        {
+          "first": "Ning",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Yulin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Bokai",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Yujia",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhi",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Shengding",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiyuan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Maosong",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Bowen",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Rvs: What is essential for offline rl via supervised learning",
+      "authors": [
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Emmons",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Eysenbach",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Kostrikov",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Koala: A dialogue model for academic research",
+      "authors": [
+        {
+          "first": "Xinyang",
+          "middle": [],
+          "last": "Geng",
+          "suffix": ""
+        },
+        {
+          "first": "Arnav",
+          "middle": [],
+          "last": "Gudibande",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Wallace",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Blog post"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Learning rates as a function of batch size: A random matrix theory approach to neural network training",
+      "authors": [
+        {
+          "first": "Diego",
+          "middle": [],
+          "last": "Granziol",
+          "suffix": ""
+        },
+        {
+          "first": "Stefan",
+          "middle": [],
+          "last": "Zohren",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [
+            "J"
+          ],
+          "last": "Roberts",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "J. Mach. Learn. Res"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Training compute-optimal large language models",
+      "authors": [
+        {
+          "first": "Jordan",
+          "middle": [],
+          "last": "Hoffmann",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Borgeaud",
+          "suffix": ""
+        },
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Mensch",
+          "suffix": ""
+        },
+        {
+          "first": "Elena",
+          "middle": [],
+          "last": "Buchatskaya",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Eliza",
+          "middle": [],
+          "last": "Rutherford",
+          "suffix": ""
+        },
+        {
+          "first": "Diego",
+          "middle": [],
+          "last": "De Las",
+          "suffix": ""
+        },
+        {
+          "first": "Lisa",
+          "middle": [
+            "Anne"
+          ],
+          "last": "Casas",
+          "suffix": ""
+        },
+        {
+          "first": "Johannes",
+          "middle": [],
+          "last": "Hendricks",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [],
+          "last": "Welbl",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Way off-policy batch deep reinforcement learning of implicit human preferences in dialog",
+      "authors": [
+        {
+          "first": "Natasha",
+          "middle": [],
+          "last": "Jaques",
+          "suffix": ""
+        },
+        {
+          "first": "Asma",
+          "middle": [],
+          "last": "Ghandeharioun",
+          "suffix": ""
+        },
+        {
+          "first": "Judy",
+          "middle": [
+            "Hanwen"
+          ],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Craig",
+          "middle": [],
+          "last": "Ferguson",
+          "suffix": ""
+        },
+        {
+          "first": "Agata",
+          "middle": [],
+          "last": "Lapedriza",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Shixiang",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Rosalind",
+          "middle": [],
+          "last": "Picard",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "RL with KL penalties is better viewed as Bayesian inference",
+      "authors": [
+        {
+          "first": "Tomasz",
+          "middle": [],
+          "last": "Korbak",
+          "suffix": ""
+        },
+        {
+          "first": "Ethan",
+          "middle": [],
+          "last": "Perez",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Buckley",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Offline reinforcement learning: Tutorial, review, and perspectives on open problems"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Alpacaeval: An automatic evaluator of instruction-following models",
+      "authors": [
+        {
+          "first": "Xuechen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Dubois",
+          "suffix": ""
+        },
+        {
+          "first": "Rohan",
+          "middle": [],
+          "last": "Taori",
+          "suffix": ""
+        },
+        {
+          "first": "Ishaan",
+          "middle": [],
+          "last": "Gulrajani",
+          "suffix": ""
+        },
+        {
+          "first": "Carlos",
+          "middle": [],
+          "last": "Guestrin",
+          "suffix": ""
+        },
+        {
+          "first": "Percy",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsunori",
+          "middle": [
+            "B"
+          ],
+          "last": "Hashimoto",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Umap: Uniform manifold approximation and projection",
+      "authors": [
+        {
+          "first": "Leland",
+          "middle": [],
+          "last": "Mcinnes",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Healy",
+          "suffix": ""
+        },
+        {
+          "first": "Nathaniel",
+          "middle": [],
+          "last": "Saul",
+          "suffix": ""
+        },
+        {
+          "first": "Lukas",
+          "middle": [],
+          "last": "Grossberger",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "The Journal of Open Source Software"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Awac: Accelerating online reinforcement learning with offline datasets",
+      "authors": [
+        {
+          "first": "Ashvin",
+          "middle": [],
+          "last": "Nair",
+          "suffix": ""
+        },
+        {
+          "first": "Abhishek",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "Murtaza",
+          "middle": [],
+          "last": "Dalal",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Training language models to follow instructions with human feedback",
+      "authors": [
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Diogo",
+          "middle": [],
+          "last": "Almeida",
+          "suffix": ""
+        },
+        {
+          "first": "Carroll",
+          "middle": [
+            "L"
+          ],
+          "last": "Wainwright",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Chong",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Katarina",
+          "middle": [],
+          "last": "Slama",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Ray",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Hilton",
+          "suffix": ""
+        },
+        {
+          "first": "Fraser",
+          "middle": [],
+          "last": "Kelton",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Miller",
+          "suffix": ""
+        },
+        {
+          "first": "Maddie",
+          "middle": [],
+          "last": "Simens",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Welinder",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Christiano",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Leike",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Lowe",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "The refinedweb dataset for falcon llm: outperforming curated corpora with web data, and web data only",
+      "authors": [
+        {
+          "first": "Guilherme",
+          "middle": [],
+          "last": "Penedo",
+          "suffix": ""
+        },
+        {
+          "first": "Quentin",
+          "middle": [],
+          "last": "Malartic",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Hesslow",
+          "suffix": ""
+        },
+        {
+          "first": "Ruxandra",
+          "middle": [],
+          "last": "Cojocaru",
+          "suffix": ""
+        },
+        {
+          "first": "Alessandro",
+          "middle": [],
+          "last": "Cappelli",
+          "suffix": ""
+        },
+        {
+          "first": "Hamza",
+          "middle": [],
+          "last": "Alobeidli",
+          "suffix": ""
+        },
+        {
+          "first": "Baptiste",
+          "middle": [],
+          "last": "Pannier",
+          "suffix": ""
+        },
+        {
+          "first": "Ebtesam",
+          "middle": [],
+          "last": "Almazrouei",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Launay",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Instruction tuning with gpt-4",
+      "authors": [
+        {
+          "first": "Baolin",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Chunyuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Pengcheng",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Michel",
+          "middle": [],
+          "last": "Galley",
+          "suffix": ""
+        },
+        {
+          "first": "Jianfeng",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Advantage-weighted regression: Simple and scalable off-policy reinforcement learning",
+      "authors": [
+        {
+          "first": "Xue Bin",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Grace",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Reinforcement learning by reward-weighted regression for operational space control",
+      "authors": [
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Peters",
+          "suffix": ""
+        },
+        {
+          "first": "Stefan",
+          "middle": [],
+          "last": "Schaal",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "Proceedings of the 24th international conference on Machine learning"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Direct preference optimization: Your language model is secretly a reward model",
+      "authors": [
+        {
+          "first": "Rafael",
+          "middle": [],
+          "last": "Rafailov",
+          "suffix": ""
+        },
+        {
+          "first": "Archit",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Mitchell",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Stanford alpaca: An instruction-following llama model",
+      "authors": [
+        {
+          "first": "Rohan",
+          "middle": [],
+          "last": "Taori",
+          "suffix": ""
+        },
+        {
+          "first": "Ishaan",
+          "middle": [],
+          "last": "Gulrajani",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Dubois",
+          "suffix": ""
+        },
+        {
+          "first": "Xuechen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Carlos",
+          "middle": [],
+          "last": "Guestrin",
+          "suffix": ""
+        },
+        {
+          "first": "Percy",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsunori",
+          "middle": [
+            "B"
+          ],
+          "last": "Hashimoto",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Llama: Open and efficient foundation language models",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Thibaut",
+          "middle": [],
+          "last": "Lavril",
+          "suffix": ""
+        },
+        {
+          "first": "Gautier",
+          "middle": [],
+          "last": "Izacard",
+          "suffix": ""
+        },
+        {
+          "first": "Xavier",
+          "middle": [],
+          "last": "Martinet",
+          "suffix": ""
+        },
+        {
+          "first": "Marie-Anne",
+          "middle": [],
+          "last": "Lachaux",
+          "suffix": ""
+        },
+        {
+          "first": "Timothée",
+          "middle": [],
+          "last": "Lacroix",
+          "suffix": ""
+        },
+        {
+          "first": "Baptiste",
+          "middle": [],
+          "last": "Rozière",
+          "suffix": ""
+        },
+        {
+          "first": "Naman",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Hambro",
+          "suffix": ""
+        },
+        {
+          "first": "Faisal",
+          "middle": [],
+          "last": "Azhar",
+          "suffix": ""
+        },
+        {
+          "first": "Aurelien",
+          "middle": [],
+          "last": "Rodriguez",
+          "suffix": ""
+        },
+        {
+          "first": "Armand",
+          "middle": [],
+          "last": "Joulin",
+          "suffix": ""
+        },
+        {
+          "first": "Edouard",
+          "middle": [],
+          "last": "Grave",
+          "suffix": ""
+        },
+        {
+          "first": "Guillaume",
+          "middle": [],
+          "last": "Lample",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Llama 2: Open foundation and fine-tuned chat models",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Louis",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [
+            "R"
+          ],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Albert",
+          "suffix": ""
+        },
+        {
+          "first": "Amjad",
+          "middle": [],
+          "last": "Almahairi",
+          "suffix": ""
+        },
+        {
+          "first": "Yasmine",
+          "middle": [],
+          "last": "Babaei",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolay",
+          "middle": [],
+          "last": "Bashlykov",
+          "suffix": ""
+        },
+        {
+          "first": "Soumya",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "Prajjwal",
+          "middle": [],
+          "last": "Bhargava",
+          "suffix": ""
+        },
+        {
+          "first": "Shruti",
+          "middle": [],
+          "last": "Bhosale",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [
+            "M"
+          ],
+          "last": "Bikel",
+          "suffix": ""
+        },
+        {
+          "first": "Lukas",
+          "middle": [],
+          "last": "Blecher",
+          "suffix": ""
+        },
+        {
+          "first": "Cantón",
+          "middle": [],
+          "last": "Cristian",
+          "suffix": ""
+        },
+        {
+          "first": "Moya",
+          "middle": [],
+          "last": "Ferrer",
+          "suffix": ""
+        },
+        {
+          "first": "Guillem",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Cucurull",
+          "suffix": ""
+        },
+        {
+          "first": "Jude",
+          "middle": [],
+          "last": "Esiobu",
+          "suffix": ""
+        },
+        {
+          "first": "Jeremy",
+          "middle": [],
+          "last": "Fernandes",
+          "suffix": ""
+        },
+        {
+          "first": "Wenyin",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Cynthia",
+          "middle": [],
+          "last": "Fuller",
+          "suffix": ""
+        },
+        {
+          "first": "Vedanuj",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Naman",
+          "middle": [],
+          "last": "Goswami",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [
+            "S"
+          ],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Saghar",
+          "middle": [],
+          "last": "Hartshorn",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Hosseini",
+          "suffix": ""
+        },
+        {
+          "first": "Hakan",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Marcin",
+          "middle": [],
+          "last": "Inan",
+          "suffix": ""
+        },
+        {
+          "first": "Viktor",
+          "middle": [],
+          "last": "Kardas",
+          "suffix": ""
+        },
+        {
+          "first": "Madian",
+          "middle": [],
+          "last": "Kerkez",
+          "suffix": ""
+        },
+        {
+          "first": "Isabel",
+          "middle": [
+            "M"
+          ],
+          "last": "Khabsa",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "V"
+          ],
+          "last": "Kloumann",
+          "suffix": ""
+        },
+        {
+          "first": "Punit",
+          "middle": [],
+          "last": "Korenev",
+          "suffix": ""
+        },
+        {
+          "first": "Marie-Anne",
+          "middle": [],
+          "last": "Singh Koura",
+          "suffix": ""
+        },
+        {
+          "first": "Thibaut",
+          "middle": [],
+          "last": "Lachaux",
+          "suffix": ""
+        },
+        {
+          "first": "Jenya",
+          "middle": [],
+          "last": "Lavril",
+          "suffix": ""
+        },
+        {
+          "first": "Diana",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Yinghai",
+          "middle": [],
+          "last": "Liskovich",
+          "suffix": ""
+        },
+        {
+          "first": "Yuning",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Xavier",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Todor",
+          "middle": [],
+          "last": "Martinet",
+          "suffix": ""
+        },
+        {
+          "first": "Pushkar",
+          "middle": [],
+          "last": "Mihaylov",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "Yixin",
+          "middle": [],
+          "last": "Molybog",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Nie",
+          "suffix": ""
+        },
+        {
+          "first": "Jeremy",
+          "middle": [],
+          "last": "Poulton",
+          "suffix": ""
+        },
+        {
+          "first": "Rashi",
+          "middle": [],
+          "last": "Reizenstein",
+          "suffix": ""
+        },
+        {
+          "first": "Kalyan",
+          "middle": [],
+          "last": "Rungta",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [],
+          "last": "Saladi",
+          "suffix": ""
+        },
+        {
+          "first": "Ruan",
+          "middle": [],
+          "last": "Schelten",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Silva",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Michael Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Xia",
+          "middle": [],
+          "last": "Subramanian",
+          "suffix": ""
+        },
+        {
+          "first": "Binh",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Adina",
+          "middle": [],
+          "last": "Taylor",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "Puxin",
+          "middle": [],
+          "last": "Xiang Kuan",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengxu",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Iliyan",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Yuchen",
+          "middle": [],
+          "last": "Zarov",
+          "suffix": ""
+        },
+        {
+          "first": "Angela",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Melanie",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Sharan",
+          "middle": [],
+          "last": "Kambadur",
+          "suffix": ""
+        },
+        {
+          "first": "Aurelien",
+          "middle": [],
+          "last": "Narang",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Rodriguez",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Stojnic",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Edunov",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Scialom",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Self-instruct: Aligning language model with self generated instructions",
+      "authors": [
+        {
+          "first": "Yizhong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yeganeh",
+          "middle": [],
+          "last": "Kordi",
+          "suffix": ""
+        },
+        {
+          "first": "Swaroop",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "Alisa",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Khashabi",
+          "suffix": ""
+        },
+        {
+          "first": "Hannaneh",
+          "middle": [],
+          "last": "Hajishirzi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Fine-grained human feedback gives better rewards for language model training",
+      "authors": [
+        {
+          "first": "Zeqiu",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yushi",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Weijia",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Nouha",
+          "middle": [],
+          "last": "Dziri",
+          "suffix": ""
+        },
+        {
+          "first": "Alane",
+          "middle": [],
+          "last": "Suhr",
+          "suffix": ""
+        },
+        {
+          "first": "Prithviraj",
+          "middle": [],
+          "last": "Ammanabrolu",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Mari",
+          "middle": [],
+          "last": "Ostendorf",
+          "suffix": ""
+        },
+        {
+          "first": "Hannaneh",
+          "middle": [],
+          "last": "Hajishirzi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "bert-as-service",
+      "authors": [
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Wizardlm: Empowering large language models to follow complex instructions",
+      "authors": [
+        {
+          "first": "Can",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Qingfeng",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Xiubo",
+          "middle": [],
+          "last": "Geng",
+          "suffix": ""
+        },
+        {
+          "first": "Pu",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Jiazhan",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Chongyang",
+          "middle": [],
+          "last": "Tao",
+          "suffix": ""
+        },
+        {
+          "first": "Daxin",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Baize: An open-source chat model with parameter-efficient tuning on self-chat data",
+      "authors": [
+        {
+          "first": "Canwen",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Daya",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Nan",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        },
+        {
+          "first": "Julian",
+          "middle": [],
+          "last": "Mcauley",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Discriminator-weighted offline imitation learning from suboptimal demonstrations",
+      "authors": [
+        {
+          "first": "Haoran",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Xianyuan",
+          "middle": [],
+          "last": "Zhan",
+          "suffix": ""
+        },
+        {
+          "first": "Honglei",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Huiling",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Rrhf: Rank responses to align language models with human feedback without tears",
+      "authors": [
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Hongyi",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Chuanqi",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Songfang",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Feiran",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "A survey of large language models",
+      "authors": [
+        {
+          "first": "Kun",
+          "middle": [],
+          "last": "Wayne Xin Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Junyi",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaolei",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Yupeng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yingqian",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Beichen",
+          "middle": [],
+          "last": "Min",
+          "suffix": ""
+        },
+        {
+          "first": "Junjie",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zican",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Judging llm-as-a-judge with mt-bench and chatbot arena",
+      "authors": [
+        {
+          "first": "Lianmin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Wei-Lin",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "Siyuan",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhanghao",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghao",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Zi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuohan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Dacheng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Xing",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Agieval: A human-centric benchmark for evaluating foundation models",
+      "authors": [
+        {
+          "first": "Wanjun",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Ruixiang",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        },
+        {
+          "first": "Yiduo",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Yaobo",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuai",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Yanlin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Amin",
+          "middle": [],
+          "last": "Saied",
+          "suffix": ""
+        },
+        {
+          "first": "Weizhu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Nan",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Lima: Less is more for alignment",
+      "authors": [
+        {
+          "first": "Chunting",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Pengfei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Puxin",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Srini",
+          "middle": [],
+          "last": "Iyer",
+          "suffix": ""
+        },
+        {
+          "first": "Jiao",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Yuning",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Xuezhe",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Avia",
+          "middle": [],
+          "last": "Efrat",
+          "suffix": ""
+        },
+        {
+          "first": "Ping",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Lili",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    }
+  ]
+}

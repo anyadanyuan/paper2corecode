@@ -1,0 +1,2226 @@
+{
+  "paper_id": "TransformerCompression",
+  "title": "SLICEGPT: COMPRESS LARGE LANGUAGE MODELS BY DELETING ROWS AND COLUMNS",
+  "authors": [
+    {
+      "first": "Saleh",
+      "middle": [],
+      "last": "Ashkboos",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Microsoft Research",
+        "location": {}
+      }
+    },
+    {
+      "first": "Maximilian",
+      "middle": [
+        "L"
+      ],
+      "last": "Croci",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Microsoft Research",
+        "location": {}
+      }
+    },
+    {
+      "first": "Marcelo",
+      "middle": [],
+      "last": "Gennari",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Microsoft Research",
+        "location": {}
+      }
+    },
+    {
+      "first": "Torsten",
+      "middle": [],
+      "last": "Hoefler",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Microsoft Research",
+        "location": {}
+      }
+    },
+    {
+      "first": "James",
+      "middle": [],
+      "last": "Hensman",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Microsoft Research",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Large language models have become the cornerstone of natural language processing, but their use comes with substantial costs in terms of compute and memory resources. Sparsification provides a solution to alleviate these resource constraints, and recent works have shown that trained models can be sparsified post-hoc. Existing sparsification techniques face challenges as they need additional data structures and offer constrained speedup with current hardware. In this paper we present SliceGPT, a new post-training sparsification scheme which replaces each weight matrix with a smaller (dense) matrix, reducing the embedding dimension of the network. Through extensive experimentation we show that SliceGPT can remove up to 25% of the model parameters (including embeddings) for LLAMA-2 70B, OPT 66B and Phi-2 models while maintaining 99%, 99% and 90% zero-shot task performance of the dense model respectively. Our sliced models run on fewer GPUs and run faster without any additional code optimization: on 24GB consumer GPUs we reduce the total compute for inference on LLAMA-2 70B to 64% of that of the dense model; on 40GB A100 GPUs we reduce it to 66%. We offer a new insight, computational invariance in transformer networks, which enables SliceGPT and we hope it will inspire and enable future avenues to reduce memory and computation demands for pre-trained models. Code is available at: https://github.com/microsoft/TransformerCompression .",
+  "body": {
+    "1_INTRODUCTION": "Large language models (LLMs) are neural networks with billions of parameters, trained on trillions of tokens (Zhao et al., 2023) . The cost of training an LLM has caused a shift to re-using pre-trained models for multiple tasks, the foundation model paradigm. The size of LLMs makes deploying a pre-trained model an expensive undertaking. Many models require multiple GPUs to be able to compute a prediction, and because the models are autoregressive, multiple forward passes of the neural network are needed to generate text responses. It is therefore of widespread interest to reduce the computational requirements of these models, usually performed via post-training techniques referred to as model compression.\nA majority of model compression techniques fall into one of four categories: distillation, tensor decomposition (which includes low-rank factorization), pruning and quantization (Hoefler et al., 2021; Gholami et al., 2021; Zhu et al., 2023; Gupta & Agrawal, 2021) . In this work we focus on pruning, Left: unstructured sparsity, where some elements of W are zero, and X is dense. Middle: 2:4 structured sparsity, where each block of four weight matrix entries contains two zeros, and X is dense. Right: SliceGPT, where after introducing transformation Q, all the sparsity is arranged to the bottom rows of W and the corresponding columns of X are removed.\nthough we hope that our methodology may influence future work on other areas. Whilst pruning methods have been around for some time, many approaches require recovery fine-tuning (RFT) after pruning to maintain performance, making the overall process an expensive and hard-to-scale task.\nWith SliceGPT we compress large models using a single GPU in just a few hours and maintain competitive performance on generation and downstream tasks even without RFT.\nPruning methods work by setting some elements of the weight matrices in an LLM to zero, and (optionally) updating the surrounding elements of the matrix to compensate. The result is a sparse pattern which means that some floating point operations can be skipped in the matrix multiplications required in the forward pass of the neural network. The relative speedup of the operations depends on the level of sparsity and the sparsity pattern: more structured sparsity is associated with more computational gain. In contrast to other pruning methods, SliceGPT prunes away (slices off!) entire rows or columns of the weight matrices. Before slicing, we perform a single transformation of the network which leaves the predictions invariant, but allows the slicing to have only a small effect.\nThe result is that weight matrices are smaller, and the signals passed between blocks of the neural network are smaller too: we reduce the embedding dimension of the neural network.\nFigure 1 compares our approach with existing sparsity methods. Our contributions are as follows:\n1. We introduce the idea of computational invariance: we show that we can apply orthogonalmatrix transformations to each weight matrix in a transformer without changing the model.\n2. We use this to edit each block in a transformer architecture, such that we are projecting the signal matrix 1 between blocks onto its own principal components. We remove columns or rows of the transformed weight matrices to reduce the model size. We call the transformation and removal of weights SliceGPT.",
+    "2.1_TRANSFORMER_NETWORKS": "Transformer networks (Vaswani et al., 2017) are a class of neural networks that have been shown to be effective at a wide range of tasks including language modeling. The transformer architecture is composed of a series of layers, each of which is composed of a multi-head self-attention block followed by a feed-forward network block. Between each block, there is a LayerNorm (Ba et al., 2016) (or RMSNorm (Zhang & Sennrich, 2019) ) block. Figure 2 illustrates part of a transformer network: an attention block connected to a Feed Forward Network (FFN) block through a LayerNorm block, with residual connections. The following describes the operations of each component (ignoring dropout, which is not applied post-training).\nEmbeddings Let D be the embedding dimension of our transformer, N be the sequence length.\nThe transformer model takes as input a sequence of token IDs and position IDs, and uses them to index the embedding matrices, producing the initial signal X with shape N × D. In what follows we consider, without loss of generality, a single embedding matrix W embd indexed by input sequence s.\nLayerNorm After embeddings, the signal matrix is passed through a LayerNorm operation, which subtracts the mean from each row of the matrix, divides the row by its standard deviation, rescales (columnwise), and adds an offset. We write the LayerNorm block as\nEQUATION\nwhere RMSNorm(X) appliesfoot_1 x ← x/∥x∥ to each row of X. The vector parameter α and offset (vector) parameter β are learned independently at each LayerNorm instance. The constant matrix M = I -1 D 11 ⊤ is a D × D matrix which subtracts the mean from each row of X. Attention Blocks The attention block has four matrices: W k , W q , W v and W o , each of dimension D × D. The input signal arriving into the block is projected into the Key (XW k ), Query (XW q ), and Value (XW v ) matrices, which are then split into multiple heads. A nonlinear operation is applied at each head before the signals are combined and multiplied by the output weight matrix W o . Since the first three weight matrices are applied separately to the inputs, we can concatenate them and perform a single matrix multiplication (denoted by the white box around these matrices in Figure 2 ). We can consider the concatenation of these matrices to be a single linear layer, which we denote W in . We also refer to the output matrix as W out . We treat the attention block as σ(XW in + b in )W out + b outfoot_2 , where σ represents the multi-head attention operation.",
+    "3_SLICEGPT": {
+      "3.1_COMPUTATIONAL_INVARIANCE_IN_TRANSFORMER_NETWORKS": "Let Q denote an orthogonal matrix: we have Q ⊤ Q = QQ ⊤ = I. Note that multiplying a vector x by Q does not change the norm of the vector, since\n∥Qx∥ = x ⊤ Q ⊤ Qx = √ x ⊤ x = ∥x∥.\nIn this work, the dimensions of Q will always match the embedding dimension of the transformer D.\nSuppose that X ℓ is the output of one block of the transformer, which is then processed by RMSNorm, and then inputted to the subsequent block as RMSNorm(X ℓ ). If we insert linear layers with the orthogonal matrix Q before RMSNorm and Q ⊤ after RMSNorm, the network remains unchanged, since each row of the signal matrix is multiplied by Q, normalized and multiplied by Q ⊤ . We have\nRMSNorm(X ℓ Q)Q ⊤ = RMSNorm(X ℓ ) .\n(2)\nA proof of this relation appears in Appendix A.1. Now, since each attention or FFN block of the network has a linear operation on both the input and output, we can absorb the additional operations Q into the linear layers of the blocks. Since the network contains residual connections, we must also apply Q to the output of all previous layers (all the way back to the embedding) and to all subsequent layers (all the way up to the LM Head).\nAn invariant function is one for which a transformation to the input does not result in a change to the output. In our case, we can apply any orthogonal transformation Q to the weights of the transformer without changing the result, so the computation can be performed in any transformed state. We refer to this as a computational invariance, and define it in the following theorem.\nTheorem 1. Let W ℓ in and W ℓ out be the weight matrices of the linear layers of the ℓ-th block of an RMSNorm-connected transformer network, and b ℓ in , b ℓ out be the corresponding biases, if any, and let W embd and W head be the embedding and head matrices. Let Q be an orthogonal matrix of dimension D. Then the following network is equivalent to the original transformer network:\nEQUATION\nEQUATION\nEQUATION\nEQUATION\nEQUATION\nThe input and head biases are copied: bℓ in = b ℓ in , bhead = b head .\nProof. We can show that the transformed network computes the same results as the original by stepping through Algorithm 1. Suppose that on line 1, the original network has computed X, then the modified network has computed X = XQ, using Equation 3. Applying RMSNorm on line 2, we see that the operation of the two networks matches: by Equation 2we have RMSNorm( X) = RMSNorm(XQ) = RMSNorm(X)Q. Applying the nonlinearity on line 4, we see that X Wℓ in = XW ℓ in , using Equation 4and it follows that Z = ZQ. On line 5 the residual connection means we have ( X + Z) = (X + Z)Q, and applying RMSNorm results in assignment of X = XQ. This follows through to the end of the loop. Finally, on line 7, the transformations are undone as XW head = X Whead using Equation 7. We use (α) for brevity. The mean-subtraction matrix M is applied to each matrix W out . Layernorm becomes RMSNorm, up to a constant √ D (not shown). Here, the scaling (α ′ ) comes from the previous block.\nEQUATION\nThe computational invariance of the transformer network applies only to RMSNorm-connected networks. Before working on those with Layer-Norm, we convert the network to RMSNorm by absorbing the linear blocks of LayerNorm into the adjacent blocks. Figure 3 shows such a transformation on the transformer network (see Figure 2 ) . In each block, we multiply the output matrix W out by the mean-subtraction matrix M, which accounts for the mean subtraction that would happen in the subsequent LayerNorm. The input matrices W in are pre-multiplied by the scales of the preceding LayerNorm blocks. The embedding matrix W embd must be mean-subtracted, and W head must be re-scaled by the last Layer-Norm scales. This is a straightforward change in the order of operations and does not affect the network output.",
+      "3.3_A_TRANSFORMATION_PER_BLOCK": "Now that every LayerNorm in the transformer has been converted to RMSNorm, we can select any Q to modify the model. Our initial plan was to collect signals from the model, construct an orthogonal matrix using those signals and to delete parts of the network. We quickly saw that the signals at different blocks of the network were not aligned, and that we would need to apply a different orthogonal matrix at each block, Q ℓ .\nAllowing the orthogonal matrix used in each block to differ can be shown to leave the model\nAttention RMSNorm FFN Q ⊤ 1 (α ′ )Wk Q ⊤ 1 (α ′ )Wq Q ⊤ 1 (α ′ )Wv WoMQ2 Multi-Head Attention\nInputs multiplied by Q1 and truncated\n+ x ∥x∥ Q ⊤ 2 (α)W1 Activation Function W2MQ3 + Q ⊤ 1 Q2 Q ⊤ 2 Q3\nFigure 4 : With the network converted to RMSNorm (see Figure 3 ), we apply the computational-invariance idea. The input weight matrices diag(α)W in are pre-multiplied by Q ⊤ . The output matrices W out M are post-multiplied by Q. In the skip-connection, a new linear layer is added Q ⊤ ℓ Q ℓ+1 . After these modifications, the matrices can be sliced (hatched areas).\nunchanged using the same proof as Theorem 1, with the exception of line 5 of Algorithm 1. Here we see that the residual connection and the output of the block must have the same rotation. To fix this, we modify the residual connection by applying the linear transformation Q ⊤ ℓ-1 Q ℓ to the residual. Figure 4 shows how different rotations can be applied to different blocks with the additional linear operation in the residual connection. Unlike the modifications to the weight matrices, these additional operations cannot be pre-computed and add a small (D × D) overhead to the model. Nonetheless, they are needed to allow slicing the model (Section 3.4) and we see real speedup overall (Section 4).\nTo compute the matrices Q ℓ , we use PCA. We select a calibration dataset from the training set, run it through the model (after converting LayerNorm operations into RMSNorm), and extract the orthogonal matrix of the layer. We use the output of the transformed network to calculate the orthogonal matrices of the next layers. More precisely, if X ℓ,i is the output of the ℓ th RMSNorm block for the i th sequence in the calibration dataset, we compute\nEQUATION\nand set Q ℓ to the be the eigenvectors of C ℓ , sorted by decreasing eigenvalues.",
+      "3.4_SLICING": "The goal of Principal Component Analysis is usually to take a data matrix X and compute a lower dimensional representation Z, and an approximate reconstruction X:\nEQUATION\n)\nwhere Q is the eigenvectors of X ⊤ X, and D is a D × D small deletion matrix (containing D small columns of the D × D identity matrix), which removes some of the columns of the matrix to the left. The reconstruction is L 2 optimal, in the sense that QD is a linear mapping that minimizes ∥X -X∥ 2 .\nWhen we apply PCA to the signal matrix X between blocks, we never materialize the N × D signal matrix, but we apply the deletion matrix D to the operations preceding and succeeding the construction of that matrix, which have already been multiplied by Q in the above. We delete rows of W in and columns of W out and W embd . We also delete both rows and columns of the matrix Q ⊤ ℓ-1 Q ℓ that we have inserted into the residual connection (see Figure 4 ).",
+      "_text": "Our SliceGPT method relies on a computational invariance that is inherent in the transformer architecture. By this, we mean that it is possible to apply an orthogonal transformation to the output of one component, so long as it is undone in the next. Our key insight is that the RMSNorm operation which is performed between blocks of the network does not affect the transformation: the operations commute. In this section, we first describe how the invariance occurs in RMSNorm-connected transformer networks, then we note how networks trained with LayerNorm connections can be converted to RMSNorm. Next, we describe our method to compute transformations at each layer using Principal Component Analysis (PCA), such that the signal between blocks is projected onto its principal components. Finally, we describe how deleting the minor principal components corresponds to slicing away rows or columns of the modified network."
+    },
+    "4_EXPERIMENTAL_VALIDATION": {
+      "4.1_RESULTS": "Generation Task We begin by showcasing our findings using the WikiText-2 dataset. In this context, we evaluate the performance of both the OPT and LLAMA-2 model families across different sizes when using this dataset for slicing. Table 1 shows the perplexity obtained by various slicing levels. SliceGPT exhibits superior performance when applied to OPT models compared to LLAMA-2 models which matches our intuition from the spectrum analysis of those models (see Appendix A.4 for our discussion). The performance of SliceGPT improves as the model size increases. Comparing SliceGPT with SparseGPT, we see that that SparseGPT 2:4 performs worse than SliceGPT with 25% slicing in all LLAMA-2 models. For OPT, we see that 30% sliced models beat 2:4 sparsity for all model sizes except 2.7B. Zero-shot Tasks We assess SliceGPT across five well-known zero-shot tasks: PIQA (Bisk et al., 2020) ; WinoGrande (Sakaguchi et al., 2021) ; HellaSwag (Zellers et al., 2019) ; ARC-e and ARCc (Clark et al., 2018) . Following similar work (Frantar & Alistarh, 2023; Dettmers et al., 2022; Frantar et al., 2022; Dettmers et al., 2023) , we use the LM Evaluation Harness (Gao et al., 2021) with default parameters in our evaluations.\nFigure 5 shows the average scores achieved by the sliced models across these tasks. The top row of the plot shows the mean accuracy when WikiText-2 is used for calibration, and the bottom row shows the accuracy when Alpaca is used for calibration. We observe a similar pattern to the generation task in the results: the OPT models are more amenable to compression than the LLAMA-2 models, and the reduction in accuracy is less pronounced in the larger models. Here we also include the Phi-2 model: we see that sliced versions of the Phi-2 model are comparable with sliced versions of the LLAMA-2 7B model. The largest OPT and LLAMA-2 models can be compressed very effectively, with just a few percentage points loss when removing 30% of the 66B OPT model.\nWe additionally experiment here with recovery fine-tuning (RFT). We apply a small amount of RFT to sliced LLAMA-2 and Phi-2 models using LoRA (Hu et al., 2021) , following the idea from Ma et al. (2023a) . For models sliced with WikiText-2 we use approximately 1k sequences, for those sliced with the Alpaca dataset we use 5k. For all RFT we use lora_r = 32, lora_alpha = 10 and sequence length 1024, and use defaults for all other hyperparameters in the Hugging Face PEFT package (Mangrulkar et al., 2022) .\nFigure 6 shows the results. We see a marked difference between RFT on WikiText-2 and Alpaca datasets, with the Alpaca dataset giving much higher performing models. We attribute this difference to the similarity between Alpaca and the benchmark tasks. For the largest LLAMA-2 70B model sliced at 30%, with RFT on Alpaca we are able to achieve an average accuracy of 74.3%, compared to 76.6% on the dense model. The sliced model has approximately 51.6B parameters and considerably improved throughput as we demonstrate later.\nWe see that Phi-2 is not able to recover the drop in accuracy from slicing using only the WikiText-2 dataset, but using Alpaca we are able to recover several percentage points. The average accuracy of Phi-2 with 25% slicing and RFT is 65.2%, compared to 72.2% with the dense model. The sliced model has approximately 2.2B parameters and retains 90.3% of the accuracy of the 2.8B model. This shows that even small LMs can benefit from post-training pruning. Tables of accuracies across each task are provided in Appendix A.5. 7B 13B 70B 40 50 60 70 80 #params in the original model WikiText2 cal. & RFT Mean Accuracy LLAMA-2 Family 2.78B Phi-2 7B 13B 70B 40 50 60 70 80 #params in the original model Alpaca cal. & RFT Mean Accuracy LLAMA-2 Family 2.8B Phi-2 Dense 20% sliced 25% sliced 30% sliced Figure 6: Mean zero-shot accuracy on LLAMA-2 and Phi-2 across multiple tasks after slicing and recovery fine-tuning (RFT). Left: WikiText-2 used for calibration and RFT. Right: Alpaca used for calibration and RFT. Despite an extensive search, we were not able to find RFT parameters that enabled improved performance in the OPT models.\nBenchmarking Throughput Unlike conventional sparsity methods, which introduce sparsity in W in and W out , SliceGPT also introduces (structured) sparsity in X: entire columns of X are sliced off, reducing the embedding dimension. This enhances both the computational complexity (in flops) and data movement within our compressed model.\nThe token throughput of models sliced at 25% and 50% are compared to the dense model on 80GB H100 GPUs. We set the sequence length to 128 and find the maximum throughput by doubling the batch size until the GPUs run out of memory or the throughput drops off. The 25% sliced models achieve up to 1.55× throughput improvement over the dense model. At 50% slicing the largest models require only one GPU instead of two, with large increases in throughput: 3.13× and 1.87×. This means that for a fixed number of GPUs, these models achieve 6.26× and 3.75× throughput of a dense model. We note that the WikiText2 perplexity of SliceGPT at 50% is worse than SparseGPT 2:4, but the throughput is much higher than could be achieved with a sparse method that does not slice X. For models of size 13B, the performance increase from batch-size increasing is less pronounced because the models take up little of the GPU memory. On consumer grade GPUs (with less memory) the throughput for these smaller models is likely to be improved. For full details see Appendix A.6.\nInference Time Next we study the end-to-end runtime of a model compressed with SliceGPT. Table 2 compares the time of generating a single token in OPT 66B and LLAMA-2 70B models on Quadro RTX6000 and A100 GPUs. We observe a speedup of 16-17% on RTX6000 GPUs when employing 25% slicing, and 11-13% on A100s. We reduce the number of GPUs used in both cases, providing energy and cost savings relative to deployment of the dense model. For LLAMA-2 70B, the compute required using RTX6000 GPUs is reduced to 64%, from 1764 GPUms to 1075 GPUmsfoot_3 . We attribute this improvement to our approach of substituting weight matrices with smaller ones and using dense kernels in our compressed models, which is infeasible with other pruning schemes.\nTable 2: Average per-token inference time of SliceGPT when generating sequences of length 128 (with batch size of 1). In each case, we show the time taken in ms, the number of GPUs required and the total compute in GPUms.\nGPU Type Slicing OPT 66B LLAMA-2 70B A100 (40GB) Dense 114ms on 4 GPUs 456 GPUms 125ms on 4 GPUs 500 GPUms 25% 102ms on 3 GPUs 306 GPUms 110ms on 3 GPUs 330 GPUms Quadro RTX6000 Dense 237ms on 6 GPUs 1422 GPUms 252ms on 7 GPUs 1764 GPUms (24GB) 25% 204ms on 5 GPUs 1020 GPUms 215ms on 5 GPUs 1075 GPUms End-to-end performance gains are not feasible with our baseline SparseGPT 2:4 at the time of writing. Instead, we compare SliceGPT with SparseGPT 2:4 by comparing the relative timing of each operation involved in a transformer layer. We find that SliceGPT (25%) is competitive with SparseGPT (2:4) in terms of speedup and perplexity for large models. For further details see Appendix A.7.\nCompute cost All LLAMA-2 , OPT and Phi-2 models can be sliced on a single GPU in 1 to 3 hours. With recovery fine-tuning we compress all LMs in 1 to 5 hours total, as shown in Table 3 . ",
+      "_text": "Setup We use Hugging Face Transformers (Wolf et al., 2019) to implement our code with PyTorch (Paszke et al., 2019) . The computation of Q is performed on a single H100 GPU with 80GB of memory, taking approximately 3.5 hours to complete for the LLAMA-2 70B model. During the PCA calculation, we use double precision for computing the eigenvectors of the covariance matrix. We find that using single precision for eigenvector calculations in PyTorch leads to a discrepancy in the final accuracy, as detailed in Appendix A.2.\nWe experiment with two different calibration sets: the WikiText-2 training dataset (Merity et al., 2016) and the Alpaca training dataset (Taori et al., 2023 ). An ablation study on the calibration set size and sequence length is presented in Appendix A.3."
+    },
+    "5_CONCLUSION_AND_FUTURE_WORK": "We've introduced SliceGPT which allows for structured pruning for large language models. We reduce the cost of inference of LLAMA-2 70B on 40GB A100 GPUs to 66% of that of the dense model without any additional code optimization, requiring fewer GPUs (from 4 to 3) while maintaining better held-out perplexity than SparseGPT 2:4. On 24GB RTX6000 GPUs, the cost of inference is reduced to 64%, requiring 2 fewer GPUs (from 7 to 5). On zero-shot downstream tasks, slicing OPT 66B, LLAMA-2 70B and Phi-2 at 25% maintains 99%, 96% and 87% of the dense performance. With recovery fine-tuning 25%-sliced LLAMA-2 70B and Phi-2 increase to 99% and 90% respectively.\nOpportunities remain to build on our method. Smaller but dense LMs perform better than LMs with 13B parameters or less pruned to similar sizes, though we do not expect this to remain the case for long. Our pruned models have more parameters than those pruned with SparseGPT but our method allows for larger batch sizes to be loaded into GPU memory, and has no overhead for sparsity structure: perhaps a combined method could obtain the best of both. Other methods of computing Q could improve the results. To further decrease the inference time and GPU count, complementary methods including quantization (Xiao et al., 2023; Dettmers et al., 2022; Ashkboos et al., 2023; Dettmers et al., 2023; Frantar et al., 2022) , and structural pruning (e.g. Ma et al., 2023b ) could be used.\nWe hope that our observation of computational invariance can help future research in improving the efficiency of deep learning models, and perhaps inspire new theoretical insights."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Towards end-to-end 4-bit inference on generative large language models",
+      "authors": [
+        {
+          "first": "Ilia",
+          "middle": [],
+          "last": "Saleh Ashkboos",
+          "suffix": ""
+        },
+        {
+          "first": "Elias",
+          "middle": [],
+          "last": "Markov",
+          "suffix": ""
+        },
+        {
+          "first": "Tingxuan",
+          "middle": [],
+          "last": "Frantar",
+          "suffix": ""
+        },
+        {
+          "first": "Xincheng",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Torsten",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hoefler",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Alistarh",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Layer normalization",
+      "authors": [
+        {
+          "first": "Jimmy",
+          "middle": [],
+          "last": "Lei Ba",
+          "suffix": ""
+        },
+        {
+          "first": "Jamie",
+          "middle": [],
+          "last": "Ryan Kiros",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Piqa: Reasoning about physical commonsense in natural language",
+      "authors": [
+        {
+          "first": "Yonatan",
+          "middle": [],
+          "last": "Bisk",
+          "suffix": ""
+        },
+        {
+          "first": "Rowan",
+          "middle": [],
+          "last": "Zellers",
+          "suffix": ""
+        },
+        {
+          "first": "Le",
+          "middle": [],
+          "last": "Ronan",
+          "suffix": ""
+        },
+        {
+          "first": "Jianfeng",
+          "middle": [],
+          "last": "Bras",
+          "suffix": ""
+        },
+        {
+          "first": "Yejin",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Thirty-Fourth AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Think you have solved question answering? try arc, the ai2 reasoning challenge",
+      "authors": [
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Isaac",
+          "middle": [],
+          "last": "Cowhey",
+          "suffix": ""
+        },
+        {
+          "first": "Oren",
+          "middle": [],
+          "last": "Etzioni",
+          "suffix": ""
+        },
+        {
+          "first": "Tushar",
+          "middle": [],
+          "last": "Khot",
+          "suffix": ""
+        },
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Sabharwal",
+          "suffix": ""
+        },
+        {
+          "first": "Carissa",
+          "middle": [],
+          "last": "Schoenick",
+          "suffix": ""
+        },
+        {
+          "first": "Oyvind",
+          "middle": [],
+          "last": "Tafjord",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "LLM. int8 (): 8-bit matrix multiplication for transformers at scale",
+      "authors": [
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Dettmers",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        },
+        {
+          "first": "Younes",
+          "middle": [],
+          "last": "Belkada",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Spqr: A sparse-quantized representation for near-lossless LLM weight compression",
+      "authors": [
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Dettmers",
+          "suffix": ""
+        },
+        {
+          "first": "Ruslan",
+          "middle": [],
+          "last": "Svirschevski",
+          "suffix": ""
+        },
+        {
+          "first": "Vage",
+          "middle": [],
+          "last": "Egiazarian",
+          "suffix": ""
+        },
+        {
+          "first": "Denis",
+          "middle": [],
+          "last": "Kuznedelev",
+          "suffix": ""
+        },
+        {
+          "first": "Elias",
+          "middle": [],
+          "last": "Frantar",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Saleh Ashkboos",
+          "suffix": ""
+        },
+        {
+          "first": "Torsten",
+          "middle": [],
+          "last": "Borzunov",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hoefler",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Alistarh",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Optimal brain compression: A framework for accurate post-training quantization and pruning",
+      "authors": [
+        {
+          "first": "Elias",
+          "middle": [],
+          "last": "Frantar",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Alistarh",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "SparseGPT: Massive language models can be accurately pruned in one-shot",
+      "authors": [
+        {
+          "first": "Elias",
+          "middle": [],
+          "last": "Frantar",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Alistarh",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "GPTQ: Accurate post-training quantization for generative pre-trained transformers",
+      "authors": [
+        {
+          "first": "Elias",
+          "middle": [],
+          "last": "Frantar",
+          "suffix": ""
+        },
+        {
+          "first": "Torsten",
+          "middle": [],
+          "last": "Saleh Ashkboos",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hoefler",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Alistarh",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "The state of sparsity in deep neural networks",
+      "authors": [
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Gale",
+          "suffix": ""
+        },
+        {
+          "first": "Erich",
+          "middle": [],
+          "last": "Elsen",
+          "suffix": ""
+        },
+        {
+          "first": "Sara",
+          "middle": [],
+          "last": "Hooker",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "A framework for few-shot language model evaluation",
+      "authors": [
+        {
+          "first": "Leo",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Tow",
+          "suffix": ""
+        },
+        {
+          "first": "Stella",
+          "middle": [],
+          "last": "Biderman",
+          "suffix": ""
+        },
+        {
+          "first": "Sid",
+          "middle": [],
+          "last": "Black",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Dipofi",
+          "suffix": ""
+        },
+        {
+          "first": "Charles",
+          "middle": [],
+          "last": "Foster",
+          "suffix": ""
+        },
+        {
+          "first": "Laurence",
+          "middle": [],
+          "last": "Golding",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Hsu",
+          "suffix": ""
+        },
+        {
+          "first": "Kyle",
+          "middle": [],
+          "last": "Mcdonell",
+          "suffix": ""
+        },
+        {
+          "first": "Niklas",
+          "middle": [],
+          "last": "Muennighoff",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Version"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "A survey of quantization methods for efficient neural network inference",
+      "authors": [
+        {
+          "first": "Amir",
+          "middle": [],
+          "last": "Gholami",
+          "suffix": ""
+        },
+        {
+          "first": "Sehoon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Zhen",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Zhewei",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "W"
+          ],
+          "last": "Mahoney",
+          "suffix": ""
+        },
+        {
+          "first": "Kurt",
+          "middle": [],
+          "last": "Keutzer",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Compression of deep learning models for text: A survey",
+      "authors": [
+        {
+          "first": "Manish",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "Puneet",
+          "middle": [],
+          "last": "Agrawal",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Deep compression: Compressing deep neural networks with pruning, trained quantization and huffman coding",
+      "authors": [
+        {
+          "first": "Song",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Huizi",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [
+            "J"
+          ],
+          "last": "Dally",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Optimal brain surgeon and general network pruning",
+      "authors": [
+        {
+          "first": "Babak",
+          "middle": [],
+          "last": "Hassibi",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "G"
+          ],
+          "last": "Stork",
+          "suffix": ""
+        },
+        {
+          "first": "Gregory",
+          "middle": [
+            "J"
+          ],
+          "last": "Wolff",
+          "suffix": ""
+        }
+      ],
+      "year": 1993,
+      "venue": "IEEE international conference on neural networks"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Channel pruning for accelerating very deep neural networks",
+      "authors": [
+        {
+          "first": "Yihui",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the IEEE international conference on computer vision"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Sparsity in deep learning: Pruning and growth for efficient inference and training in neural networks",
+      "authors": [
+        {
+          "first": "Torsten",
+          "middle": [],
+          "last": "Hoefler",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Alistarh",
+          "suffix": ""
+        },
+        {
+          "first": "Tal",
+          "middle": [],
+          "last": "Ben-Nun",
+          "suffix": ""
+        },
+        {
+          "first": "Nikoli",
+          "middle": [],
+          "last": "Dryden",
+          "suffix": ""
+        },
+        {
+          "first": "Alexandra",
+          "middle": [],
+          "last": "Peste",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Lora: Low-rank adaptation of large language models",
+      "authors": [
+        {
+          "first": "Edward",
+          "middle": [
+            "J"
+          ],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Yelong",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Wallis",
+          "suffix": ""
+        },
+        {
+          "first": "Zeyuan",
+          "middle": [],
+          "last": "Allen-Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Shean",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Weizhu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Data-driven sparse structure selection for deep neural networks",
+      "authors": [
+        {
+          "first": "Zehao",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Naiyan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the European conference on computer vision (ECCV)"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Optimal brain damage",
+      "authors": [
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Denker",
+          "suffix": ""
+        },
+        {
+          "first": "Sara",
+          "middle": [],
+          "last": "Solla",
+          "suffix": ""
+        }
+      ],
+      "year": 1989,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Learning efficient convolutional networks through network slimming",
+      "authors": [
+        {
+          "first": "Zhuang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianguo",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiqiang",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Gao",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Shoumeng",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Changshui",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the IEEE international conference on computer vision"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Thinet: A filter level pruning method for deep neural network compression",
+      "authors": [
+        {
+          "first": "Jian-Hao",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Jianxin",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Weiyao",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the IEEE international conference on computer vision"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Llm-pruner: On the structural pruning of large language models",
+      "authors": [
+        {
+          "first": "Xinyin",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Gongfan",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinchao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "LLM-pruner: On the structural pruning of large language models",
+      "authors": [
+        {
+          "first": "Xinyin",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Gongfan",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinchao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Compacter: Efficient low-rank hypercomplex adapter layers",
+      "authors": [
+        {
+          "first": "Rabeeh",
+          "middle": [],
+          "last": "Karimi Mahabadi",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Henderson",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Ruder",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Peft: State-of-the-art parameter-efficient fine-tuning methods",
+      "authors": [
+        {
+          "first": "Sourab",
+          "middle": [],
+          "last": "Mangrulkar",
+          "suffix": ""
+        },
+        {
+          "first": "Sylvain",
+          "middle": [],
+          "last": "Gugger",
+          "suffix": ""
+        },
+        {
+          "first": "Lysandre",
+          "middle": [],
+          "last": "Debut",
+          "suffix": ""
+        },
+        {
+          "first": "Younes",
+          "middle": [],
+          "last": "Belkada",
+          "suffix": ""
+        },
+        {
+          "first": "Sayak",
+          "middle": [],
+          "last": "Paul",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Bossan",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Pointer sentinel mixture models",
+      "authors": [
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Merity",
+          "suffix": ""
+        },
+        {
+          "first": "Caiming",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Accelerating sparse deep neural networks",
+      "authors": [
+        {
+          "first": "Asit",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "Jorge",
+          "middle": [
+            "Albericio"
+          ],
+          "last": "Latorre",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Pool",
+          "suffix": ""
+        },
+        {
+          "first": "Darko",
+          "middle": [],
+          "last": "Stosic",
+          "suffix": ""
+        },
+        {
+          "first": "Dusan",
+          "middle": [],
+          "last": "Stosic",
+          "suffix": ""
+        },
+        {
+          "first": "Ganesh",
+          "middle": [],
+          "last": "Venkatesh",
+          "suffix": ""
+        },
+        {
+          "first": "Chong",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Paulius",
+          "middle": [],
+          "last": "Micikevicius",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "PyTorch: An imperative style, high-performance deep learning library",
+      "authors": [
+        {
+          "first": "Matan",
+          "middle": [],
+          "last": "Ben",
+          "suffix": ""
+        },
+        {
+          "first": "Noach",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Yoav",
+          "middle": [],
+          "last": "Goldberg",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 1st Conference of the Asia-Pacific Chapter of the Association for Computational Linguistics and the 10th International Joint Conference on Natural Language Processing"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Improving language understanding by generative pre-training",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Karthik",
+          "middle": [],
+          "last": "Narasimhan",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Winogrande: An adversarial winograd schema challenge at scale",
+      "authors": [
+        {
+          "first": "Keisuke",
+          "middle": [],
+          "last": "Sakaguchi",
+          "suffix": ""
+        },
+        {
+          "first": "Le",
+          "middle": [],
+          "last": "Ronan",
+          "suffix": ""
+        },
+        {
+          "first": "Chandra",
+          "middle": [],
+          "last": "Bras",
+          "suffix": ""
+        },
+        {
+          "first": "Yejin",
+          "middle": [],
+          "last": "Bhagavatula",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Communications of the ACM"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Woodfisher: Efficient second-order approximation for neural network compression",
+      "authors": [
+        {
+          "first": "Pal",
+          "middle": [],
+          "last": "Sidak",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Alistarh",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "A simple and effective pruning approach for large language models",
+      "authors": [
+        {
+          "first": "Mingjie",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Bair",
+          "suffix": ""
+        },
+        {
+          "first": "J Zico",
+          "middle": [],
+          "last": "Kolter",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Stanford alpaca: An instruction-following llama model",
+      "authors": [
+        {
+          "first": "Rohan",
+          "middle": [],
+          "last": "Taori",
+          "suffix": ""
+        },
+        {
+          "first": "Ishaan",
+          "middle": [],
+          "last": "Gulrajani",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Dubois",
+          "suffix": ""
+        },
+        {
+          "first": "Xuechen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Carlos",
+          "middle": [],
+          "last": "Guestrin",
+          "suffix": ""
+        },
+        {
+          "first": "Percy",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsunori",
+          "middle": [
+            "B"
+          ],
+          "last": "Hashimoto",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Llama 2: Open foundation and fine-tuned chat models",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Louis",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Albert",
+          "suffix": ""
+        },
+        {
+          "first": "Amjad",
+          "middle": [],
+          "last": "Almahairi",
+          "suffix": ""
+        },
+        {
+          "first": "Yasmine",
+          "middle": [],
+          "last": "Babaei",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolay",
+          "middle": [],
+          "last": "Bashlykov",
+          "suffix": ""
+        },
+        {
+          "first": "Soumya",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "Prajjwal",
+          "middle": [],
+          "last": "Bhargava",
+          "suffix": ""
+        },
+        {
+          "first": "Shruti",
+          "middle": [],
+          "last": "Bhosale",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Bikel",
+          "suffix": ""
+        },
+        {
+          "first": "Lukas",
+          "middle": [],
+          "last": "Blecher",
+          "suffix": ""
+        },
+        {
+          "first": "Cristian Canton",
+          "middle": [],
+          "last": "Ferrer",
+          "suffix": ""
+        },
+        {
+          "first": "Moya",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Guillem",
+          "middle": [],
+          "last": "Cucurull",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Esiobu",
+          "suffix": ""
+        },
+        {
+          "first": "Jude",
+          "middle": [],
+          "last": "Fernandes",
+          "suffix": ""
+        },
+        {
+          "first": "Jeremy",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Wenyin",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Fuller",
+          "suffix": ""
+        },
+        {
+          "first": "Cynthia",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Vedanuj",
+          "middle": [],
+          "last": "Goswami",
+          "suffix": ""
+        },
+        {
+          "first": "Naman",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Hartshorn",
+          "suffix": ""
+        },
+        {
+          "first": "Saghar",
+          "middle": [],
+          "last": "Hosseini",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Hakan",
+          "middle": [],
+          "last": "Inan",
+          "suffix": ""
+        },
+        {
+          "first": "Marcin",
+          "middle": [],
+          "last": "Kardas",
+          "suffix": ""
+        },
+        {
+          "first": "Viktor",
+          "middle": [],
+          "last": "Kerkez",
+          "suffix": ""
+        },
+        {
+          "first": "Madian",
+          "middle": [],
+          "last": "Khabsa",
+          "suffix": ""
+        },
+        {
+          "first": "Isabel",
+          "middle": [],
+          "last": "Kloumann",
+          "suffix": ""
+        },
+        {
+          "first": "Artem",
+          "middle": [],
+          "last": "Korenev",
+          "suffix": ""
+        },
+        {
+          "first": "Punit",
+          "middle": [],
+          "last": "Singh Koura",
+          "suffix": ""
+        },
+        {
+          "first": "Marie-Anne",
+          "middle": [],
+          "last": "Lachaux",
+          "suffix": ""
+        },
+        {
+          "first": "Thibaut",
+          "middle": [],
+          "last": "Lavril",
+          "suffix": ""
+        },
+        {
+          "first": "Jenya",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Diana",
+          "middle": [],
+          "last": "Liskovich",
+          "suffix": ""
+        },
+        {
+          "first": "Yinghai",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuning",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Xavier",
+          "middle": [],
+          "last": "Martinet",
+          "suffix": ""
+        },
+        {
+          "first": "Todor",
+          "middle": [],
+          "last": "Mihaylov",
+          "suffix": ""
+        },
+        {
+          "first": "Pushkar",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Molybog",
+          "suffix": ""
+        },
+        {
+          "first": "Yixin",
+          "middle": [],
+          "last": "Nie",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Poulton",
+          "suffix": ""
+        },
+        {
+          "first": "Jeremy",
+          "middle": [],
+          "last": "Reizenstein",
+          "suffix": ""
+        },
+        {
+          "first": "Rashi",
+          "middle": [],
+          "last": "Rungta",
+          "suffix": ""
+        },
+        {
+          "first": "Kalyan",
+          "middle": [],
+          "last": "Saladi",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [],
+          "last": "Schelten",
+          "suffix": ""
+        },
+        {
+          "first": "Ruan",
+          "middle": [],
+          "last": "Silva",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "Michael"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Ranjan",
+          "middle": [],
+          "last": "Subramanian",
+          "suffix": ""
+        },
+        {
+          "first": "Ellen",
+          "middle": [],
+          "last": "Xiaoqing",
+          "suffix": ""
+        },
+        {
+          "first": "Binh",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Adina",
+          "middle": [],
+          "last": "Taylor",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "Puxin",
+          "middle": [],
+          "last": "Xiang Kuan",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Iliyan",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Yuchen",
+          "middle": [],
+          "last": "Zarov",
+          "suffix": ""
+        },
+        {
+          "first": "Angela",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Melanie",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Sharan",
+          "middle": [],
+          "last": "Kambadur",
+          "suffix": ""
+        },
+        {
+          "first": "Aurelien",
+          "middle": [],
+          "last": "Narang",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Rodriguez",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Stojnic",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Edunov",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Scialom",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Compressed deep networks: Goodbye SVD, hello robust low-rank approximation",
+      "authors": [
+        {
+          "first": "Murad",
+          "middle": [],
+          "last": "Tukan",
+          "suffix": ""
+        },
+        {
+          "first": "Alaa",
+          "middle": [],
+          "last": "Maalouf",
+          "suffix": ""
+        },
+        {
+          "first": "Matan",
+          "middle": [],
+          "last": "Weksler",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Feldman",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF36",
+      "title": "The llm surgeon",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [
+            "A"
+          ],
+          "last": "Tycho",
+          "suffix": ""
+        },
+        {
+          "first": "Markus",
+          "middle": [],
+          "last": "Van Der Ouderaa",
+          "suffix": ""
+        },
+        {
+          "first": "Mart",
+          "middle": [],
+          "last": "Nagel",
+          "suffix": ""
+        },
+        {
+          "first": "Yuki",
+          "middle": [
+            "M"
+          ],
+          "last": "Van Baalen",
+          "suffix": ""
+        },
+        {
+          "first": "Tijmen",
+          "middle": [],
+          "last": "Asano",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Blankevoort",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Niki",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Llion",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Łukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Illia",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Huggingface's transformers: State-of-the-art natural language processing",
+      "authors": [
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Wolf",
+          "suffix": ""
+        },
+        {
+          "first": "Lysandre",
+          "middle": [],
+          "last": "Debut",
+          "suffix": ""
+        },
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Sanh",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Chaumond",
+          "suffix": ""
+        },
+        {
+          "first": "Clement",
+          "middle": [],
+          "last": "Delangue",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Moi",
+          "suffix": ""
+        },
+        {
+          "first": "Pierric",
+          "middle": [],
+          "last": "Cistac",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Rault",
+          "suffix": ""
+        },
+        {
+          "first": "Rémi",
+          "middle": [],
+          "last": "Louf",
+          "suffix": ""
+        },
+        {
+          "first": "Morgan",
+          "middle": [],
+          "last": "Funtowicz",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Smoothquant: Accurate and efficient post-training quantization for large language models",
+      "authors": [
+        {
+          "first": "Guangxuan",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Ji",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Mickael",
+          "middle": [],
+          "last": "Seznec",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Demouth",
+          "suffix": ""
+        },
+        {
+          "first": "Song",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Hellaswag: Can a machine really finish your sentence",
+      "authors": [
+        {
+          "first": "Rowan",
+          "middle": [],
+          "last": "Zellers",
+          "suffix": ""
+        },
+        {
+          "first": "Ari",
+          "middle": [],
+          "last": "Holtzman",
+          "suffix": ""
+        },
+        {
+          "first": "Yonatan",
+          "middle": [],
+          "last": "Bisk",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        },
+        {
+          "first": "Yejin",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Root mean square layer normalization",
+      "authors": [
+        {
+          "first": "Biao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Rico",
+          "middle": [],
+          "last": "Sennrich",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Opt: Open pre-trained transformer language models",
+      "authors": [
+        {
+          "first": "Susan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Roller",
+          "suffix": ""
+        },
+        {
+          "first": "Naman",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Mikel",
+          "middle": [],
+          "last": "Artetxe",
+          "suffix": ""
+        },
+        {
+          "first": "Moya",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Shuohui",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Dewan",
+          "suffix": ""
+        },
+        {
+          "first": "Mona",
+          "middle": [],
+          "last": "Diab",
+          "suffix": ""
+        },
+        {
+          "first": "Xian",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "Victoria Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "A survey of large language models",
+      "authors": [
+        {
+          "first": "Kun",
+          "middle": [],
+          "last": "Wayne Xin Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Junyi",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaolei",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Yupeng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yingqian",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Beichen",
+          "middle": [],
+          "last": "Min",
+          "suffix": ""
+        },
+        {
+          "first": "Junjie",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zican",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "To prune, or not to prune: exploring the efficacy of pruning for model compression",
+      "authors": [
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Suyog",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "A survey on model compression for large language models",
+      "authors": [
+        {
+          "first": "Xunyu",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yong",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Can",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Weiping",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    }
+  ]
+}

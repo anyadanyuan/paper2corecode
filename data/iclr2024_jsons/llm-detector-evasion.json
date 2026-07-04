@@ -1,0 +1,1958 @@
+{
+  "paper_id": "llm-detector-evasion",
+  "title": "Under review at the NeurIPS Socially Responsible Language Modelling Research 2023 Workshop LANGUAGE MODEL DETECTORS ARE EASILY OPTIMIZED AGAINST",
+  "authors": [],
+  "abstract": "The fluency and general applicability of large language models (LLMs) has motivated significant interest in detecting whether a piece of text was written by a language model. While both academic and commercial detectors have been deployed in some settings, particularly education, other research has highlighted the fragility of these systems. In this paper, we demonstrate a data-efficient attack that fine-tunes language models to confuse existing detectors, leveraging recent developments in reinforcement learning of language models. We use the 'human-ness' score (often just a log probability) of various open-source and commercial detectors as a reward function for reinforcement learning, subject to a KL-divergence constraint that the resulting model does not differ significantly from the original. For a 7B parameter Llama-2 model, fine-tuning for under a day reduces the AU-ROC of the OpenAI RoBERTa-Large detector from 0.84 to 0.62, while perplexity on OpenWebText increases from 8.7 to only 9.0; with a larger perplexity budget, we reduce AUROC to 0.30 (worse than random), with a perplexity increase to 9.9. Similar to traditional adversarial attacks, we find that this increase in 'detector evasion' generalizes to other detectors not used during training. In light of our empirical results, we advise against continued reliance on LLM-generated text detectors.",
+  "body": {
+    "1_INTRODUCTION": "Large language models (LLMs) can produce high-quality text in a wide variety of settings (3; 4). Access to such powerful LLMs has expanded rapidly; for anyone hoping to generate machine-written text, a plethora of free and low-cost options exist. The usage of such models has become endemic to classrooms, news outlets, social media platforms, and other domains. This rapid development has led to several objections to widespread use of LLMs, including moral qualms with data procurement, applications, questions regarding the quality of machine-generated text and issues with LLMs outputting inaccurate information (hallucinations) among others. These concerns have led to a significant amount of research and commercial product offerings for detecting machine-generated text (e.g. 6; 19; 15). In this work we present an adversarial attack that utilizes reinforcement learning (RL) that directly optimizes an LLM to minimize it's detectability. We seek to answer the following questions: How does detectability trade-off with other metrics like perplexity? How does detectability scale with the query budget to a detector, and is it feasible to train available LLMs to be undetectable against commercial detectors on a limited budget? Does training against one detector reduce detectability under other detectors? We should note that in contrast to prior work, our approach does not require the use of human paraphrasers or a paraphrasing model (11) and adds no overheard during inference.\nThe main contribution of this paper is a detailed empirical study on the ease of evading language model detectors by optimizing against them. Our experiments find that a simple DPO-based pipeline produces consistent reduction in detectability against various detectors. We can achieve AUROC metrics below 0.5 against several strong public and commercial detectors, indicating worse than random chance detector performance on the fine-tuned model and close to random chance performance on several additional detection algorithms at the cost of only small increases in perplexity. Moreover, in many cases optimizing against one detector yields a model that is also less detectable under other detectors. In particular, we find that models pre-trained against the public RoBERTalarge achieve an average of 0.15 reduction in AUROC when evaluated by a number of black-box commercial detectors. These results hold even at longer sequences, such as generating essays, where our fine-tuned Llama-7b-chat model achieves a RoBERTA-large AUROC of 0.26.\nThe results of our red-teaming effort suggest that fine-tuning language models to be less detectable is both easy and cheap, which makes it feasible for a wide slate of malicious actors, even against the best open-source and commercial detectors available. Based on these results, we advise various stakeholders (educators, policymakers etc) against reliance on the current suite of text-detectors, and to suitably account for less-detectable LLM generated text.",
+    "2_OPTIMIZING_AGAINST_LANGUAGE_MODEL_DETECTORS": "We leverage recent advantages in fine-tuning language models with reinforcement learning to directly optimize for maximum detector confusion. We present our pipeline below.",
+    "3_EXPERIMENTS": {
+      "3.1_EVALUATING_GENERALIZATION_OF_DETECTOR_EVASION_ACROSS_DETECTORS": "In our first experiment, we study the basic question of the feasibility of optimizing language models against language model detectors without significantly harming sample quality. We fine-tune three Llama-2 7B models on preferences computed from a variety of open source (Table 1 ) and commercial (Table 2 ) detectors.\nWe find that optimizing against both open source and commercial detectors is effective, driving the AUROC of the detector trained against to 0.62 or below in every case. In addition, we find strong generalization between detectors when training against the OpenAI RoBERTa-large detector, DetectGPT and Originality. Performance is, intuitively, correlated for open-source detectors with similar mechanisms: RoB-lg and RoB-base are both fine-tuned RoBERTa models; log prob and log rank but threshold token-level statistics of the observed text; DetectGPT and DetectLLM both measure a discrepancy that appears after perturbing the given text. Similary, among the commercial detectors, we note similar performance from the RoBERTa and Originality detectors; this result makes sense because Originality also uses a fine-tuned RoBERTa-like model for detection. 4However, we also observe asymmetry in generalization between evasion-tuned models; the model trained against RoBERTa-large also evades log probability and log rank detectors, but not vice versa. Among commercial detectors, Originality proves most resistant to evasion-tuning on other detectors. However, optimizing against Originality itself produces relatively low AUROC for it as well as the In a real-world scenario, a malicious actor is likely to be constrained by the amount of paired preference data used in training, especially if optimizing against a commercial detector. We demonstrate that strong performance of detectors can be maintained even when training data is limited. We trained five Llama2-7b models against OpenAI's large RoBERTa-based detector, using β = 0.5 for all models. Each model was trained for up to 100k steps on a different training set size (1k, 5k, 10k, 25k, and 100k preference pairs). We observe several significant findings, which are presented in Figure 1 . First, detector evasion is possible with only a small number (<10k) queries to the detector. For the commercial detectors we study, this number of queries typically costs less than $150 (in several cases significantly so), making detector evasion a very accessible procedure even for small budgets. These results suggest that preventing an adversary from collecting a dataset of detector evaluations large enough to train an undetectable model may be extremely difficult or impossible.",
+      "3.4_CASE_STUDY:_ESSAY_GENERATION": "Finally, to analyze the feasibility of optimizing against existing detectors in a domain more closely aligned with real-world usage, we explore evasion tuning in the context of generating essays. We ask two questions: Can we evasion-tune a chat model to generate essays that confuse a strong detector? and a more challenging question Can we evasion-tune a generalpurpose dialogue model that still produces essays that confuse a strong detector, without gathering new detector-annotated preferences or fine-tuning specifically for essay generation? While an affirmative answer to either question is cause for concern, an affirmative answer to the second is much more serious: in this case, we do not need to evasion tune again for each new domain in which we would like to evade a detector, and further, in order to do so, we can re-use a single set of preference data generated by another model (in this case, ChatGPT). To answer these questions, we perform detector evasion on a LLama-2-chat 7B (23) , using two different datasets, one specifically essay prompts and essays generated by Llama-2-chat, and the other more general instruction-following prompts from Alpaca (22) and preference data over samples from ChatGPT, rather than the Llama-2-chat model. We fine-tune both models for 30k steps using β = 0.5; the Llamagenerated preference samples are 250 tokens long; we prompt ChatGPT to write a 'single mid-length paragraph' on the given topic, discarding samples less than 100 Llama-2 tokens. The results in Table 4 show that optimizing against RoBERTalarge is successful in both of these cases: finetuning a general-purpose chat model to evade a detector using general-purpose instruction following prompts and off-policy samples nonetheless can evade a detector in the specific case of generating essays.",
+      "_text": "We conduct a wide variety of experimental evaluations in order to understand the extent to which optimizing against detectors is feasible and cost-effective. In Section 3.1, we investigate the extent to which training against one detector provides evasion from other detectors, using both open-source and commercial detectors available only through APIs. Section 3.2 studies how many queries to a detector are necessary to collect a dataset sufficient for evasion. Section 3.3 evaluates whether sampling longer sequences from the evasion-tuned model degrades evasion. Finally, we explore detector evasion in language models fine-tuned for dialogue in Section 3.4, which explore evasion using off-policy data in a case study in essay generation."
+    },
+    "4_DISCUSSION": "Motivated by the increasingly widespread use of large language model detectors, we have shown that it is straightforward to fine-tune a model to evade these detectors while still maintaining high performance. The fine-tuned models produce text that is almost completely undetectable by two out of four commercial detectors. For the other two commercial detectors, the fine-tuned models have an AUROC of less than 0.5, indicating that they produce text that is judged to be statistically more likely to be human than the human-written corpus itself. Moreover, generating long-form text, such as essays, does not increase detectability.\nWe emphasize that the training pipeline that we consider is straightforward and easy for adversaries to replicate. It uses easily accessible public models and an open-source training codebase. The entire data acquisition and training process cost a few hundred dollars. For data, the process only requires limited, black-box query access to the detector with a budget of a few thousand prompts and does not need human annotators, paraphrasing, or teacher models. For compute, we used widely available consumer hardware and only a few hours of training time. We further expect that, with more extensive data, training, and resources, a fine-tuned model may be even more evasive.\nWe expect that this direct kind of attack is hard to protect against. Indeed, our results showed meaningful transfer between strong detectors. Thus, in light of these results, we argue that the current generation of machine-generated text detectors is not robust to adversaries and may even favor machine-generated text over actual human-generated content. This includes both public detectors and closed black-box commercial ones. Furthermore, we argue that the problem of robust machinegenerated text detection may be unsolvable in practical settings. Any new detection algorithm can be subject to the adversarial training process in this paper. New detection algorithms will be rendered ineffective by further model fine-tuning, which would then require the development of new detection algorithms. Hence, we argue against continued use of machine-generated text detectors."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Training a helpful and harmless assistant with reinforcement learning from human feedback",
+      "authors": [
+        {
+          "first": "Yuntao",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Kamal",
+          "middle": [],
+          "last": "Ndousse",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Nova",
+          "middle": [],
+          "last": "Dassarma",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Drain",
+          "suffix": ""
+        },
+        {
+          "first": "Stanislav",
+          "middle": [],
+          "last": "Fort",
+          "suffix": ""
+        },
+        {
+          "first": "Deep",
+          "middle": [],
+          "last": "Ganguli",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Joseph",
+          "suffix": ""
+        },
+        {
+          "first": "Saurav",
+          "middle": [],
+          "last": "Kadavath",
+          "suffix": ""
+        },
+        {
+          "first": "Jackson",
+          "middle": [],
+          "last": "Kernion",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Conerly",
+          "suffix": ""
+        },
+        {
+          "first": "Sheer",
+          "middle": [],
+          "last": "El-Showk",
+          "suffix": ""
+        },
+        {
+          "first": "Nelson",
+          "middle": [],
+          "last": "Elhage",
+          "suffix": ""
+        },
+        {
+          "first": "Zac",
+          "middle": [],
+          "last": "Hatfield-Dodds",
+          "suffix": ""
+        },
+        {
+          "first": "Danny",
+          "middle": [],
+          "last": "Hernandez",
+          "suffix": ""
+        },
+        {
+          "first": "Tristan",
+          "middle": [],
+          "last": "Hume",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Johnston",
+          "suffix": ""
+        },
+        {
+          "first": "Shauna",
+          "middle": [],
+          "last": "Kravec",
+          "suffix": ""
+        },
+        {
+          "first": "Liane",
+          "middle": [],
+          "last": "Lovitt",
+          "suffix": ""
+        },
+        {
+          "first": "Neel",
+          "middle": [],
+          "last": "Nanda",
+          "suffix": ""
+        },
+        {
+          "first": "Catherine",
+          "middle": [],
+          "last": "Olsson",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Mccandlish",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Olah",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [],
+          "last": "Kaplan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Real or fake? Learning to discriminate machine from human generated text",
+      "authors": [
+        {
+          "first": "Anton",
+          "middle": [],
+          "last": "Bakhtin",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Gross",
+          "suffix": ""
+        },
+        {
+          "first": "Myle",
+          "middle": [],
+          "last": "Ott",
+          "suffix": ""
+        },
+        {
+          "first": "Yuntian",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Marc'aurelio",
+          "middle": [],
+          "last": "Ranzato",
+          "suffix": ""
+        },
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Szlam",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Language models are few-shot learners",
+      "authors": [
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Nick",
+          "middle": [],
+          "last": "Ryder",
+          "suffix": ""
+        },
+        {
+          "first": "Melanie",
+          "middle": [],
+          "last": "Subbiah",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [
+            "D"
+          ],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Arvind",
+          "middle": [],
+          "last": "Neelakantan",
+          "suffix": ""
+        },
+        {
+          "first": "Pranav",
+          "middle": [],
+          "last": "Shyam",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Ariel",
+          "middle": [],
+          "last": "Herbert-Voss",
+          "suffix": ""
+        },
+        {
+          "first": "Gretchen",
+          "middle": [],
+          "last": "Krueger",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        },
+        {
+          "first": "Rewon",
+          "middle": [],
+          "last": "Child",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Ziegler",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Clemens",
+          "middle": [],
+          "last": "Winter",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Hesse",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Sigler",
+          "suffix": ""
+        },
+        {
+          "first": "Mateusz",
+          "middle": [],
+          "last": "Litwin",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Gray",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Chess",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Berner",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Mccandlish",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Sparks of artificial general intelligence: Early experiments with gpt-4",
+      "authors": [
+        {
+          "first": "Sébastien",
+          "middle": [],
+          "last": "Bubeck",
+          "suffix": ""
+        },
+        {
+          "first": "Varun",
+          "middle": [],
+          "last": "Chandrasekaran",
+          "suffix": ""
+        },
+        {
+          "first": "Ronen",
+          "middle": [],
+          "last": "Eldan",
+          "suffix": ""
+        },
+        {
+          "first": "Johannes",
+          "middle": [],
+          "last": "Gehrke",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Horvitz",
+          "suffix": ""
+        },
+        {
+          "first": "Ece",
+          "middle": [],
+          "last": "Kamar",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Yin",
+          "middle": [],
+          "last": "Tat Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Lundberg",
+          "suffix": ""
+        },
+        {
+          "first": "Harsha",
+          "middle": [],
+          "last": "Nori",
+          "suffix": ""
+        },
+        {
+          "first": "Hamid",
+          "middle": [],
+          "last": "Palangi",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Tulio Ribeiro",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Maskgan: Better text generation via filling in the",
+      "authors": [
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Fedus",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "M"
+          ],
+          "last": "Dai",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "GLTR: Statistical detection and visualization of generated text",
+      "authors": [
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Gehrmann",
+          "suffix": ""
+        },
+        {
+          "first": "Hendrik",
+          "middle": [],
+          "last": "Strobelt",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Rush",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics: System Demonstrations"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Openwebtext corpus",
+      "authors": [
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Gokaslan",
+          "suffix": ""
+        },
+        {
+          "first": "Vanya",
+          "middle": [],
+          "last": "Cohen",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Generative adversarial nets",
+      "authors": [
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "Jean",
+          "middle": [],
+          "last": "Pouget-Abadie",
+          "suffix": ""
+        },
+        {
+          "first": "Mehdi",
+          "middle": [],
+          "last": "Mirza",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Warde-Farley",
+          "suffix": ""
+        },
+        {
+          "first": "Sherjil",
+          "middle": [],
+          "last": "Ozair",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Automatic detection of generated text is easiest when humans are fooled",
+      "authors": [
+        {
+          "first": "Daphne",
+          "middle": [],
+          "last": "Ippolito",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Duckworth",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Callison-Burch",
+          "suffix": ""
+        },
+        {
+          "first": "Douglas",
+          "middle": [],
+          "last": "Eck",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "A watermark for large language models",
+      "authors": [
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Kirchenbauer",
+          "suffix": ""
+        },
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Geiping",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxin",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Katz",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Miers",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Goldstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Paraphrasing evades detectors of ai-generated text, but retrieval is an effective defense",
+      "authors": [
+        {
+          "first": "Kalpesh",
+          "middle": [],
+          "last": "Krishna",
+          "suffix": ""
+        },
+        {
+          "first": "Yixiao",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Marzena",
+          "middle": [],
+          "last": "Karpinska",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Wieting",
+          "suffix": ""
+        },
+        {
+          "first": "Mohit",
+          "middle": [],
+          "last": "Iyyer",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Robust distortionfree watermarks for language models",
+      "authors": [
+        {
+          "first": "Rohith",
+          "middle": [],
+          "last": "Kuditipudi",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Thickstun",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsunori",
+          "middle": [],
+          "last": "Hashimoto",
+          "suffix": ""
+        },
+        {
+          "first": "Percy",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Gpt detectors are biased against non-native english writers",
+      "authors": [
+        {
+          "first": "Weixin",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Mert",
+          "middle": [],
+          "last": "Yuksekgonul",
+          "suffix": ""
+        },
+        {
+          "first": "Yining",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Smaller language models are better black-box machine-generated text detectors",
+      "authors": [
+        {
+          "first": "Fatemehsadat",
+          "middle": [],
+          "last": "Mireshghallah",
+          "suffix": ""
+        },
+        {
+          "first": "Sicun",
+          "middle": [],
+          "last": "Justus Mattern",
+          "suffix": ""
+        },
+        {
+          "first": "Reza",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Taylor",
+          "middle": [],
+          "last": "Shokri",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Berg-Kirkpatrick",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "DetectGPT: Zero-shot machine-generated text detection using probability curvature",
+      "authors": [
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Mitchell",
+          "suffix": ""
+        },
+        {
+          "first": "Yoonho",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Khazatsky",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Training language models to follow instructions with human feedback",
+      "authors": [
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Diogo",
+          "middle": [],
+          "last": "Almeida",
+          "suffix": ""
+        },
+        {
+          "first": "Carroll",
+          "middle": [
+            "L"
+          ],
+          "last": "Wainwright",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Chong",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Katarina",
+          "middle": [],
+          "last": "Slama",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Ray",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Hilton",
+          "suffix": ""
+        },
+        {
+          "first": "Fraser",
+          "middle": [],
+          "last": "Kelton",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Miller",
+          "suffix": ""
+        },
+        {
+          "first": "Maddie",
+          "middle": [],
+          "last": "Simens",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Welinder",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Christiano",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Leike",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Lowe",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Direct preference optimization: Your language model is secretly a reward model",
+      "authors": [
+        {
+          "first": "Rafael",
+          "middle": [],
+          "last": "Rafailov",
+          "suffix": ""
+        },
+        {
+          "first": "Archit",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Mitchell",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Can ai-generated text be reliably detected",
+      "authors": [
+        {
+          "first": "Aounon",
+          "middle": [],
+          "last": "Vinu Sankar Sadasivan",
+          "suffix": ""
+        },
+        {
+          "first": "Sriram",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Wenxiao",
+          "middle": [],
+          "last": "Balasubramanian",
+          "suffix": ""
+        },
+        {
+          "first": "Soheil",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Feizi",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Release strategies and the social impacts of language models",
+      "authors": [
+        {
+          "first": "Irene",
+          "middle": [],
+          "last": "Solaiman",
+          "suffix": ""
+        },
+        {
+          "first": "Miles",
+          "middle": [],
+          "last": "Brundage",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Ariel",
+          "middle": [],
+          "last": "Herbert-Voss",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Jasmine",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Learning to summarize from human feedback",
+      "authors": [
+        {
+          "first": "Nisan",
+          "middle": [],
+          "last": "Stiennon",
+          "suffix": ""
+        },
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [
+            "M"
+          ],
+          "last": "Ziegler",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Lowe",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Voss",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Christiano",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Detectllm: Leveraging log rank information for zero-shot detection of machine-generated text",
+      "authors": [
+        {
+          "first": "Jinyan",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Terry",
+          "middle": [],
+          "last": "Yue Zhuo",
+          "suffix": ""
+        },
+        {
+          "first": "Di",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Preslav",
+          "middle": [],
+          "last": "Nakov",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Stanford alpaca: An instruction-following llama model",
+      "authors": [
+        {
+          "first": "Rohan",
+          "middle": [],
+          "last": "Taori",
+          "suffix": ""
+        },
+        {
+          "first": "Ishaan",
+          "middle": [],
+          "last": "Gulrajani",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Dubois",
+          "suffix": ""
+        },
+        {
+          "first": "Xuechen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Carlos",
+          "middle": [],
+          "last": "Guestrin",
+          "suffix": ""
+        },
+        {
+          "first": "Percy",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsunori",
+          "middle": [
+            "B"
+          ],
+          "last": "Hashimoto",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Llama 2: Open foundation and fine-tuned chat models",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Louis",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Albert",
+          "suffix": ""
+        },
+        {
+          "first": "Amjad",
+          "middle": [],
+          "last": "Almahairi",
+          "suffix": ""
+        },
+        {
+          "first": "Yasmine",
+          "middle": [],
+          "last": "Babaei",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolay",
+          "middle": [],
+          "last": "Bashlykov",
+          "suffix": ""
+        },
+        {
+          "first": "Soumya",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "Prajjwal",
+          "middle": [],
+          "last": "Bhargava",
+          "suffix": ""
+        },
+        {
+          "first": "Shruti",
+          "middle": [],
+          "last": "Bhosale",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Bikel",
+          "suffix": ""
+        },
+        {
+          "first": "Lukas",
+          "middle": [],
+          "last": "Blecher",
+          "suffix": ""
+        },
+        {
+          "first": "Cristian Canton",
+          "middle": [],
+          "last": "Ferrer",
+          "suffix": ""
+        },
+        {
+          "first": "Moya",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Guillem",
+          "middle": [],
+          "last": "Cucurull",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Esiobu",
+          "suffix": ""
+        },
+        {
+          "first": "Jude",
+          "middle": [],
+          "last": "Fernandes",
+          "suffix": ""
+        },
+        {
+          "first": "Jeremy",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Wenyin",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Fuller",
+          "suffix": ""
+        },
+        {
+          "first": "Cynthia",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Vedanuj",
+          "middle": [],
+          "last": "Goswami",
+          "suffix": ""
+        },
+        {
+          "first": "Naman",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Hartshorn",
+          "suffix": ""
+        },
+        {
+          "first": "Saghar",
+          "middle": [],
+          "last": "Hosseini",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Hakan",
+          "middle": [],
+          "last": "Inan",
+          "suffix": ""
+        },
+        {
+          "first": "Marcin",
+          "middle": [],
+          "last": "Kardas",
+          "suffix": ""
+        },
+        {
+          "first": "Viktor",
+          "middle": [],
+          "last": "Kerkez",
+          "suffix": ""
+        },
+        {
+          "first": "Madian",
+          "middle": [],
+          "last": "Khabsa",
+          "suffix": ""
+        },
+        {
+          "first": "Isabel",
+          "middle": [],
+          "last": "Kloumann",
+          "suffix": ""
+        },
+        {
+          "first": "Artem",
+          "middle": [],
+          "last": "Korenev",
+          "suffix": ""
+        },
+        {
+          "first": "Punit",
+          "middle": [],
+          "last": "Singh Koura",
+          "suffix": ""
+        },
+        {
+          "first": "Marie-Anne",
+          "middle": [],
+          "last": "Lachaux",
+          "suffix": ""
+        },
+        {
+          "first": "Thibaut",
+          "middle": [],
+          "last": "Lavril",
+          "suffix": ""
+        },
+        {
+          "first": "Jenya",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Diana",
+          "middle": [],
+          "last": "Liskovich",
+          "suffix": ""
+        },
+        {
+          "first": "Yinghai",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuning",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Xavier",
+          "middle": [],
+          "last": "Martinet",
+          "suffix": ""
+        },
+        {
+          "first": "Todor",
+          "middle": [],
+          "last": "Mihaylov",
+          "suffix": ""
+        },
+        {
+          "first": "Pushkar",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Molybog",
+          "suffix": ""
+        },
+        {
+          "first": "Yixin",
+          "middle": [],
+          "last": "Nie",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Poulton",
+          "suffix": ""
+        },
+        {
+          "first": "Jeremy",
+          "middle": [],
+          "last": "Reizenstein",
+          "suffix": ""
+        },
+        {
+          "first": "Rashi",
+          "middle": [],
+          "last": "Rungta",
+          "suffix": ""
+        },
+        {
+          "first": "Kalyan",
+          "middle": [],
+          "last": "Saladi",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [],
+          "last": "Schelten",
+          "suffix": ""
+        },
+        {
+          "first": "Ruan",
+          "middle": [],
+          "last": "Silva",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "Michael"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Ranjan",
+          "middle": [],
+          "last": "Subramanian",
+          "suffix": ""
+        },
+        {
+          "first": "Ellen",
+          "middle": [],
+          "last": "Xiaoqing",
+          "suffix": ""
+        },
+        {
+          "first": "Binh",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Adina",
+          "middle": [],
+          "last": "Taylor",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "Puxin",
+          "middle": [],
+          "last": "Xiang Kuan",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Iliyan",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Yuchen",
+          "middle": [],
+          "last": "Zarov",
+          "suffix": ""
+        },
+        {
+          "first": "Angela",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Melanie",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Sharan",
+          "middle": [],
+          "last": "Kambadur",
+          "suffix": ""
+        },
+        {
+          "first": "Aurelien",
+          "middle": [],
+          "last": "Narang",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Rodriguez",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Stojnic",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Edunov",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Scialom",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Authorship attribution for neural text generation",
+      "authors": [
+        {
+          "first": "Adaku",
+          "middle": [],
+          "last": "Uchendu",
+          "suffix": ""
+        },
+        {
+          "first": "Thai",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Shu",
+          "suffix": ""
+        },
+        {
+          "first": "Dongwon",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "qwedsacf/ivypanda-essays dataset",
+      "authors": [
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Vechtomov",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Ghostbuster: Detecting text ghostwritten by large language models",
+      "authors": [
+        {
+          "first": "Vivek",
+          "middle": [],
+          "last": "Verma",
+          "suffix": ""
+        },
+        {
+          "first": "Eve",
+          "middle": [],
+          "last": "Fleisig",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Tomlin",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Klein",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Robust multi-bit natural language watermarking through invariant features",
+      "authors": [
+        {
+          "first": "Kiyoon",
+          "middle": [],
+          "last": "Yoo",
+          "suffix": ""
+        },
+        {
+          "first": "Wonhyuk",
+          "middle": [],
+          "last": "Ahn",
+          "suffix": ""
+        },
+        {
+          "first": "Jiho",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "Nojun",
+          "middle": [],
+          "last": "Kwak",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Seqgan: Sequence generative adversarial nets with policy gradient",
+      "authors": [
+        {
+          "first": "Lantao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Weinan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yong",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Provable robust watermarking for ai-generated text",
+      "authors": [
+        {
+          "first": "Xuandong",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Prabhanjan",
+          "middle": [],
+          "last": "Ananth",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yu-Xiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    }
+  ]
+}

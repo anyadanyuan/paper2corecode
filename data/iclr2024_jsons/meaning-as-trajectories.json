@@ -1,0 +1,1817 @@
+{
+  "paper_id": "meaning-as-trajectories",
+  "title": "MEANING REPRESENTATIONS FROM TRAJECTORIES IN AUTOREGRESSIVE MODELS",
+  "authors": [
+    {
+      "first": "Tian",
+      "middle": [
+        "Yu"
+      ],
+      "last": "Liu",
+      "affiliation": {}
+    },
+    {
+      "first": "Matthew",
+      "middle": [],
+      "last": "Trager",
+      "affiliation": {}
+    },
+    {
+      "first": "Alessandro",
+      "middle": [],
+      "last": "Achille",
+      "affiliation": {}
+    },
+    {
+      "first": "Pramuditha",
+      "middle": [],
+      "last": "Perera",
+      "affiliation": {}
+    },
+    {
+      "first": "Aws",
+      "middle": [
+        "Ai"
+      ],
+      "last": "Labs",
+      "affiliation": {}
+    },
+    {
+      "first": "Luca",
+      "middle": [],
+      "last": "Zancato",
+      "affiliation": {}
+    },
+    {
+      "first": "Stefano",
+      "middle": [],
+      "last": "Soatto",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "We propose to extract meaning representations from autoregressive language models by considering the distribution of all possible trajectories extending an input text. This strategy is prompt-free, does not require fine-tuning, and is applicable to any pre-trained autoregressive model. Moreover, unlike vectorbased representations, distribution-based representations can also model asymmetric relations (e.g., direction of logical entailment, hypernym/hyponym relations) by using algebraic operations between likelihood functions. These ideas are grounded in distributional perspectives on semantics and are connected to standard constructions in automata theory, but to our knowledge they have not been applied to modern language models. We empirically show that the representations obtained from large models align well with human annotations, outperform other zero-shot and prompt-free methods on semantic similarity tasks, and can be used to solve more complex entailment and containment tasks that standard embeddings cannot handle. Finally, we extend our method to represent data from different modalities (e.g., image and text) using multimodal autoregressive models. Our code is available at: https://github.com/tianyu139/ meaning-as-trajectories",
+  "body": {
+    "1_INTRODUCTION": "Generative Large Language Models (LLMs) today are capable of generating remarkably coherent text by iteratively predicting individual tokens. Contrary to encoder-only or encoder-decoder models, however, autoregressive models do not construct explicit representations of sentences: the model's representation of a given input is distributed across layers and attention heads, making it difficult to analyze how the LLM \"understands\" and contextualizes language. This lack of transparency and interpretability is a challenge for the responsible deployment of these models.\nIn this paper, we propose a simple way to explore how autoregressive LLMs manipulate text. Whereas standard methods represent sentences by embedding them in a vector space, we propose to represent sentences, or parts of sentences, as the distribution of their possible continuations, or trajectories. This can be seen as a practical embodiment of classical distributional approaches to semantics (Boleda, 2020; Sahlgren, 2008) , according to which the meaning of linguistic items is tied to the distribution of their usage. It is also related to standard constructions in formal language and automata theory which associate the \"behavior\" of a prefix with the set of its possible future continuations (Hopcroft et al., 2007) .\nPrior work has mostly focused on representing sentences using encoder-only or encoder-decoder architectures. For example, BERT-based models (Devlin et al., 2018) include a [CLS] token that is meant to capture semantic information. Sentence encoder models such as ST5 (Ni et al., 2021) represent sentences using the mean of the encoder tokens, or certain tokens in the decoder's output. These strategies are most effective after fine-tuning using a contrastive learning objective (Gao et al., 2021) , but this requires additional data and modifies the weights of the original model. In particular, these methods do not faithfully reflect the original model's internal representation of the input sentence, and may be skewed by biases present in the data. Moreover, at the time of writing, the most powerful large language models are based on autoregressive architectures (Touvron et al., 2023; Brown et al., 2020; OpenAI, 2023) . For such architectures, similar strategies based on averages of output tokens significantly underperform (Table 1 ). Instead, prompt engineering is usually regarded as the de facto standard to solve semantic tasks without further fine-tuning. For example, Jiang et al. (2023) craft careful prompts to elicit better token representations from autoregressive models. However, such approaches are problematic, since: 1) they can be highly susceptible to the (language dependent) choice of prompt; 2) the answer may not faithfully capture how the model actually interprets the sentence -a model may reply that two sentences are similar, but not necessarily represent them internally in the same way; 3) they do not provide any structured (topological/metric/compositional) semantic space in which sentences are embedded.\nRepresenting the meaning of a sentence as a distribution of trajectories provides a straightforward way of bypassing these limitations. First, the method is general and can be applied to any autoregressive model without assumptions on architecture -or even on the language that it was trained on -and does not require fine-tuning or carefully crafted prompts. Since modern pre-trained large models are very capable of processing text, they should provide strong meaning representations outof-the-box. Second, using representations based on trajectories allows not only measuring semantic distances, but also defining simple operations on meanings. In particular, we can define Boolean-like operations between meanings, and use them for example to infer the direction of logical entailment between sentences as perceived by the model, or determine hypernym/hyponym relation between words (Figure 2b ). Third, our method can be applied without any modification to multimodal autoregressive models that encode images as sequences of tokens, and used to compare the meaning representation of data from different modalities. The main technical challenge of our definition is that the space of all possible continuations of a sentence is too large to be explored directly. We show however that, with an appropriate sampling strategy, 10-20 sampled trajectories for each prompt are sufficient to approximate pairwise distances in semantic space (see Figure 1 ).\nThe focus of our work is to describe a general way to extract \"canonical\" and interpretable meaning representations from pre-trained autoregressive LLMs. Nonetheless, we empirically show that our method achieves competitive results on prompt-free, zero-shot semantic textual similarity (STS) tasks and that the representation we obtain applying our method to the LLaVA (Liu et al., 2023) vision-language model outperforms CLIP embeddings (Radford et al., 2021) on semantic imageimage and image-text similarity tasks on the Crisscrossed Captions (Parekh et al., 2020) dataset. We show that the representation we obtain, although based solely on distributions of token sequences, largely agrees with human annotations both on semantic similarity, logical entailment and containment relations. These results support the idea that autoregressive models can represent sentences in a semantically meaningful way even if the representations are not explicit in their activations.\nIn summary, our main contributions are as follows:\n1. We propose a canonical meaning representation for autoregressive models as a distribution over trajectories extending a sentence. Unlike vector space representations, this definition can directly capture asymmetric relations like logical entailments and hypernym/hyponym relations.\n2. We show that the representations obtained from modern LLMs align well with conventional linguistic meanings: our method achieves competitive performance on Semantic Textual Similarity (STS) benchmarks, outperforming comparable zero-shot and prompt-free baselines using the same architectures.\n'This is great news for everyone. He then open…' 'The sound was deafening, I didn't understand …' 'Then, by rotating it, he changed …' 'As he was holding the bottle in the air while cutting, …' ... 'What he did next showed the power of teamwork, …' 'He then poured some coloured water into the bottle. ' 'A man slices a plastic bottle with a sword during …' 'When the plastic shattered, there was no noise …' ...\n'He is walking past a shop window, smiling to himself …' '\\nIn my office, I have a book, which I have been …' 'I want to make this work because i love flutes. I …' 'Is he happy, is he sad? What is he feeling?...' ... 'The dog's owner is telling him to stop, but to no avail…' '\\nAnother dog jumps in. Then another. Soon they're…' '\\nThe dog's barking wakes me.\\nThe fly can only fly…' '\\nIt's like the fly has superpowers. The dog's brain…' ... S1: The man used a sword to slice a plastic bottle. S2: A man sliced a plastic bottle with a sword. S1: A man is playing a flute. S2: A dog is barking at a fly. Input Sentences Sampled Trajectories Semantically Similar Semantically Different Compare Score Distributions 3. Our method can be extended without any modification to quantify semantic image-image and image-text similarity, outperforming even CLIP embeddings (Radford et al., 2021) when applied to a vision language model, LLaVA (Liu et al., 2023) .",
+    "2_RELATED_WORK": "Our work unifies two lines of work which are highly synergistic yet largely disjoint up until nowthe investigation of \"meaning\" within the internal representations of pre-trained LLMs (Bender & Koller, 2020; Bender et al., 2021; Bradley et al., 2022; Soatto et al., 2023) and the computation of sequence embeddings for semantic comparison tasks (Reimers & Gurevych, 2019; Gao et al., 2021; Muennighoff, 2022; Jiang et al., 2022; 2023) .\nThe close relationship between the statistical distribution of linguistic items and their meaning is the basis of the Distributional Hypothesis (Harris, 1954) . This perspective also draws insight from Wittgenstein's use theory of meaning (Wittgenstein, 1953) , commonly sloganized as \"meaning is use.\" In the field of natural language processing (NLP), semantic representations are frequently constructed based on statistical co-occurrences. However, conventional computational approaches such as word2vec (Mikolov et al., 2013) , typically involve computing statistics from a text corpus and then constructing vector representations for words or sentences. In contrast, in this work we propose to directly leverage the distribution itself as a fundamental representation of meaning. This is possible since LLMs offer a way to efficiently sample from such distributions, thereby providing an intrinsic notion of meaning from the perspective of the model.\nRecently, several authors have argued that models trained on language alone, or more generally on \"form,\" are necessarily incapable of learning and representing conventional meaning. In particular, Bender & Koller (2020) propose a definition of meaning as a relation between language expressions and \"communicative intents\" which are, by definition, external to the language. Therefore, they conclude that LLMs trained on language expressions cannot in principle learn meanings. This leads to characterizing LLMs as \"stochastic parrots\" (Bender et al., 2021) capable of modeling the statistical form of the language (syntax) but intrinsically incapable of representing meaning (semantics). Merrill et al. (2021) investigate the role of assertions in both code and language, suggesting that ungrounded language models cannot fully emulate semantic representations.\nHowever, semantic structures can be constructed from syntactic ones: For instance, Wu et al. (2023) show that models trained on synthetic languages with \"strong transparency\" (defined as those where expressions have context-independent denotations) can emulate semantic representations. They suggest, however, that the context-dependency of natural language limits language models from learning the semantic representations within. Using the language of category theory, Bradley et al. (2022) describe a functor between a syntactic category of text probabilities and a semantic category of meanings. While purely theoretical, their construction is closely related to our distribution-based meaning representation, thus providing further support for our proposed method. Soatto et al. (2023) define meanings in LLMs as equivalence classes of sentences induced by the trained model. This definition generalizes that of Bender & Koller (2020) , since \"communicative intent\" can be latent in the expressions used for training the LLM, which induces partitions the set of complete sentences. But while this characterization is suitable for analyzing the controllability of the model in the corresponding metric space, the resulting meaning representation does not exhibit any obvious compositional structure. Our definition is more general, and provides us with means to compose meaning directly in representation space, unlike all other works. While we do not wish to focus on the high-level aspects of the debate on \"meaning\" and \"understanding\" (or lack thereof) in LLMs, our results provide evidence that autoregressive models actually have rich latent semantic representations within their internal structure.\nEncoder-based architectures have traditionally been the main tool for embedding sequences in a common vector space, in which they can be easily compared. Apart from BERT (Devlin et al., 2018) and ST5 (Ni et al., 2021) , Sentence-BERT (Reimers & Gurevych, 2019) fine-tunes a modified BERT architecture to improve sentence embeddings. Opitz & Frank (2022) improves the interpretability of Sentence-BERT embeddings while preserving their effectiveness. Zhang et al. (2020) and Gao et al. (2021) propose contrastive fine-tuning objectives to obtain more effective embeddings. In contrast, our method does not require any fine-tuning, hence can faithfully reflect the original model's internal representation of an input string. Prompting is also commonly used to extract embeddings. Jiang et al. (2022) search over prompts to improve the embeddings obtained from BERT. Jiang et al. (2023) propose PromptEOL to summarize sentences as a single word for comparisons. Similar to fine-tuning, prompting alters/biases the meaning of the original string, and further requires sufficient command over the language being used to engineer an effective prompt. The latter also fails to scale with model sizes, generally performing worse on semantic similarity tasks as model size increases.\nMost related to our work, Muennighoff (2022) applies decoder-only models for semantic search by computing pairwise conditional likelihood scores between a query and each document in the search database. Our experiments show that this conditional likelihood is insufficient to fully capture relative semantic meaning. Our method is prompt-free, and scales well with model size and human perception of model performances. Unlike prompt-based methods, the meaning space resulting from our method can also be composed to compute more complex relations between strings.",
+    "3_METHOD": "Preliminaries. We use A to denote a finite vocabulary of tokens and A * to indicate the set of all variable-length finite sequences of tokens in A. We view a language model as a map M (•|•) : A * × A * → [0, 1] associating a \"prompt\" sequence s ∈ A * and a possible continuation sequence t ∈ A * with a score M (t|s) ∈ [0, 1]. Intuitively, this score represents the likelihood of the model sampling t as a continuation of s. For our experiments, we use as score the inverse perplexity:\nEQUATION\nwhere P M is the probability over the next token defined by the model. When s = ϵ is the empty string, we write M (t) instead of M (t|ϵ).\nMeaning representation for prompts. We define the syntactic meaning representation of a prompt string s for the model M as the function M s := M (-|s) : A * → [0, 1]. This definition fully captures the way in which the model interprets the string s. For example, if M s = M t , then the prompts s and t are indistinguishable based on their continuations for the model. Note that the function M s (t) that represents the string s is an infinite dimensional object, since its domain are all finite sequences t ∈ A * . One of the challenges we will handle later is how to effectively use this representation through sampling.\nWe remark that we can consider a particular case of eq. ( 1) where the domain of M s is restricted only to strings t ∈ A 1 of length m = 1, instead of strings of arbitrary length. This would represent a sentence using the probability distribution over the immediate next token, and is a common baseline used in the literature (Ni et al., 2021) to embed sentences with autoregressive models. However, it is easy to see that this is a very incomplete semantic representation: for example, common tokens such as \"The\" are often the most likely continuation regardless of the actual meaning of the prompt. This limitation will be evident in our experimental results.",
+    "4_EXPERIMENTS": "Implementation details. Apart from adding a full stop (\".\") at the end of each sequence that does not already end with a punctuation to form a complete sentence, we evaluate each dataset verbatim (in Table 6 in the Appendix, we show results obtained without this step). For our baseline methods, we report the best result with or without adding a full stop, to ensure fair comparison. For experiments on LLaVA (Liu et al., 2023) , we use the default query format to structure the input data. We do not apply any additional prompts/formatting for all other models unless otherwise mentioned.\nWe use eq. ( 2) as our distance function. We report results using other metrics/divergences in the Appendix. We use multinomial sampling for all experiments on our method with sampling temperature λ = 1.0. We set n = 20 and m = 20 for sampling trajectories, based on ablations in Appendix A. Distance metric and hyperparameter choices for semantic similarity are based on a search using the validation set of the STS-B dataset, and are then fixed when evaluating on all test datasets.\nEvaluation procedure. We evaluate our method on the following tasks:\nSemantic Textual Similarity (STS) (Agirre et al., 2012; 2013; 2014; 2015; 2016; Cer et al., 2017) :\nThe STS dataset scores how similar two pieces of texts are. We use the Spearman coefficient (scaled by 100×) to evaluate correlation with the human-annotated similarity scores.\nStanford Natural Language Inference (SNLI) (Bowman et al., 2015) : SNLI labels pairs of strings based on the categories {entailment, neutral, contradiction}. The latter two are symmetric and can be quantified via similarity. To evaluate our method's ability to compute asymmetric relationships, we restrict SNLI to only pairs of sentences labelled with the \"entailment\" relation. We express this as a binary classification task to determine the direction of entailment, i.e., given pair (u, v), we wish to determine if u ⇒ v, or v ⇒ u. We term this resultant task SNLI-Entailment.\nWordNet (Miller, 1995) : WordNet establishes a hierarchy among English words through semanticsbased hypernym/hyponym relations. We sample branches from the WordNet hierarchy (see Appendix C.1), and recover their pairwise relations using operations in syntactic meaning space.\nCrisscrossed Captions (CxC) (Parekh et al., 2020) : CxC extends MS-COCO (Lin et al., 2014) with human-labelled semantic similarity scores ranging from 0-5 for image-image, caption-caption, and image-caption pairs. Since most scores are close to 5 (e.g. original image-caption pairs from COCO) for which ranking comparisons would be vacuous, we subsample a balanced subset of 1000 pairs each from the image-image (CxC-SIS) and image-caption (CxC-SITS) dataset for our experiments.\nSemantic similarity. Our main baselines for comparison are methods which are 1) zero-shot, and 2) prompt-free. As such, we compare our method as presented in Algorithm 1 against encoder-based models, and the following baselines for autoregressive models given a pair of strings (u, v):\n1. Conditional Likelihood / Cross-Encoder (Muennighoff, 2022) : computes M (u|v).\n2. Joint Likelihood: measures the likelihood of the concatenation of u and v, M (uv) = M (uv|ϵ) where ϵ is begin-of-sentence token [BOS] , normalized by number of tokens. If [BOS] is not supported by the model, we use the M (u v n . . . v 2 |v 1 ) instead where v = (v n . . . v 1 ).\n3. (Last/Mean) Token: we represent u and v using the model's output distribution for the next token immediately following the sentence (last) or the average next-token predictions over the input sentence (mean), and produce a similarity score via cosine similarity.\nOn the Semantic Textual Similarity benchmark, Table 1 shows that our method uniformly outperforms all baselines on one of the best autoregressive models, Falcon-7B, by a minimum relative improvement of 38.3%. Even when applied to GPT-2, a much smaller model, our method improves over Falcon-7B baselines by 3.8%. While our method is expectedly outperformed by models which are explicitly fine-tuned on contrastive-learning objectives, such as SimCSE (Gao et al., 2021) , it performs comparably to CLIP (Radford et al., 2021) , and when applied to Falcon-7B and LLaMA-33B respectively, significantly outperforms the best zero-shot encoder-based model (ST5-Enc-mean 11B) by a relative margin of 13.3% and 14.8%. We achieve this without any fine-tuning or prompting. We further highlight that our results do not rely on any human-annotated data or contrastive pairs, since the models we use have been trained only on unsupervised next-token prediction.\nLastly, our method shows an improvement in performance that correlates with model size, suggesting that further performance gains could be obtained as larger/better autoregressive models are used.\nOur results also suggest that the proposed method can be used to evaluate pre-trained models in a zero-shot manner without requiring instruction-tuning or RLHF, since their alignment with human labelers seems to correlate with human perception of how good a model is.\nEntailment via meaning containment. We show accuracies obtained on SNLI-Entailment in Figure 2a when applying the Entailment Test described in Section 3. We compare against Cond. Likelihood (u ⇒ v if M (v|u) > M (u|v), else v ⇒ u) and Joint Likelihood (u ⇒ v if M (uv) > M (vu)) on the best performing model, Falcon-7B. Our results show that the trajectories sampled from all LLMs that we tested align with the assumptions of the Entailment Test with significantly higher than random probability, outperforming both random and likelihood baselines by 15.7% and 9.3% respectively.\nMeaning containment of individual words. We apply the above-defined Hyponym Test to recover hypernym/hyponym relations from WordNet. Our results in Figure 2b and Figure 2c show that the Hyponym Test is mostly able to recover semantic containment relations between words, with an absolute improvement of 12.7% to 18.1% over the random baseline, depending on the model. Note that our computation of the hierarchy is based entirely on pairwise comparisons and does not explicitly enforce the transitivity of containments; however, transitivity is almost always already satisfied by the predictions of our method (i.e., the recovered hierarchy is an acyclic graph). We present more qualitative examples in Appendix D.2.\nVision-language experiments. Our method can be applied without any modification to models that accept multimodal token sequences. In Table 2 , we apply our method to CxC (Parekh et al., 2020) using the vision-language model LLaVA (Liu et al., 2023) to show that we can measure semantic distances between not only text, but also between image-image (CxC-SIS) and image-text (CxC-SITS) pairs that align with that of human annotators. Our method outperforms all decoder-only baselines on both SIS and SITS. On SIS, our method even outperforms CLIP (Radford et al., 2021) which is trained explicitly on a contrastive image-text objective.\nWe highlight that while the \"Cond. Likelihood\" baseline on SITS should most directly capture M (caption|image), our experiments show that it fares poorly compared to our method. We hypothesize that this results from the limitations of perplexity. For instance, likelihood scores are Table 2: Image-Image Similarity and Image-Text (Caption) Similarity on balanced subsets of CxC-SIS and CxC-SITS respectively. Even without any prompts, our method outperforms all zero-shot baselines on both modalities. The performance on the image-text similarity can be further boosted with an alignment prompt, allowing our method to outperform even CLIP which is explicitly trained with a contrastive objective to output aligned image-text embeddings. For CLIP (Vision), we use image embeddings prior to projection onto text embedding space. Architecture Method CxC-SIS CxC-SITS Average CLIP (Radford et al., 2021) CLIP-ViTL/14 66.33 64.25 65.29 CLIP-ViTB/16 66.95 64.60 65.78 CLIP-ViTL/14 (Vision) 71.45 --CLIP-ViTB/16 (Vision) 72.08 --LLaVA (Liu et al., 2023) Cond. Likelihood -29.46 -Mean Token 32.76 -0.52 16.12 Last Token 26.91 2.43 14.67 Ours 81.47 57.14 69.31 LLaVA (Liu et al., 2023) w/ Alignment Prompt Mean Token (Prompt) 32.76 -0.07 16.35 Last Token (Prompt) 26.91 6.21 16.56 Ours (Prompt) 81.47 67.63 74.55\ndirectly compared across captions of various lengths, for which length normalization does not sufficiently mitigate the bias towards shorter sentences (Wang et al., 2022) . Our method avoids this issue entirely by construction, since we compare distributions across the same set of trajectories. We can optionally make use of \"alignment prompts\" to ensure that the trajectories from image and text modalities are more similar. This improves the resulting performance on the CxC-SITS task, outperforming the CLIP paragon by 13.3% (Table 2 ). We discuss this in Appendix E.2.",
+    "5_CONCLUSIONS": "We proposed a strategy to investigate how autoregressive language models interpret text. By identifying \"meaning\" -from the perspective of the model -with score distributions over text continuations, we can compare the meaning of arbitrary strings. This notion of meaning correlates with that of human annotators, outperforming comparable zero-shot and prompt-free baselines on semantic textual similarity tasks using the same architectures. We further defined composition operators on meanings and showed how autoregressive language models can be used to quantify entailment between sentence pairs and hyponym/hypernym relations between individual words. Our method can further be applied without any modification to autoregressive vision-language architectures for encoding meaning of images, outperforming even CLIP on semantic image similarity tasks.\nA key limitation of our approach is its computational cost compared to embedding methods that require only a single forward pass. However, our ablations in Appendix A show that that using 10-20 trajectories of 10-20 tokens each is sufficient to achieve most of the performance gain compared to using more trajectories or tokens. We also note that both the sampling and score evaluation processes can be easily parallelized. Our approach in its current form is also not computationally efficient for semantic search, since the computation of pairwise similarities between queries and database elements is performed using a different set of trajectories for each new query. We explore ways to mitigate this in Appendix A.4 and the potential performance trade-offs that they incur.\nOur method is intentionally prompt-free, as our goal in this work was to define the most canonical meaning representation of a string for a given model. However, our experiments in Appendix E strongly suggest that designing appropriate \"alignment\" prompts could further significantly improve quantitative results on semantic similarity tasks. Finally, our method can be used compare semantic distances between autoregressive models from the same family of architectures sharing a common vocabulary, since their meaning representations belong to the same space of meanings. We leave these directions for future work. According to our definitions, the meaning representations of complete and incomplete sentences differ, since the distributions over their trajectories are likely to be very different. To see this, consider the following pair of semantically similar sentences that differ by the last punctuation: \"The dog ate the bone\" and \"The dog ate the bone.\". The continuations of the latter are likely to start with a capital letter, but this does not hold for the former. Hence, our method is likely to attribute larger distances between these two sentences than humans. In Table 4 , we show that by ensuring all sentences we compare are complete, by appending a full stop when necessary, the similarity scores computed between sentences align better with that of human annotators. We also show that completing the sentence can occasionally improve results for certain baselines as well."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Semeval-2012 task 6: A pilot on semantic textual similarity",
+      "authors": [
+        {
+          "first": "Eneko",
+          "middle": [],
+          "last": "Agirre",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Cer",
+          "suffix": ""
+        },
+        {
+          "first": "Mona",
+          "middle": [],
+          "last": "Diab",
+          "suffix": ""
+        },
+        {
+          "first": "Aitor",
+          "middle": [],
+          "last": "Gonzalez-Agirre",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Proceedings of the Sixth International Workshop on Semantic Evaluation"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "sem 2013 shared task: Semantic textual similarity",
+      "authors": [
+        {
+          "first": "Eneko",
+          "middle": [],
+          "last": "Agirre",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Cer",
+          "suffix": ""
+        },
+        {
+          "first": "Mona",
+          "middle": [],
+          "last": "Diab",
+          "suffix": ""
+        },
+        {
+          "first": "Aitor",
+          "middle": [],
+          "last": "Gonzalez-Agirre",
+          "suffix": ""
+        },
+        {
+          "first": "Weiwei",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "proceedings of the Main conference and the shared task: semantic textual similarity"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Semeval-2014 task 10: Multilingual semantic textual similarity",
+      "authors": [
+        {
+          "first": "Eneko",
+          "middle": [],
+          "last": "Agirre",
+          "suffix": ""
+        },
+        {
+          "first": "Carmen",
+          "middle": [],
+          "last": "Banea",
+          "suffix": ""
+        },
+        {
+          "first": "Claire",
+          "middle": [],
+          "last": "Cardie",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Cer",
+          "suffix": ""
+        },
+        {
+          "first": "Mona",
+          "middle": [],
+          "last": "Diab",
+          "suffix": ""
+        },
+        {
+          "first": "Aitor",
+          "middle": [],
+          "last": "Gonzalez-Agirre",
+          "suffix": ""
+        },
+        {
+          "first": "Weiwei",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Rada",
+          "middle": [],
+          "last": "Mihalcea",
+          "suffix": ""
+        },
+        {
+          "first": "German",
+          "middle": [],
+          "last": "Rigau",
+          "suffix": ""
+        },
+        {
+          "first": "Janyce",
+          "middle": [],
+          "last": "Wiebe",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Proceedings of the 8th international workshop on semantic evaluation"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Semeval-2015 task 2: Semantic textual similarity, english, spanish and pilot on interpretability",
+      "authors": [
+        {
+          "first": "Eneko",
+          "middle": [],
+          "last": "Agirre",
+          "suffix": ""
+        },
+        {
+          "first": "Carmen",
+          "middle": [],
+          "last": "Banea",
+          "suffix": ""
+        },
+        {
+          "first": "Claire",
+          "middle": [],
+          "last": "Cardie",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Cer",
+          "suffix": ""
+        },
+        {
+          "first": "Mona",
+          "middle": [],
+          "last": "Diab",
+          "suffix": ""
+        },
+        {
+          "first": "Aitor",
+          "middle": [],
+          "last": "Gonzalez-Agirre",
+          "suffix": ""
+        },
+        {
+          "first": "Weiwei",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Inigo",
+          "middle": [],
+          "last": "Lopez-Gazpio",
+          "suffix": ""
+        },
+        {
+          "first": "Montse",
+          "middle": [],
+          "last": "Maritxalar",
+          "suffix": ""
+        },
+        {
+          "first": "Rada",
+          "middle": [],
+          "last": "Mihalcea",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Proceedings of the 9th international workshop on semantic evaluation (SemEval 2015)"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Semeval-2016 task 1: Semantic textual similarity, monolingual and cross-lingual evaluation",
+      "authors": [
+        {
+          "first": "Eneko",
+          "middle": [],
+          "last": "Agirre",
+          "suffix": ""
+        },
+        {
+          "first": "Carmen",
+          "middle": [],
+          "last": "Banea",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Cer",
+          "suffix": ""
+        },
+        {
+          "first": "Mona",
+          "middle": [],
+          "last": "Diab",
+          "suffix": ""
+        },
+        {
+          "first": "Aitor",
+          "middle": [],
+          "last": "Gonzalez Agirre",
+          "suffix": ""
+        },
+        {
+          "first": "Rada",
+          "middle": [],
+          "last": "Mihalcea",
+          "suffix": ""
+        },
+        {
+          "first": "German",
+          "middle": [],
+          "last": "Rigau Claramunt",
+          "suffix": ""
+        },
+        {
+          "first": "Janyce",
+          "middle": [],
+          "last": "Wiebe",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "SemEval-2016. 10th International Workshop on Semantic Evaluation"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Falcon-40B: an open large language model with state-of-the-art performance",
+      "authors": [
+        {
+          "first": "Ebtesam",
+          "middle": [],
+          "last": "Almazrouei",
+          "suffix": ""
+        },
+        {
+          "first": "Hamza",
+          "middle": [],
+          "last": "Alobeidli",
+          "suffix": ""
+        },
+        {
+          "first": "Abdulaziz",
+          "middle": [],
+          "last": "Alshamsi",
+          "suffix": ""
+        },
+        {
+          "first": "Alessandro",
+          "middle": [],
+          "last": "Cappelli",
+          "suffix": ""
+        },
+        {
+          "first": "Ruxandra",
+          "middle": [],
+          "last": "Cojocaru",
+          "suffix": ""
+        },
+        {
+          "first": "Merouane",
+          "middle": [],
+          "last": "Debbah",
+          "suffix": ""
+        },
+        {
+          "first": "Etienne",
+          "middle": [],
+          "last": "Goffinet",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Heslow",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Launay",
+          "suffix": ""
+        },
+        {
+          "first": "Quentin",
+          "middle": [],
+          "last": "Malartic",
+          "suffix": ""
+        },
+        {
+          "first": "Badreddine",
+          "middle": [],
+          "last": "Noune",
+          "suffix": ""
+        },
+        {
+          "first": "Baptiste",
+          "middle": [],
+          "last": "Pannier",
+          "suffix": ""
+        },
+        {
+          "first": "Guilherme",
+          "middle": [],
+          "last": "Penedo",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Climbing towards nlu: On meaning, form, and understanding in the age of data",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Emily",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Bender",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Koller",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the 58th annual meeting of the association for computational linguistics"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "On the dangers of stochastic parrots: Can language models be too big?",
+      "authors": [
+        {
+          "first": "Emily",
+          "middle": [
+            "M"
+          ],
+          "last": "Bender",
+          "suffix": ""
+        },
+        {
+          "first": "Timnit",
+          "middle": [],
+          "last": "Gebru",
+          "suffix": ""
+        },
+        {
+          "first": "Angelina",
+          "middle": [],
+          "last": "Mcmillan-Major",
+          "suffix": ""
+        },
+        {
+          "first": "Shmargaret",
+          "middle": [],
+          "last": "Shmitchell",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 2021 ACM conference on fairness, accountability, and transparency"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Distributional semantics and linguistic theory",
+      "authors": [
+        {
+          "first": "Gemma",
+          "middle": [],
+          "last": "Boleda",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Annual Review of Linguistics"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "A large annotated corpus for learning natural language inference",
+      "authors": [
+        {
+          "first": "Gabor",
+          "middle": [],
+          "last": "Samuel R Bowman",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Angeli",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [
+            "D"
+          ],
+          "last": "Potts",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Manning",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "An enriched category theory of language: from syntax to semantics",
+      "authors": [
+        {
+          "first": "Tai-Danae",
+          "middle": [],
+          "last": "Bradley",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Terilla",
+          "suffix": ""
+        },
+        {
+          "first": "Yiannis",
+          "middle": [],
+          "last": "Vlassopoulos",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "La Matematica"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Language models are few-shot learners",
+      "authors": [
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Nick",
+          "middle": [],
+          "last": "Ryder",
+          "suffix": ""
+        },
+        {
+          "first": "Melanie",
+          "middle": [],
+          "last": "Subbiah",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [
+            "D"
+          ],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Arvind",
+          "middle": [],
+          "last": "Neelakantan",
+          "suffix": ""
+        },
+        {
+          "first": "Pranav",
+          "middle": [],
+          "last": "Shyam",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Semeval-2017 task 1: Semantic textual similarity-multilingual and cross-lingual focused evaluation",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Cer",
+          "suffix": ""
+        },
+        {
+          "first": "Mona",
+          "middle": [],
+          "last": "Diab",
+          "suffix": ""
+        },
+        {
+          "first": "Eneko",
+          "middle": [],
+          "last": "Agirre",
+          "suffix": ""
+        },
+        {
+          "first": "Inigo",
+          "middle": [],
+          "last": "Lopez-Gazpio",
+          "suffix": ""
+        },
+        {
+          "first": "Lucia",
+          "middle": [],
+          "last": "Specia",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Vicuna: An open-source chatbot impressing gpt-4 with 90%* chatgpt quality",
+      "authors": [
+        {
+          "first": "Wei-Lin",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuohan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "Zhanghao",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Lianmin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Siyuan",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghao",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [
+            "E"
+          ],
+          "last": "Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "Ion",
+          "middle": [],
+          "last": "Stoica",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "P"
+          ],
+          "last": "Xing",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Bert: Pre-training of deep bidirectional transformers for language understanding",
+      "authors": [
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Devlin",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Wei",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Kenton",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Kristina",
+          "middle": [],
+          "last": "Toutanova",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Simcse: Simple contrastive learning of sentence embeddings",
+      "authors": [
+        {
+          "first": "Tianyu",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Xingcheng",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Danqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Distributional structure",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zellig",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Harris",
+          "suffix": ""
+        }
+      ],
+      "year": 1954,
+      "venue": "Word"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Introduction to automata theory, languages, and computation",
+      "authors": [
+        {
+          "first": "John",
+          "middle": [
+            "E"
+          ],
+          "last": "Hopcroft",
+          "suffix": ""
+        },
+        {
+          "first": "Rajeev",
+          "middle": [],
+          "last": "Motwani",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [
+            "D"
+          ],
+          "last": "Ullman",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Introduction to coalgebra",
+      "authors": [
+        {
+          "first": "Bart",
+          "middle": [],
+          "last": "Jacobs",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Towards Mathematics of States and Observations"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Promptbert: Improving bert sentence embeddings with prompts",
+      "authors": [
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Jiao",
+          "suffix": ""
+        },
+        {
+          "first": "Shaohan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zihan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Deqing",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Fuzhen",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Furu",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Haizhen",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Denvy",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Scaling sentence embeddings with large language models",
+      "authors": [
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Shaohan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhongzhi",
+          "middle": [],
+          "last": "Luan",
+          "suffix": ""
+        },
+        {
+          "first": "Deqing",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Fuzhen",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Microsoft coco: Common objects in context",
+      "authors": [
+        {
+          "first": "Tsung-Yi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Maire",
+          "suffix": ""
+        },
+        {
+          "first": "Serge",
+          "middle": [],
+          "last": "Belongie",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Hays",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Perona",
+          "suffix": ""
+        },
+        {
+          "first": "Deva",
+          "middle": [],
+          "last": "Ramanan",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lawrence",
+          "suffix": ""
+        },
+        {
+          "first": "Zitnick",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Computer Vision-ECCV 2014: 13th European Conference"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Visual instruction tuning",
+      "authors": [
+        {
+          "first": "Haotian",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chunyuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Qingyang",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yong Jae",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Roberta: A robustly optimized bert pretraining approach",
+      "authors": [
+        {
+          "first": "Yinhan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Myle",
+          "middle": [],
+          "last": "Ott",
+          "suffix": ""
+        },
+        {
+          "first": "Naman",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Jingfei",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Mandar",
+          "middle": [],
+          "last": "Joshi",
+          "suffix": ""
+        },
+        {
+          "first": "Danqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Omer",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        },
+        {
+          "first": "Veselin",
+          "middle": [],
+          "last": "Stoyanov",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Language model evaluation beyond perplexity",
+      "authors": [
+        {
+          "first": "Clara",
+          "middle": [],
+          "last": "Meister",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Cotterell",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Pointer sentinel mixture models",
+      "authors": [
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Merity",
+          "suffix": ""
+        },
+        {
+          "first": "Caiming",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Provable limitations of acquiring meaning from ungrounded form: What will future language models understand",
+      "authors": [
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Merrill",
+          "suffix": ""
+        },
+        {
+          "first": "Yoav",
+          "middle": [],
+          "last": "Goldberg",
+          "suffix": ""
+        },
+        {
+          "first": "Roy",
+          "middle": [],
+          "last": "Schwartz",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Transactions of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Distributed representations of words and phrases and their compositionality",
+      "authors": [
+        {
+          "first": "Tomas",
+          "middle": [],
+          "last": "Mikolov",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Greg",
+          "middle": [
+            "S"
+          ],
+          "last": "Corrado",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Dean",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Wordnet: a lexical database for english",
+      "authors": [
+        {
+          "first": "George",
+          "middle": [
+            "A"
+          ],
+          "last": "Miller",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "Communications of the ACM"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Sgpt: Gpt sentence embeddings for semantic search",
+      "authors": [
+        {
+          "first": "Niklas",
+          "middle": [],
+          "last": "Muennighoff",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Sentence-t5: Scalable sentence encoders from pre-trained text-to-text models",
+      "authors": [
+        {
+          "first": "Jianmo",
+          "middle": [],
+          "last": "Ni",
+          "suffix": ""
+        },
+        {
+          "first": "Gustavo",
+          "middle": [
+            "Hernández"
+          ],
+          "last": "Ábrego",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [],
+          "last": "Constant",
+          "suffix": ""
+        },
+        {
+          "first": "Ji",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Keith",
+          "middle": [
+            "B"
+          ],
+          "last": "Hall",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Cer",
+          "suffix": ""
+        },
+        {
+          "first": "Yinfei",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Sbert studies meaning representations: Decomposing sentence embeddings into explainable semantic features",
+      "authors": [
+        {
+          "first": "Juri",
+          "middle": [],
+          "last": "Opitz",
+          "suffix": ""
+        },
+        {
+          "first": "Anette",
+          "middle": [],
+          "last": "Frank",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the 2nd Conference of the Asia-Pacific Chapter of the Association for Computational Linguistics and the 12th International Joint Conference on Natural Language Processing"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Crisscrossed captions: Extended intramodal and intermodal semantic similarity judgments for ms-coco",
+      "authors": [
+        {
+          "first": "Zarana",
+          "middle": [],
+          "last": "Parekh",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Baldridge",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Cer",
+          "suffix": ""
+        },
+        {
+          "first": "Austin",
+          "middle": [],
+          "last": "Waters",
+          "suffix": ""
+        },
+        {
+          "first": "Yinfei",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Mathematical Foundations of Automata Theory",
+      "authors": [
+        {
+          "first": "Jean-Eric",
+          "middle": [],
+          "last": "Pin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Language models are unsupervised multitask learners",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Rewon",
+          "middle": [],
+          "last": "Child",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Luan",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "OpenAI blog"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Learning transferable visual models from natural language supervision",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Jong",
+          "middle": [
+            "Wook"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Hallacy",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Goh",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Sentence-bert: Sentence embeddings using siamese bertnetworks",
+      "authors": [
+        {
+          "first": "Nils",
+          "middle": [],
+          "last": "Reimers",
+          "suffix": ""
+        },
+        {
+          "first": "Iryna",
+          "middle": [],
+          "last": "Gurevych",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "The distributional hypothesis",
+      "authors": [
+        {
+          "first": "Magnus",
+          "middle": [],
+          "last": "Sahlgren",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "The Italian Journal of Linguistics"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Taming AI Bots: Controllability of Neural States in Large Language Models",
+      "authors": [
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Soatto",
+          "suffix": ""
+        },
+        {
+          "first": "Paulo",
+          "middle": [],
+          "last": "Tabuada",
+          "suffix": ""
+        },
+        {
+          "first": "Pratik",
+          "middle": [],
+          "last": "Chaudhari",
+          "suffix": ""
+        },
+        {
+          "first": "Tian",
+          "middle": [
+            "Yu"
+          ],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Llama: Open and efficient foundation language models",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Thibaut",
+          "middle": [],
+          "last": "Lavril",
+          "suffix": ""
+        },
+        {
+          "first": "Gautier",
+          "middle": [],
+          "last": "Izacard",
+          "suffix": ""
+        },
+        {
+          "first": "Xavier",
+          "middle": [],
+          "last": "Martinet",
+          "suffix": ""
+        },
+        {
+          "first": "Marie-Anne",
+          "middle": [],
+          "last": "Lachaux",
+          "suffix": ""
+        },
+        {
+          "first": "Timothée",
+          "middle": [],
+          "last": "Lacroix",
+          "suffix": ""
+        },
+        {
+          "first": "Baptiste",
+          "middle": [],
+          "last": "Rozière",
+          "suffix": ""
+        },
+        {
+          "first": "Naman",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Hambro",
+          "suffix": ""
+        },
+        {
+          "first": "Faisal",
+          "middle": [],
+          "last": "Azhar",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Perplexity from plm is unreliable for evaluating text quality",
+      "authors": [
+        {
+          "first": "Yequan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiawen",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Aixin",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Xuying",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Philosophical Investigations",
+      "authors": [
+        {
+          "first": "Ludwig",
+          "middle": [],
+          "last": "Wittgenstein",
+          "suffix": ""
+        }
+      ],
+      "year": 1953,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Transparency helps reveal when language models learn meaning",
+      "authors": [
+        {
+          "first": "Zhaofeng",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Merrill",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Iz",
+          "middle": [],
+          "last": "Beltagy",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Transactions of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "An unsupervised sentence embedding method by mutual information maximization",
+      "authors": [
+        {
+          "first": "Yan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ruidan",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Zuozhu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Kwan",
+          "middle": [],
+          "last": "Hui Lim",
+          "suffix": ""
+        },
+        {
+          "first": "Lidong",
+          "middle": [],
+          "last": "Bing",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "{puppy, dog, canine, carnivore, predator, animal, organism} 2. {storybook, book, publication, work, product, creation, artifact} 3. {dine, eat",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "{bobcat, lynx, wildcat, cat, feline, carnivore} 7. {penthouse, apartment, housing",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "{recliner, armchair, chair, seat, furniture, furnishing",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "{neurosurgeon, surgeon, doctor, medical practitioner, professional, adult, person} 10. {brunch, meal, food, substance}",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF49",
+      "title": "speedboat, motorboat, boat, vessel, craft, vehicle, conveyance}",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    }
+  ]
+}

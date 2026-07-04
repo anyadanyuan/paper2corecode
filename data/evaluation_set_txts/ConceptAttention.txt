@@ -1,0 +1,87 @@
+### 4.1. Using CONCEPTATTENTION
+
+The user specifies a set of r single token concepts, like "cat", "sky", etc. which are passed through a T5 encoder to produce an initial embedding c 0 for each concept. For each MMATTN layer (indexed by L) we layer-normalize the input concept embeddings c L and repurpose the text prompt's projection matrices (i.e. K p , Q p , V p ), to produce a set of keys, values, and queries
+EQUATION
+One-directional Attention Operation We would like to update our concept embeddings so they are compatible with subsequent layers, but also prevent them from impacting the image tokens. Let k x and v x be the keys and values of the image patches x respectively. We can concatenate the image and concept keys to get
+EQUATION
+and the image and concept values to get
+EQUATION
+We can then perform the following attention operation
+EQUATION
+which produces a set of concept output embeddings.
+Notice, that instead of just performing a cross attention (i.e. softmax(q c k T x )v x ) our approach leverages both cross attention from the image patches to the concepts and self attention among the concepts. We found that performing both operations improves performance on downstream evaluation tasks like segmentation (See Table 4 ). We hypothesize this is because it allows the concept embeddings to repel from each other, avoiding redundancy between concepts.
+Meanwhile, the image patch and prompt tokens ignore the concept tokens and attend only to each other as in
+EQUATION
+A diagram of these operations is shown in Figure 5(b) .
+
+### 5.3. Ablation Studies
+
+We perform several ablation studies to investigate the impact of various architectural choices and hyperparameters on the performance of CONCEPTATTENTION.
+
+### 4.2. Limitations of Raw Cross Attention Maps
+
+For multi-modal DiT architectures, we could additionally consider using the raw cross attention maps
+EQUATION
+to produce saliency maps. However, these have a key limitation in that their vocabulary is limited to the tokens in the user's prompt. Unlike UNet-based models, multi-modal DiTs sequentially update a set of prompt embeddings with each MMATTN layer. This makes it difficult to produce cross attention maps for an open-set of concepts, as you would need to add the concept to the prompt sequence which would then change the appearance of the image. CONCEP-TATTENTION overcomes this key limitation, and makes the additional discovery that the output space of attention mechanisms produces high-fidelity saliency maps.
+
+### 5.4. Video Model Results
+
+We include qualitative results demonstrating the efficacy of CONCEPTATTENTION on the CogVideoX video generation multi-modal DiT model (Figure 8 ). Also see Figures 16 and 17 in the Appendix.
+
+### 3.1. Rectified-Flow Models for Image Generation
+
+Flux and Stable Diffusion 3 leverage multi-modal DiTs that are trained to parameterize rectified flow models. Throughout this paper we may refer to rectified flow models as diffusion models for convenience. These models attempt to generate realistic images from noise that correspond to given text prompts. Flow based models (Lipman et al., 2023) attempt to map a sample x 1 from a noise distribution p 1 , typically p 1 ∼ N (0, I), to a sample x 0 in the data distribution. Rectified flows (Liu et al., 2022) attempt to learn ODEs that follow straight paths between the p 0 and p 1 , i.e.
+EQUATION
+Flux and SD3 are trained using a conditional flow matching objective which can be expressed conveniently as
+EQUATION
+where λ ′ t corresponds to a signal-to-noise ratio and w t is a time dependent-weighting factor. Above ϵ Θ (z t , t) is parameterized by a multi-modal diffusion transformer network. The architecture of this model and it's properties is of primary interest in this work.
+
+### 5.5. Limitations
+
+The primary limitation of CONCEPTATTENTION is that it struggles to differentiate between very similar textual concepts. For example, for a photo with a sky with the sun in it, the model does not necessarily know where the boundary of the sun resides, instead capturing a halo around the sun (Figure 6 ). Additionally, when no relevant concept is present, CONCEPTATTENTION will select the most similar one even if it is incorrect (Figure 15 in the Appendix).
+
+## 2. Related Work
+
+Diffusion Model Interpretability A fair amount of existing work attempts to interpret diffusion models. Some works investigate diffusion models from an analytic lens (Kadkhodaie et al., 2024; Wang et al., 2024) , attempting to understand how diffusion models geometrically model the manifold of data. Other works attempt to understand how models memorize images (Carlini et al., 2023 ). An increasing body of work attempts to repurpose the representations of diffusion models for various tasks like classification (Li et al., 2023a) , segmentation (Karazija et al., 2024) , and even robotic control (Gupta et al., 2024) . However, most relevant to our work is the substantial body of methods investigating how the representations of the neural network architectures underpinning diffusion can be used to garner insight into how these models work, steer their behavior, and improve their safety.
+Numerous papers have observed that the cross attention mechanisms of UNet-based diffusion models like Stable Diffusion (Rombach et al., 2022) and SDXL (Podell et al., 2023) can produce interpretable saliency maps of textual concepts (Tang et al., 2022) . Cross attention maps are used in a variety of image editing tasks like producing masks that localize objects of interest to edit (Dalva et al., 2024) , controlling the layout of images (Chen et al., 2023; Epstein et al., 2023) , altering the appearance of an image but retaining its layout (Hertz et al., 2022) , and even generating synthetic data to train instruction based editing models (Brooks et al., 2023) . Other works observe that performing interventions on cross attention maps can improve the faithfulness of images to prompts by ensuring attributes are assigned to the correct objects (Meral et al., 2024; Chefer et al., 2023) . Additionally, it has been observed that self-attention layers of diffusion models encode useful information about the layout of images (Liu et al., 2024) .
+
+## 6. Conclusion
+
+We introduce CONCEPTATTENTION, a method for interpreting the rich features of multi-modal DiTs. Our approach allows a user to produce high quality saliency maps of an open-set of textual concepts that shed light on how a diffusion model "sees" an image. We perform an extensive evaluation of the saliency maps on zero-shot segmentation and find that they significantly outperform a variety of other zero-shot interpretability methods. Our results suggest the potential for DiT models to act as powerful and interpretable image encoders with representations that are transferable zero-shot to tasks like image segmentation.
+
+## 4. Methods
+
+We introduce CONCEPTATTENTION, a method for generating high quality saliency maps depicting the location of
+(a) Multi-modal Attention Image Keys Prompt Values Image Values Image Queries Prompt Queries Prompt Keys Prompt Output Image Output Prompt->Image Cross Attention Prompt Self Attention Image->Prompt Cross Attention Image Self Attention (b) Concept Attention Image Keys Concept Keys Concept Queries Image Values Concept Output Concept Self Attention Image->Concept Cross Attention Concept Values textual concepts in images. CONCEPTATTENTION works by creating a set of contextualized concept embeddings for simple textual concepts (e.g. "cat", "sky", etc.). These concept embeddings are sequentially updated alongside the text and image embeddings, so they match the structure that each MMATTN layer expects. However, unlike the text prompt, concept embeddings do not impact the appearance of the image. We can produce high-fidelity saliency maps by projecting image patch representations onto the concept embeddings. CONCEPTATTENTION requires no additional training and has minimal impact on model latency and memory footprint. A high level depiction of our methodology is shown in Figure 2 .
+
+### 3.2. The Anatomy of a Multi-modal DiT Layer
+
+Multi-modal DiTs like Flux and Stable Diffusion 3 leverage multi-modal attention layers (MMATTN) that process a combination of textual tokens and image patches. There are two key classes of layers: one that keeps separate residual streams for each modality and one that uses a single stream. In this work, we take advantage of the properties of these dual stream layers, which we refer to as multi-modal attention layers (MMATTNs).
+The input to a given layer is a sequence of image patch representations x ∈ R h×w×d and prompt token embeddings p ∈ R l×d . The initial prompt embeddings at the beginning of the network are formed by taking the T5 (Raffel et al., 2023) embeddings of the prompt tokens.
+Following (Peebles & Xie, 2023) , each MMATTN layer leverages a set of adaptive layer norm modulation layers (Xu et al., 2019) , conditioned on the time-step and global CLIP vector. An adaptive layernorm operation is applied to the input image and text embeddings. The final modulated outputs are then residually added back to the original input. Notably, the image and text modalities are kept in separate residual streams. The exact details of this operation are omitted for brevity.
+The key workhorse in MMATTN layers is the familiar multihead self attention operation. The prompt and image embeddings have separate learned key, value, and query projection matrices which we refer to as K x , Q x , V x for images and K p , Q p , V p for text. The keys, queries, and values for both modalities are collectively denoted q xp , k xp , and v xp , where for example
+EQUATION
+Here we refer to o x and o p as the attention output vectors. Another linear layer is then applied to these outputs and added to a separate residual streams weighted according to the output of the modulation layer. This gives us updated embeddings x L+1 and p L+1 which are given as input to the next layer.
+
+### 5.1. Implementation Details
+
+Flux DiT For most of our experiments we use the Flux DiT architecture implemented in PyTorch (Paszke et al., 2019) . In particular, we use the distilled Flux-Schnell model. We encode real images with the DiT by first mapping them to the VAE latent space and then adding varying degrees of Gaussian noise before passing them through the Flux DiT. We then cache all of the concept output o c and image output vectors o x from each MMATTN layer. At the end of generation we then construct our concept saliency maps for each layer and average them over all layers of interest. In our experiments we leverage the activations from the last 10 of the 18 MMATTN layers.
+
+### 5.2. Zero-shot Image Segmentation
+
+We are interested in investigating (1) the efficacy of CON-CEPTATTENTION to generate highly localized and semantically meaningful saliency maps, and (2) understand the transferability of multi-modal DiT representations to important downstream vision tasks. Zero-shot image segmentation is a natural choice for achieving these goals.
+Datasets We leverage two key datasets zero-shot image segmentation datasets. First, we use a commonly used (Gandelsman et al., 2024; Chefer et al., 2021) zero-shot segmentation benchmark called ImageNet-Segmentation (Guillaumin et al., 2014) . It is composed of 4,276 images from 445 categories. Each image primarily depicts a single central object or concept, which makes it a good method for comparing CONCEPTATTENTION to a variety of methods which generate a single saliency map that are unable to generate class-specific segmentation maps. For the second dataset we leverage PascalVOC 2012 benchmark (Everingham et al., 2015) . We investigate both a single class (930 images) and multi-class split (1,449 images) of this dataset. Many methods (e.g. DINO) do not condition their saliency map on class, so for these methods we restrict our evaluation to examples only containing a single class and the background. For methods that can accept text as conditioning we evaluate on the full dataset.
+
+## 1. Introduction
+
+Diffusion models have recently gained widespread popularity, emerging as the state-of-the-art approach for a variety of generative tasks, particularly text-to-image synthesis (Rombach et al., 2022) . These models transform random noise into photorealistic images guided by textual descriptions, achieving unprecedented fidelity and detail. Despite the impressive generative capabilities of diffusion models, our understanding of their internal mechanisms remains limited. Diffusion models operate as black boxes, where the We compare Flux raw cross attention, DAAM (Tang et al., 2022) with SDXL, and TextSpan (Gandelsman et al., 2024) for CLIP.
+relationships between input prompts and generated outputs are visible, but the decision-making processes that connect them are hidden from human understanding.
+Existing work on interpreting T2I models has predominantly focused on UNet-based architectures (Podell et al., 2023; Rombach et al., 2022) , which utilize shallow cross-attention mechanisms between prompt embeddings and image patch representations. UNet cross attention maps can produce high-fidelity saliency maps that predict the location of textual concepts (Tang et al., 2022) and have found numerous applications in tasks like image editing (Hertz et al., 2022; Chefer et al., 2023) . However, the interpretability of more recent multi-modal diffusion transformers (DiTs) remains underexplored. DiT-based models have recently replaced UNets (Ronneberger et al., 2015) as the state-ofthe-art architecture for image generation, with models such as Flux (Labs, 2023) and SD3 (Esser et al., 2024) achieving breakthroughs in text-to-image generation. The rapid advancement and enhanced capabilities of DiT-based models highlight the critical importance of methods that improve their interpretability, transparency, and safety.
+In this work, we propose CONCEPTATTENTION, a novel method that leverages the representations of multi-modal DiTs to produce high-fidelity saliency maps that localize textual concepts within images. Our method provides insight into the rich semantics of DiT representations. CONCEPTAT-TENTION is lightweight and requires no additional training, instead it repurposes the existing parameters of DiT attention layers. CONCEPTATTENTION works by producing a set of rich contextualized text embeddings each corresponding to visual concepts (e.g. "dragon", "sun"). By linearly projecting these concept embeddings and the image we can produce rich saliency maps that are even higher quality than commonly used cross attention maps.
+We evaluate the efficacy of CONCEPTATTENTION in a zeroshot semantic segmentation task on real world images. We compare our interpretative maps against annotated segmentations to measure the accuracy and relevance of the attributions generated by our method. Our experiments and extensive comparisons demonstrate that CONCEPTATTEN-TION provides valuable insights into the inner workings of these otherwise complex black-box models. By explaining the meaning of the representations of generative models our method paves the way for advancements in interpretability, controllability, and trust in generative AI systems.
+In summary, we contribute:
+• CONCEPTATTENTION, a method for interpreting text-to-image diffusion transformers. Our method requires no additional training, by leveraging the representations of multi-modal DiTs to generate highly interpretable saliency maps that depict the presence of arbitrary textual concepts (e.g. "dragon", "sky", etc.) in images (as shown in Figure 1 ).
+• The novel discovery that the output vectors of attention operations produce higher-quality saliency maps than cross attentions. CONCEPTATTENTION repurposes the parameters of DiT attention layers to produce rich textual embeddings corresponding to different concepts, something that is uniquely enabled by multi-modal DiT architectures. By performing linear projections between these concept embeddings and image patch representations in the attention output space we can produce high quality saliency maps.
+• CONCEPTATTENTION achieves state-of-the-art performance in zero-shot segmentation on benchmarks like ImageNet Segmentation and Pascal VOC across multiple DiT architectures. We achieve superior performance to a diverse set of zero-shot interpretability methods based on various foundation models like CLIP, DINO, and UNet-based diffusion models; this highlights the potential for the representations of DiTs to transfer to important downstream vision tasks like segmentation. We replicate our results quantitatively on both Flux and Stable Diffusion 3.5 Turbo.
+• CONCEPTATTENTION works with a video generation DiT model. Additionally, we demonstrate qualitatively that CONCEPTATTENTION seamlessly generalizes to the CogVideoX (Yang et al., 2025 ) video generation MMDiT model, producing higher-quality saliency maps than native cross attention maps.
+A man with flowers. flowers suit sky face tree grass balloon sun sky mountain clouds water A hot air balloon over a lake.

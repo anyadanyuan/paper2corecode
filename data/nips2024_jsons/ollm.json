@@ -1,0 +1,1740 @@
+{
+  "paper_id": "ollm",
+  "title": "End-to-End Ontology Learning with Large Language Models",
+  "authors": [
+    {
+      "first": "Andy",
+      "middle": [],
+      "last": "Lo",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Cambridge",
+        "location": {}
+      }
+    },
+    {
+      "first": "Albert",
+      "middle": [
+        "Q"
+      ],
+      "last": "Jiang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Cambridge",
+        "location": {}
+      }
+    },
+    {
+      "first": "Wenda",
+      "middle": [],
+      "last": "Li",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Cambridge",
+        "location": {}
+      }
+    },
+    {
+      "first": "Mateja",
+      "middle": [],
+      "last": "Jamnik",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Cambridge",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Ontologies are useful for automatic machine processing of domain knowledge as they represent it in a structured format. Yet, constructing ontologies requires substantial manual effort. To automate part of this process, large language models (LLMs) have been applied to solve various subtasks of ontology learning. However, this partial ontology learning does not capture the interactions between subtasks. We address this gap by introducing OLLM, a general and scalable method for building the taxonomic backbone of an ontology from scratch. Rather than focusing on subtasks, like individual relations between entities, we model entire subcomponents of the target ontology by finetuning an LLM with a custom regulariser that reduces overfitting on high-frequency concepts. We introduce a novel suite of metrics for evaluating the quality of the generated ontology by measuring its semantic and structural similarity to the ground truth. In contrast to standard syntax-based metrics, our metrics use deep learning techniques to define more robust distance measures between graphs. Both our quantitative and qualitative results on Wikipedia show that OLLM outperforms subtask composition methods, producing more semantically accurate ontologies while maintaining structural integrity. We further demonstrate that our model can be effectively adapted to new domains, like arXiv, needing only a small number of training examples. Our source code and datasets are available at https://github.com/andylolu2/ollm.",
+  "body": {
+    "1_Introduction": "An ontology is a formal and structural way of representing domain-specific concepts and their relations [16] . They can be simple (e.g., Wikipedia categories) consisting of concepts and only a small number of types of taxonomic relations (e.g., is-a relationships), or they can be complex (e.g., Schema.org) consisting of axioms or many types of relations. For example, a simple ontology for programming languages might contain two concepts \"Dynamically-typed language\" and \"Python\", and one relation \"Dynamically-typed language → Python\", representing the knowledge that Python is a dynamically-typed language. A more complex ontology might contain axioms too, for example, \"all programming languages are either dynamically or statically typed\". In this paper, we focus on ontologies with only concepts and taxonomic relations. Compared to typical deep learning models, which represent knowledge implicitly in its weights, ontologies capture knowledge in a structured and explicit manner, making them reliable, easy to edit and human-interpretable. Such benefits of ontologies have led to their wide adoption in practice. For example, Wikipedia categories have been 38th Conference on Neural Information Processing Systems (NeurIPS 2024). For evaluation, we measure the similarity between the generated ontology and the ground truth.\nused for entity ranking [46] and information retrieval [42] , or Schema.org [40] is a core component of the Semantic Web [1] initiative.\nWhile ontologies are useful, building ontologies often requires substantial manual effort. Ontology learning (OL) is the study of automating the construction of high-quality ontologies at scale. For a simple ontology, this amounts to discovering the concepts and taxonomic relations, usually based on a source corpus. In this paper we aim to develop domain-independent methods for OL that are scalable and produce better ontologies.\nTraditionally, OL is viewed as a composition of subtasks [3] , such as concept discovery and relation extraction. In particular, prior works have demonstrated that state-of-the-art large language models (LLMs) can solve such subtasks effectively [4] . While studying subtasks permits fine-grained analysis and evaluation, it does not directly indicate the subsequent impact on the quality of the final ontology. Moreover, there is potential room for improvement by combining several subtasks into one, such as by modelling concepts and relations in conjunction. In this paper, we instead develop and evaluate methods that construct ontologies in an end-to-end fashion to answer the following research questions:\n1. How can we leverage LLMs' knowledge base to build ontologies from scratch? 2. Does our method scale efficiently to practical problem sizes? 3. How well does our method generalise to new domains?\nWe introduce OLLM, an end-to-end method for using LLMs to construct ontologies at scale. Rather than focusing on individual relations between concepts, we finetune an LLM to model entire subcomponents of the target ontology. The output ontology is generated by taking the sum of generated sub-components and applying simple post-processing. An overview of the pipeline is shown in Figure 1 . To train OLLM, we collect the categorisation metadata for a subset of Wikipedia articles. We attempt to adapt an LLM to model the relevant categorisation subgraph for a particular Wikipedia article, but discover that direct finetuning leads to poor generalisation due to overfitting to high-level, frequently occurring concepts. Instead, we propose a custom regulariser that reweights each concept based on its frequency of occurrence, which substantially improves generalisation.\nWe evaluate OLLM by measuring the similarity of the generated ontology with the ground truth. Current approaches for comparing ontologies rely on mapping components of the two ontologies onto each other, most commonly by literal text matching [30, 45] . This is unreliable when the two ontologies are not already sufficiently similar. Instead, we propose a suite of evaluation metrics suitable for comparing arbitrary labelled graphs. These metrics compare edges and subgraphs of the two ontologies using pretrained text embedders to test for semantic and structural similarity. Both our quantitative and qualitative results reveal that an LLM can already outperform existing extraction-based methods out of the box, and the performance is further improved by finetuning with our custom regulariser. We additionally demonstrate that OLLM can be adapted to build the arXiv ontology using only a small number of training examples, suggesting that our model can be applied to new domains in a data-efficient way. In summary, our contributions are:\n1. We constructed two datasets based on Wikipedia and arXiv, which can serve as standard datasets for future work studying end-to-end OL. 2. We created OLLM, a method that utilises LLMs to build ontologies from scratch. OLLM produces high-quality ontologies and serves as a strong baseline for end-to-end OL. 3. We developed new evaluation metrics for assessing the quality of the generated ontologies.",
+    "2_Background": {
+      "2._Limitations": "Question: Does the paper discuss the limitations of the work performed by the authors? Answer: [Yes] Justification: We discuss the limitations and the possible resolutions in Section 6. This includes the scope of the work, where we only study ontologies with concepts and taxonomic relations, the inability to guarantee taxonomic relation transitivity, and the inability to control for data leakage from the pretraining stage of the LLM base model.\nGuidelines:\n• The answer NA means that the paper has no limitation while the answer No means that the paper has limitations, but those are not discussed in the paper.\n• The authors are encouraged to create a separate \"Limitations\" section in their paper.\n• The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be.\n• The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated.\n• The authors should reflect on the factors that influence the performance of the approach.\nFor example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon.\n• The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size.\n• If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness.\n• While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren't acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an important role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations.",
+      "_text": "An ontology is a structured way of representing concepts and relations of a shared conceptualisation, that is, domain knowledge [15, 16] . Ontologies can span a wide range of complexities. A fullyfledged ontology might contain concepts, relations, constraints, and axioms that enable complex automated reasoning. In this paper, we focus on the core building blocks of an ontology: concepts and taxonomic relations which represent is-a or is-subclass-of relationships between concepts. In some cases, the is-part-of relation is also considered a taxonomic relation. We treat such an ontology as a rooted labelled directed graph where nodes represent concepts, edges represent taxonomic relations and the root node is the special concept of all concepts. A strict ontology asserts that the taxonomic relation is asymmetric and thus the graph must be acyclic, though in practice some ontologies, such as the Wikipedia ontology studied in this paper, may contain cycles. We therefore do not assume that an ontology graph is necessarily acyclic. Examples of ontologies include WordNet [33] with 117,659 concepts and 89,089 taxonomic relations, and the Gene Ontology [2] with 42,255 concepts and 66,810 taxonomic relations.\nOntology learning is the automatic extraction of ontological elements [17] . The most studied source of input is unstructured text, though there are also works on semi-structured data like HTML [22] . In this paper, the input is a set of documents, each consisting of some unstructured text. We additionally assume each document is associated with one or more concepts in the ground truth ontology, which we utilise for training. The goal is to reconstruct the ground truth ontology given the set of documents.\nPrior works view OL as a composition of subtasks, and study each subtask in isolation [3, 6] . A typical pipeline for building a simple ontology is to first perform concept discovery (identify the nodes), and then relation extraction (identify the edges) [8, 24] . A notable approach for relation extraction is Hearst patterns [18] . Hearst patterns are hand-crafted lexico-syntactic patterns that exploit natural language structure to discover taxonomic relations. For example, the pattern \"[noun phrase] such as [noun phrase]\" matches phrases like \"dogs such as chihuahuas\", and thus can be processed by regular expressions to identify the relation \"dog → chihuahua\". Hearst patterns suffer from low recall, as the relations must occur in exact configurations to be identified by the rules. Roller et al. [39] suggest smoothing techniques to alleviate this issue though at the cost of lower precision.\nRecently, language models have been used for OL. REBEL [7] treats relation discovery as a translation task, and finetunes encoder-decoder LLMs to extract both taxonomic and non-taxonomic relations. Babaei Giglou et al. [4] benchmarked a wide family of LLMs for concept and relation discovery, and showed promising results. However, the quadratic complexity of link prediction makes this approach unscalable to large ontologies. We provide more discussion in Appendix A.2.3. There are also proof-of-concept works for building ontologies end-to-end with LLMs. Funk et al. [13] proposes to build an ontology by recursively prompting LLMs, while Trajanoska et al. [44] generate the entire ontology in one completion. However, both studies are limited in the scale of the task and evaluation: they only considered ontologies of up to 1000 concepts and relied on manual qualitative evaluation. We bridge this gap by proposing a method that can scale to practical problem sizes and new metrics for systematic qualitative evaluation.\nThe evaluation of ontologies is an open research area. The main approaches are gold standard evaluation [51] , which matches elements of the generated ontology with a predefined target ontology; task-based evaluation [36] , which measures the usefulness of the ontology on a specific application; and human evaluation [5, 37] . In this paper, we evaluate by the gold standard metric as it is the most straightforward approach when ground-truth ontology exists. Prior works have considered matching concepts [30] and direct or indirect relations [23, 45] by literal text comparison. Others have also considered edit-distance [12] or bag-of-words distributional similarity for text comparison [51] . These techniques for measuring semantic similarity may be considered unreliable and have been superseded by current methods [9] . We instead rely on more modern techniques like pretrained text embedders [10] and graph convolutions [26] to match substructures between the two ontologies."
+    },
+    "3_OLLM": {
+      "3._Theory_Assumptions_and_Proofs": "Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof?\nAnswer: [NA] Justification: This paper does not include theoretical results.\nGuidelines:\n• The answer NA means that the paper does not include theoretical results.\n• All the theorems, formulas, and proofs in the paper should be numbered and crossreferenced.\n• All assumptions should be clearly stated or referenced in the statement of any theorems.\n• The proofs can either appear in the main paper or the supplemental material, but if they appear in the supplemental material, the authors are encouraged to provide a short proof sketch to provide intuition.\n• Inversely, any informal proof provided in the core of the paper should be complemented by formal proofs provided in appendix or supplemental material. • Theorems and Lemmas that the proof relies upon should be properly referenced.",
+      "3.1_Subgraph_modelling": "Here, we describe the method for creating document-subgraph pairings. Given a document and its associated set of concepts C, we define the relevant paths as the set of paths of at most length N from the root to any of the concepts in C. The relevant subgraph is the set of nodes (concepts) and edges (taxonomic relations) that occur at least once in the relevant paths. An example is shown in Figure 2 (left). The choice of N is task-specific and we describe our method for choosing N in Section 5.1.\nTo employ LLMs to model the subgraphs, we must linearise the graph into a string sequence. Existing methods for autoregressive graph generation employ BFS [50] or DFS [14] ordering starting at an arbitrary node. We instead choose to linearise the subgraph as a list of relevant paths that produced the subgraph in the first place. We do so over BFS/DFS ordering for three reasons: 1) the subgraph is defined from the relevant paths, which makes them the most natural representation; 2) we hypothesise that the hierarchy of concepts in each path is a desirable inductive bias for the hierarchical nature of an ontology; and 3) the path-based representation is much easier to describe in natural language instructions so that our LLM prompting-based baselines may produce reasonable results without finetuning. The linearisation template can be found in Figure 5 in Appendix A.1.2.",
+      "3.2_Post-processing": "The final output graph is obtained by summing all generated subgraphs for each document and pruning low-weighted components. Given the generated subgraphs\nG 1 = (V 1 , E 1 ), . . . , G n = (V n , E n ), the raw output graph is defined as G raw = (V raw , E raw ), where V raw = ∪ n i=1 V n and E raw = ∪ n i=1 E n .\nEach edge (u, v) ∈ E raw is additionally weighted by the number of times it occurs in the collection of subgraphs: w(u, v) = n i=1 1[(u, v) ∈ E n ]. A few simple post-processing steps are then applied to G raw in order to prune it:\n1. Self-loop pruning: All edges (u, u) ∈ E raw are removed. 2. Inverse-edge pruning: For (u, v) ∈ E raw , if (v, u) ∈ E raw and w(v, u) > w(u, v), remove (u, v). That is, bidirectional edges are turned into unidirectional ones. 3. Absolute thresholding: Edges in E raw with weight below the α-th quantile are removed, where 0 ≤ α ≤ 1 is a hyperparameter. This removes edges that are globally less important. 4. Relative thresholding: For each vertex u ∈ V raw , let e 1 , . . . , e k be the outgoing edges from u, sorted by weight in ascending order. Let the cumulative weight be C(e i ) = i j=1 w(e j )/ k j=1 w(e j ). The edges {e i | C(e i ) ≤ β} are pruned, where 0 ≤ β ≤ 1 is a hyperparameter. This is similar to top-p sampling [19] , which we use to remove edges that are less important than their neighbours. 5. Clean up: After pruning all edges, nodes with no incoming or outgoing edges are removed.\nWe choose the hyperparameters α and β by tuning on the validation set (Section 5.1).",
+      "_text": "We now introduce OLLM, our novel, simple and scalable method for end-to-end OL with LLMs. On a high level, OLLM uses an LLM to model concept subgraphs of the target ontology by utilising a linearisation scheme to transform subgraphs into string sequences. In contrast to learning individual edges, modelling subgraphs allows the model to learn higher-order structures, such as the interactions between three or more nodes. To create the training dataset, OLLM relies on the annotations of documents to concepts to generate document-subgraph pairings. Such subgraphs are much smaller than the complete graph, so they can be learned by the model more easily. The generated subgraphs for each document are summed into a weighted graph, and simple post-processing is applied to obtain the final predicted ontology."
+    },
+    "4_Evaluating_end-to-end_OL": {
+      "4._Experimental_Result_Reproducibility": "Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)? Answer: [Yes] Justification: We describe the data collection procedure in Section 4.1 and the full experiment details in Appendix A.1. We also include the code and dataset in the supplementary material.\nGuidelines:\n• The answer NA means that the paper does not include experiments.\n• If the paper includes experiments, a No answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not.\n• If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable.\n• Depending on the contribution, reproducibility can be accomplished in various ways.\nFor example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed.\n• While NeurIPS does not require releasing code, the conference does require all submissions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm. (b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset).",
+      "4.1_Dataset": "We collect the datasets for the two ontologies considered in this paper: Wikipedia categories and the arXiv taxonomy. We use Wikipedia for learning and in-domain evaluation, and arXiv for out-ofdomain evaluation. To build the Wikipedia dataset, we perform a BFS traversal from its root category \"Main topic classifications\" up to depth 3. For every category encountered, we retrieve the titles and summaries (the text before the first section) of up to 5000 pages that belong in that category. The source data is obtained from the Wikipedia API. 1 The arXiv taxonomy is available from its home page, and the source corpus is constructed from the title and abstract of all the papers uploaded to arXiv in the years 2020-2022 with more than or equal to 10 citations. 2 In total, the Wikipedia dataset has 13886 concepts, 28375 taxonomic relations and 362067 documents, while the arXiv dataset has 161 concepts, 166 taxonomic relations and 126001 documents. Generating the train and test splits from the datasets is a non-trivial problem. Each training example consists of a document and its relevant subgraph (Section 3.1). The naive approach of randomly selecting a subset of documentsubgraph pairs for the training likely leads to data leakage as there might be a significant overlap between subgraphs in the training set and the test set. Instead, we first split the full ontology into train and test graphs, and then generate the training document-subgraph pairs. This ensures that there are sufficiently many unseen concepts (and thus relations) in the test split, as shown in Figure 3 . Our method is as follows:\n1. Let V top be the set of top-level nodes, that is, children of the root node. Randomly partition V top into train V top train , validation V top val , and test V top test splits in 7:3:10 ratio.\n2. Let d be the depth on the full graph, that is, the distance of the furthest node from the root. The nodes of the train graph are taken as the union of all the nodes that are within distance d -1 from any node in V top train , plus V top train and the root. The edges are all the edges in the full graph that have both endpoints in the train graph. Similar applies for V top val and V top test .",
+      "4.2_Metrics": "Many existing methods for comparing ontologies rely on syntactic measures like string edit distance [12] as a proxy for semantic similarity, or require every concept to be tagged with descriptions or documents for distributional semantics comparison [51] . To obtain more robust and general evaluation results, we introduce a suite of similarity metrics that use modern methods like text embeddings [38] .\nMultiple metrics are used as they trade off between interpretability and comprehensiveness and we aim to make them complementary by capturing different aspects of an ontology. For example, comparing ontologies by literal text equality is easy to understand but may be unreliable. In Section 5.4, we provide further discussion on evaluation metrics in the context of our experiment results. We denote the ground truth ontology graph as G = (V, E) and the generated graph as\nG ′ = (V ′ , E ′ ).",
+      "_text": "Ontology evaluation is a hard problem as there are no quantitative definitions of what constitutes a \"good ontology\", and metrics generally only capture one aspect (e.g., structure but not semantics) of an ontology. We approach evaluation by treating the ground truth as a proxy for a good ontology, and comparing the generated ontologies against the ground truth. Here, we describe how the ground truth is obtained, and introduce new evaluation metrics that are used for measuring ontology similarity."
+    },
+    "5_Experiments": {
+      "5.1_Implementation_details": "Analysing the per-token loss on the test split sequences of a directly finetuned model (Section 3.1) shows that the model tends to memorise high-level relations from the training set, leading to poor generalisation, as shown in Figure 4 (top). The crux of the problem is that low-level relations are substantially more diverse than high-level ones: since we present both types of relations at the same rate to the model, it tends to overfit on high-level relations while underfitting on low-level ones. To alleviate this issue, we introduce a new training objective that randomly masks the loss contribution of frequently occurring relations. Suppose a relation u → v is present n times in the training set. During training, when u → v appears in one of the relevant paths, we mask the loss contribution of the tokens for v with probability max(1 -M /n, 0), where M is a constant for the average number of times a relation is present in the training set. Intuitively, this regulariser ensures that frequent relations are only seen ≈ M times as targets throughout training, hence reducing overfitting as shown in Figure 4 (bottom). Note that while v is masked from the target, its tokens are still present in the input sequence as context for later tokens. A concrete training example can be found in Figure 2 (right).\nWe finetune Mistral 7B v0.2 [21] with Low-Rank Adaptation [20] on the masked loss objective. The model is trained on the Wikipedia dataset for two epochs with Adam [25] . During inference, the outputs are generated with temperature 0.1 and nucleus sampling [19] top-p of 0.9. We include a finetuning baseline without the masked loss objective, denoted as Finetune. To adapt OLLM for arXiv, we further finetune the model on 2048 document-subgraph pairs from arXiv. We initialise new low-rank adaptors and train until the loss stops improving on the validation set. We name these models OLLM (transfer) and Finetune (transfer) for training with and without the masked loss objective, respectively. Full details for the Wikipedia and arXiv experiments can be found in Appendix A.1.2.\nThe hyperparameters for the post-processing steps are tuned by grid search on the validation set. We sweep over α ∈ 1geomspace(1/|E raw |, 1, 21) and β ∈ geomspace(0.1, 1, 21) -0.1, and use the values that maximise Continuous F1. For Wikipedia, we choose the subgraph modelling path length N = 4 as it is the smallest N such that almost all edges (> 99%) occur in at least one relevant subgraph. Such criterion is used since smaller N results in smaller subgraphs, which we expect to be easier to model accurately. We choose N = 3 for arXiv for the same reason.",
+      "5.2_Baselines": "We give a brief overview of the baseline methods here (in addition to Finetune and Finetune (transfer)). The full implementation details can be found in Appendix A.1. All baselines produce weighted directed graphs which we apply the same post-processing steps as in OLLM (Section 3.2) to obtain the final predicted graph.\nMemorisation Simply memorising the train graph is a surprisingly strong baseline due to the overlap between train and test graphs, especially for Wikipedia. The weight of each edge is given by the number of relevant subgraphs in which it appears.\nHearst We follow the improved implementation of Hearst patterns by Roller et al. [39] . The authors propose spmi, a method which uses low-rank approximations to smooth the relation matrix so that two concepts can be compared even if there are no direct matches between them. We use the smoothed relation matrix to weigh the relations between the ground truth concepts. The additional hyperparameter for the rank of the smoothed matrix is tuned by grid search over the validation set.",
+      "5.3_Results": "We first evaluate whether OLLM can accurately create ontologies with many concepts and relations, such as the Wikipedia categories. Computationally, OLLM required 12 A100-hours for training and 7 A100-hours for inference to generate an ontology for Wikipedia. This is a modest cost in current standards, which demonstrates the scalability of OLLM for real-world problems. In terms of performance, OLLM produces the most semantically accurate ontology in comparison to our baselines as presented in Table 1 . Across all of Fuzzy F1, Continuous F1 and Graph F1, we observe the trend that OLLM scores the best, followed by Finetune and Prompting, and lastly Hearst and REBEL. This is surprising, as it suggests that the combination of LLMs with our subgraph modelling framework is a sufficiently strong inductive bias for LLMs to outperform traditional methods even without finetuning. However, prompting alone is not sufficient to build high-quality ontologies. On the Motif Distance metric, prompting methods score poorly at 0.314-0.354 in comparison to 0.050 and 0.080 for Finetune and OLLM respectively. This shows that using LLMs out-of-the-box for subgraph modelling results in poor structural integrity, though this issue is solved by finetuning. Qualitatively, we observe that OLLM can adhere to the clear, explicit naming style of Wikipedia, even on unseen topics in the test set. For example, it generates \"Mathematical categories\" and \"Groups (mathematics)\" under the parent concept \"Mathematical structures\" to distinguish from the natural language sense of categories and groups (Figure 11c ). Such style is not learned by the prompting baselines: Three-shot generated \"Elections → France\", while it most likely meant \"Elections → Elections in France\" (Figure 18c ). More sample outputs are shown in Appendix A.4.1.\nThe arXiv task differs from the Wikipedia task as it has much fewer relations, and there is even less overlap between the train and test split. This imposes a great challenge on Finetune and OLLM as they need to generalise with a limited diversity of training samples. Despite such constraints, OLLM is substantially better than other methods in modelling the semantics of the test graph. On the Fuzzy F1, Continuous F1, and Graph F1 metrics, OLLM performs the best among all methods with 0.570, 0.357, and 0.633, significantly higher than the next-best of 0.460, 0.290 and 0.546 respectively. Inspecting the generated ontologies (Appendix A.4.2), we observe that prompting baselines tend to produce repetitive concepts such as \"Machine Learning and Artificial Intelligence\" and \"Artificial Intelligence and Machine Learning\" (Figure 27 ), while Hearst and REBEL put almost all concepts under the same parent concept(s) (Figures 23 and 24 ). We also found that OLLM's output for arXiv contains concepts from Wikipedia, but restructured in a way that fits the arXiv ontology. For example, \"Life sciences\" and \"Biological evolution\" appear in the Wikipedia training set under the same parent category \"Life\" with no direct links between them. On the generated graph for arXiv, \"Life sciences\" is instead promoted to one of the top-level concepts with \"Biological Evolution\" as one of its children, which better fits the \"fields of science\" style of the arXiv ontology (Figure 20 ). This demonstrates that OLLM can adapt to produce a new type of ontology by restructuring its learned concepts, all using just a small number of training samples.\nIn summary, OLLM scores the best or is competitive across all metrics in both tasks, with the notable exception of the Literal F1 metric. We attribute this to the fact that Literal F1 is sensitive to factors like casing and choice of words, and generally only measures syntactic similarity. For example, we see that a suboptimal baseline like Memorisation scores the best on this metric with 0.134 on the Wikipedia task. This reflects that syntactic similarity generally does not entail semantic similarity, so syntax-based metrics should not be used as stand-alone measures for ontology quality.",
+      "5.4_Meta-evaluation": "In this section, we analyse the usefulness of our new metrics for measuring graph similarity and discuss the limitations of existing metrics. On the Wikipedia task, Memorisation, despite being clearly the worst in Continuous F1 and Graph F1, performs the best on Literal F1 and the second-best on Motif Distance. This can be attributed to the fact that Literal F1 is sensitive to semantically insignificant syntactic differences such as casing and word form, and thus when the training and test set has non-trivial overlap (Figure 3 ), it is biased towards methods that overfit. Similarly, as per the method described in Section 4.1, the data splits are constructed with structural symmetry, hence we expect the train and test splits to have a similar graph structure even though the represented concepts are different. As a result, methods that tend to overfit, for example, Memorisation and Finetune, achieve the best scores on Motif Distance. This demonstrates that Literal F1 and Motif Distance only capture syntactic and structural similarity respectively, and thus should not be used as stand-alone metrics for evaluation.\nAnalysing the edge and node matchings found by our Continuous F1 and Graph F1 metrics on arXiv reveals that they successfully capture some human intuition on semantic similarity between the two ontologies. In Figures 9 and 10 , we visualise the ontology generated by OLLM and the ground truth and observe that semantically similar components in the two graphs indeed get matched. For example, the \"Physics\" and \"Mathematics\" clusters in the generated graph get matched with the \"Mathematics\" cluster in the ground truth, \"Data Analysis\" and \"Information\" get matched with \"Statistics\", \"Economics\" with \"Quantitative Finance\", and \"Life Sciences\" with \"Quantitative Biology\". This suggests that our edge/node matching procedure is capturing a \"semantic graph isomorphism\" that allows one to compare similar components in the two graphs, even if they do not exactly share the same concepts. We believe this example of a semantic mapping from one ontology to another is strong evidence that our metrics are capturing meaningful qualities of the ontologies.",
+      "_text": "We design our experiments to answer the following research questions:\n1. Does OLLM produce better ontologies than traditional methods by subtask composition?\n2. Can OLLM be easily adapted to a new domain?\nWe approach the questions by training OLLM on the Wikipedia dataset, and further transfer the model to arXiv with a small number of arXiv samples. As baselines, we use two relation extraction methods, Hearst patterns [18, 39] and REBEL [7] . Relation extraction depends on successful concept discovery to produce high-quality ontologies. To estimate a ceiling to such baselines, we give the baselines a substantial advantage by providing them with the ground truth concepts in the test graph. The results show that even with such an advantage, OLLM outperforms the baselines on many metrics, demonstrating the potential of OLLM for end-to-end OL (Section 5.3)."
+    },
+    "6_Discussion": "Limitations We only study and evaluate the construction of simple ontologies with only concepts and taxonomic relations. A potential approach to extend OLLM to produce non-taxonomic relations is to add tags indicating the relation type to each edge when linearising the subgraphs for sequence modelling. New evaluation metrics might also be required to handle multiple types of relations.\nAnother limitation is that the taxonomic relations in the generated ontologies are not necessarily transitive due to the existence of cycles. This is a general problem for many OL methods and there are existing works on cycle removal algorithms for cleaning hierarchies [43, 52] . We ablate this in Appendix A.2.1 and found that the generated ontology can be made consistent by removing a small number of edges. Furthermore, we were unable to fully control for data contamination as the pretraining dataset of Mistral 7B is not publically known. We do, however, observe that the generated ontologies are sufficiently different from the ground truth, indicating that OLLM is not directly remembering samples from its pretraining stage."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "A semantic web primer",
+      "authors": [
+        {
+          "first": "Grigoris",
+          "middle": [],
+          "last": "Antoniou",
+          "suffix": ""
+        },
+        {
+          "first": "Frank",
+          "middle": [],
+          "last": "Van Harmelen",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Gene ontology: tool for the unification of biology",
+      "authors": [
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Ashburner",
+          "suffix": ""
+        },
+        {
+          "first": "Catherine",
+          "middle": [
+            "A"
+          ],
+          "last": "Ball",
+          "suffix": ""
+        },
+        {
+          "first": "Judith",
+          "middle": [
+            "A"
+          ],
+          "last": "Blake",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Botstein",
+          "suffix": ""
+        },
+        {
+          "first": "Heather",
+          "middle": [],
+          "last": "Butler",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Michael Cherry",
+          "suffix": ""
+        },
+        {
+          "first": "Allan",
+          "middle": [
+            "P"
+          ],
+          "last": "Davis",
+          "suffix": ""
+        },
+        {
+          "first": "Kara",
+          "middle": [],
+          "last": "Dolinski",
+          "suffix": ""
+        },
+        {
+          "first": "Selina",
+          "middle": [
+            "S"
+          ],
+          "last": "Dwight",
+          "suffix": ""
+        },
+        {
+          "first": "Janan",
+          "middle": [
+            "T"
+          ],
+          "last": "Eppig",
+          "suffix": ""
+        }
+      ],
+      "year": 2000,
+      "venue": "Nature genetics"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "A survey of ontology learning techniques and applications",
+      "authors": [
+        {
+          "first": "Muhammad",
+          "middle": [],
+          "last": "Nabeel",
+          "suffix": ""
+        },
+        {
+          "first": "Asim",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Muhammad",
+          "middle": [],
+          "last": "Wasim",
+          "suffix": ""
+        },
+        {
+          "first": "Muhammad",
+          "middle": [],
+          "last": "Usman Ghani Khan",
+          "suffix": ""
+        },
+        {
+          "first": "Waqar",
+          "middle": [],
+          "last": "Mahmood",
+          "suffix": ""
+        },
+        {
+          "first": "Hafiza",
+          "middle": [],
+          "last": "Mahnoor",
+          "suffix": ""
+        },
+        {
+          "first": "Abbasi",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Database"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Llms4ol: Large language models for ontology learning",
+      "authors": [
+        {
+          "first": "Hamed",
+          "middle": [],
+          "last": "Babaei Giglou",
+          "suffix": ""
+        },
+        {
+          "first": "D'",
+          "middle": [],
+          "last": "Jennifer",
+          "suffix": ""
+        },
+        {
+          "first": "Sören",
+          "middle": [],
+          "last": "Souza",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Auer",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Semantic Web Conference"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "A survey of ontology evaluation techniques",
+      "authors": [
+        {
+          "first": "Janez",
+          "middle": [],
+          "last": "Brank",
+          "suffix": ""
+        },
+        {
+          "first": "Marko",
+          "middle": [],
+          "last": "Grobelnik",
+          "suffix": ""
+        },
+        {
+          "first": "Dunja",
+          "middle": [],
+          "last": "Mladenic",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": "Proceedings of the conference on data mining and data warehouses (SiKDD 2005)"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Ontology learning from text: methods, evaluation and applications",
+      "authors": [
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Buitelaar",
+          "suffix": ""
+        },
+        {
+          "first": "Philipp",
+          "middle": [],
+          "last": "Cimiano",
+          "suffix": ""
+        },
+        {
+          "first": "Bernardo",
+          "middle": [],
+          "last": "Magnini",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Rebel: Relation extraction by end-to-end language generation",
+      "authors": [
+        {
+          "first": "Pere-Lluís",
+          "middle": [],
+          "last": "Huguet",
+          "suffix": ""
+        },
+        {
+          "first": "Cabot",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Roberto",
+          "middle": [],
+          "last": "Navigli",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Findings of the Association for Computational Linguistics: EMNLP 2021"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Text2onto: A framework for ontology learning and data-driven change discovery",
+      "authors": [
+        {
+          "first": "Philipp",
+          "middle": [],
+          "last": "Cimiano",
+          "suffix": ""
+        },
+        {
+          "first": "Johanna",
+          "middle": [],
+          "last": "Völker",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": "International conference on application of natural language to information systems"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Supervised learning of universal sentence representations from natural language inference data",
+      "authors": [
+        {
+          "first": "Alexis",
+          "middle": [],
+          "last": "Conneau",
+          "suffix": ""
+        },
+        {
+          "first": "Douwe",
+          "middle": [],
+          "last": "Kiela",
+          "suffix": ""
+        },
+        {
+          "first": "Holger",
+          "middle": [],
+          "last": "Schwenk",
+          "suffix": ""
+        },
+        {
+          "first": "Loïc",
+          "middle": [],
+          "last": "Barrault",
+          "suffix": ""
+        },
+        {
+          "first": "Antoine",
+          "middle": [],
+          "last": "Bordes",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Bert: Pre-training of deep bidirectional transformers for language understanding",
+      "authors": [
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Devlin",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Wei",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Kenton",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Kristina",
+          "middle": [],
+          "last": "Toutanova",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Long-term recurrent convolutional networks for visual recognition and description",
+      "authors": [
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Donahue",
+          "suffix": ""
+        },
+        {
+          "first": "Lisa",
+          "middle": [
+            "Anne"
+          ],
+          "last": "Hendricks",
+          "suffix": ""
+        },
+        {
+          "first": "Sergio",
+          "middle": [],
+          "last": "Guadarrama",
+          "suffix": ""
+        },
+        {
+          "first": "Marcus",
+          "middle": [],
+          "last": "Rohrbach",
+          "suffix": ""
+        },
+        {
+          "first": "Subhashini",
+          "middle": [],
+          "last": "Venugopalan",
+          "suffix": ""
+        },
+        {
+          "first": "Kate",
+          "middle": [],
+          "last": "Saenko",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Darrell",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Similarity for ontologies -a comprehensive framework",
+      "authors": [
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Ehrig",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Haase",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Hefke",
+          "suffix": ""
+        },
+        {
+          "first": "Nenad",
+          "middle": [],
+          "last": "Stojanović",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": "European Conference on Information Systems"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Towards ontology construction with language models",
+      "authors": [
+        {
+          "first": "Maurice",
+          "middle": [],
+          "last": "Funk",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Hosemann",
+          "suffix": ""
+        },
+        {
+          "first": "Jean",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Jung",
+          "suffix": ""
+        },
+        {
+          "first": "Carsten",
+          "middle": [],
+          "last": "Lutz",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Graphgen: A scalable approach to domain-agnostic labeled graph generation",
+      "authors": [
+        {
+          "first": "Nikhil",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Harsh",
+          "middle": [],
+          "last": "Vardhan Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Sayan",
+          "middle": [],
+          "last": "Ranu",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of The Web Conference 2020"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "A translation approach to portable ontology specifications",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Thomas R Gruber",
+          "suffix": ""
+        }
+      ],
+      "year": 1993,
+      "venue": "Knowledge acquisition"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Toward principles for the design of ontologies used for knowledge sharing?",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Thomas R Gruber",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "International journal of human-computer studies"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "A survey of ontology learning approaches",
+      "authors": [
+        {
+          "first": "Maryam",
+          "middle": [],
+          "last": "Hazman",
+          "suffix": ""
+        },
+        {
+          "first": "Ahmed",
+          "middle": [],
+          "last": "Samhaa R El-Beltagy",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Rafea",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "International Journal of Computer Applications"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Automated discovery of wordnet relations",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Marti",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hearst",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": "WordNet: an electronic lexical database"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "The curious case of neural text degeneration",
+      "authors": [
+        {
+          "first": "Ari",
+          "middle": [],
+          "last": "Holtzman",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Buys",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Maxwell",
+          "middle": [],
+          "last": "Forbes",
+          "suffix": ""
+        },
+        {
+          "first": "Yejin",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Lora: Low-rank adaptation of large language models",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Edward",
+          "suffix": ""
+        },
+        {
+          "first": "Yelong",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Zeyuan",
+          "middle": [],
+          "last": "Wallis",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhi",
+          "middle": [],
+          "last": "Allen-Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Shean",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Weizhu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Mistral 7b",
+      "authors": [
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Albert Q Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Sablayrolles",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Mensch",
+          "suffix": ""
+        },
+        {
+          "first": "Devendra",
+          "middle": [],
+          "last": "Bamford",
+          "suffix": ""
+        },
+        {
+          "first": "Diego",
+          "middle": [],
+          "last": "Singh Chaplot",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "De Las Casas",
+          "suffix": ""
+        },
+        {
+          "first": "Gianna",
+          "middle": [],
+          "last": "Bressand",
+          "suffix": ""
+        },
+        {
+          "first": "Guillaume",
+          "middle": [],
+          "last": "Lengyel",
+          "suffix": ""
+        },
+        {
+          "first": "Lucile",
+          "middle": [],
+          "last": "Lample",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Saulnier",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Ontology discovery from web pages: Application to tourism",
+      "authors": [
+        {
+          "first": "Lobna",
+          "middle": [],
+          "last": "Karoui",
+          "suffix": ""
+        },
+        {
+          "first": "Marie-Aude",
+          "middle": [],
+          "last": "Aufaure",
+          "suffix": ""
+        },
+        {
+          "first": "Nacera",
+          "middle": [],
+          "last": "Bennacer",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": "the Workshop of Knowledge Discovery and Ontologies"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Taxaminer: an experimentation framework for automated taxonomy bootstrapping",
+      "authors": [
+        {
+          "first": "Vipul",
+          "middle": [],
+          "last": "Kashyap",
+          "suffix": ""
+        },
+        {
+          "first": "Cartic",
+          "middle": [],
+          "last": "Ramakrishnan",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Thomas",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sheth",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": "Int. J. Web Grid Serv"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Automatic relationship extraction from agricultural text for ontology construction",
+      "authors": [
+        {
+          "first": "Neha",
+          "middle": [],
+          "last": "Kaushik",
+          "suffix": ""
+        },
+        {
+          "first": "Niladri",
+          "middle": [],
+          "last": "Chatterjee",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Information processing in agriculture"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Adam: A method for stochastic optimization",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Diederik",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Semi-supervised classification with graph convolutional networks",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Thomas",
+          "suffix": ""
+        },
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Kipf",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "The hungarian method for the assignment problem",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Harold W Kuhn",
+          "suffix": ""
+        }
+      ],
+      "year": 1955,
+      "venue": "Naval research logistics quarterly"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Efficient memory management for large language model serving with pagedattention",
+      "authors": [
+        {
+          "first": "Woosuk",
+          "middle": [],
+          "last": "Kwon",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuohan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Siyuan",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "Lianmin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Cody",
+          "middle": [
+            "Hao"
+          ],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ion",
+          "middle": [],
+          "last": "Stoica",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 29th Symposium on Operating Systems Principles"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Bart: Denoising sequence-to-sequence pre-training for natural language generation, translation, and comprehension",
+      "authors": [
+        {
+          "first": "Mike",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        },
+        {
+          "first": "Yinhan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Naman",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Marjan",
+          "middle": [],
+          "last": "Ghazvininejad",
+          "suffix": ""
+        },
+        {
+          "first": "Abdelrahman",
+          "middle": [],
+          "last": "Mohamed",
+          "suffix": ""
+        },
+        {
+          "first": "Omer",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        },
+        {
+          "first": "Ves",
+          "middle": [],
+          "last": "Stoyanov",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Measuring similarity between ontologies",
+      "authors": [
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Maedche",
+          "suffix": ""
+        },
+        {
+          "first": "Steffen",
+          "middle": [],
+          "last": "Staab",
+          "suffix": ""
+        }
+      ],
+      "year": 2002,
+      "venue": "Knowledge Engineering and Knowledge Management: Ontologies and the Semantic Web"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "The stanford corenlp natural language processing toolkit",
+      "authors": [
+        {
+          "first": "Mihai",
+          "middle": [],
+          "last": "Christopher D Manning",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Surdeanu",
+          "suffix": ""
+        },
+        {
+          "first": "Jenny",
+          "middle": [
+            "Rose"
+          ],
+          "last": "Bauer",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Finkel",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Bethard",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mcclosky",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Proceedings of 52nd annual meeting of the association for computational linguistics: system demonstrations"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Linear assignment problems",
+      "authors": [
+        {
+          "first": "Silvano",
+          "middle": [],
+          "last": "Martello",
+          "suffix": ""
+        },
+        {
+          "first": "Paolo",
+          "middle": [],
+          "last": "Toth",
+          "suffix": ""
+        }
+      ],
+      "year": 1987,
+      "venue": "North-Holland Mathematics Studies"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Wordnet: a lexical database for english",
+      "authors": [
+        {
+          "first": "George",
+          "middle": [
+            "A"
+          ],
+          "last": "Miller",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "Communications of the ACM"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Network motifs: simple building blocks of complex networks",
+      "authors": [
+        {
+          "first": "Ron",
+          "middle": [],
+          "last": "Milo",
+          "suffix": ""
+        },
+        {
+          "first": "Shai",
+          "middle": [],
+          "last": "Shen-Orr",
+          "suffix": ""
+        },
+        {
+          "first": "Shalev",
+          "middle": [],
+          "last": "Itzkovitz",
+          "suffix": ""
+        },
+        {
+          "first": "Nadav",
+          "middle": [],
+          "last": "Kashtan",
+          "suffix": ""
+        },
+        {
+          "first": "Dmitri",
+          "middle": [],
+          "last": "Chklovskii",
+          "suffix": ""
+        },
+        {
+          "first": "Uri",
+          "middle": [],
+          "last": "Alon",
+          "suffix": ""
+        }
+      ],
+      "year": 2002,
+      "venue": "Science"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Deriving a large scale taxonomy from wikipedia",
+      "authors": [
+        {
+          "first": "Paolo",
+          "middle": [],
+          "last": "Simone",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Ponzetto",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Strube",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "AAAI"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "A task-based approach for ontology evaluation",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Porzel",
+          "suffix": ""
+        },
+        {
+          "first": "Rainer",
+          "middle": [],
+          "last": "Malaka",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": "ECAI Workshop on Ontology Learning and Population"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "A survey on ontology evaluation methods",
+      "authors": [
+        {
+          "first": "Joe",
+          "middle": [],
+          "last": "Raad",
+          "suffix": ""
+        },
+        {
+          "first": "Christophe",
+          "middle": [],
+          "last": "Cruz",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Proceedings of the International Conference on Knowledge Engineering and Ontology Development, part of the 7th International Joint Conference on Knowledge Discovery, Knowledge Engineering and Knowledge Management"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Sentence-bert: Sentence embeddings using siamese bertnetworks",
+      "authors": [
+        {
+          "first": "Nils",
+          "middle": [],
+          "last": "Reimers",
+          "suffix": ""
+        },
+        {
+          "first": "Iryna",
+          "middle": [],
+          "last": "Gurevych",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Hearst patterns revisited: Automatic hypernym detection from large text corpora",
+      "authors": [
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Roller",
+          "suffix": ""
+        },
+        {
+          "first": "Douwe",
+          "middle": [],
+          "last": "Kiela",
+          "suffix": ""
+        },
+        {
+          "first": "Maximilian",
+          "middle": [],
+          "last": "Nickel",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Network motifs in the transcriptional regulation network of escherichia coli",
+      "authors": [
+        {
+          "first": "Ron",
+          "middle": [],
+          "last": "Shai S Shen-Orr",
+          "suffix": ""
+        },
+        {
+          "first": "Shmoolik",
+          "middle": [],
+          "last": "Milo",
+          "suffix": ""
+        },
+        {
+          "first": "Uri",
+          "middle": [],
+          "last": "Mangan",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Alon",
+          "suffix": ""
+        }
+      ],
+      "year": 2002,
+      "venue": "Nature genetics"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Exploiting wikipedia for cross-lingual and multilingual information retrieval",
+      "authors": [
+        {
+          "first": "Philipp",
+          "middle": [],
+          "last": "Sorg",
+          "suffix": ""
+        },
+        {
+          "first": "Philipp",
+          "middle": [],
+          "last": "Cimiano",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Data & Knowledge Engineering"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Breaking cycles in noisy hierarchies",
+      "authors": [
+        {
+          "first": "Jiankai",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Deepak",
+          "middle": [],
+          "last": "Ajwani",
+          "suffix": ""
+        },
+        {
+          "first": "Alessandra",
+          "middle": [],
+          "last": "Patrick K Nicholson",
+          "suffix": ""
+        },
+        {
+          "first": "Srinivasan",
+          "middle": [],
+          "last": "Sala",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Parthasarathy",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the 2017 ACM on Web Science Conference"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Enhancing knowledge graph construction using large language models",
+      "authors": [
+        {
+          "first": "Milena",
+          "middle": [],
+          "last": "Trajanoska",
+          "suffix": ""
+        },
+        {
+          "first": "Riste",
+          "middle": [],
+          "last": "Stojanov",
+          "suffix": ""
+        },
+        {
+          "first": "Dimitar",
+          "middle": [],
+          "last": "Trajanov",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Graph-based approach to automatic taxonomy generation (grabtax)",
+      "authors": [
+        {
+          "first": "Pucktada",
+          "middle": [],
+          "last": "Treeratpituk",
+          "suffix": ""
+        },
+        {
+          "first": "Madian",
+          "middle": [],
+          "last": "Khabsa",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "Lee"
+          ],
+          "last": "Giles",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Using wikipedia categories and links in entity ranking",
+      "authors": [
+        {
+          "first": "Anne-Marie",
+          "middle": [],
+          "last": "Vercoustre",
+          "suffix": ""
+        },
+        {
+          "first": "Jovan",
+          "middle": [],
+          "last": "Pehcevski",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [
+            "A"
+          ],
+          "last": "Thom",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "Focused Access to XML Documents: 6th International Workshop of the Initiative for the Evaluation of XML Retrieval, INEX 2007 Dagstuhl"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Minilm: Deep self-attention distillation for task-agnostic compression of pre-trained transformers",
+      "authors": [
+        {
+          "first": "Wenhui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Furu",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Hangbo",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Nan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Ming",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Chain-of-thought prompting elicits reasoning in large language models",
+      "authors": [
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Xuezhi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Dale",
+          "middle": [],
+          "last": "Schuurmans",
+          "suffix": ""
+        },
+        {
+          "first": "Maarten",
+          "middle": [],
+          "last": "Bosma",
+          "suffix": ""
+        },
+        {
+          "first": "Fei",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "Ed",
+          "middle": [],
+          "last": "Chi",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Quoc",
+          "suffix": ""
+        },
+        {
+          "first": "Denny",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Simplifying graph convolutional networks",
+      "authors": [
+        {
+          "first": "Felix",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Amauri",
+          "middle": [],
+          "last": "Souza",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Fifty",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Kilian",
+          "middle": [],
+          "last": "Weinberger",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Graphrnn: Generating realistic graphs with deep auto-regressive models",
+      "authors": [
+        {
+          "first": "Jiaxuan",
+          "middle": [],
+          "last": "You",
+          "suffix": ""
+        },
+        {
+          "first": "Rex",
+          "middle": [],
+          "last": "Ying",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Hamilton",
+          "suffix": ""
+        },
+        {
+          "first": "Jure",
+          "middle": [],
+          "last": "Leskovec",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Gold standard evaluation of ontology learning methods through ontology transformation and alignment",
+      "authors": [
+        {
+          "first": "Elias",
+          "middle": [],
+          "last": "Zavitsanos",
+          "suffix": ""
+        },
+        {
+          "first": "Georgios",
+          "middle": [],
+          "last": "Paliouras",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [
+            "A"
+          ],
+          "last": "Vouros",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "IEEE Transactions on Knowledge and Data Engineering"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Analysis of the wikipedia category graph for nlp applications",
+      "authors": [
+        {
+          "first": "Torsten",
+          "middle": [],
+          "last": "Zesch",
+          "suffix": ""
+        },
+        {
+          "first": "Iryna",
+          "middle": [],
+          "last": "Gurevych",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "Proceedings of the Second Workshop on TextGraphs: Graph-Based Algorithms for Natural Language Processing"
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+## 2. Limitations
+
+Question: Does the paper discuss the limitations of the work performed by the authors? Answer: [Yes] Justification: Section 3.1 discusses in detail the limitations of advantage calibration. Section 5 discusses limitations and future work for the whole paper.
+Guidelines:
+• The answer NA means that the paper has no limitation while the answer No means that the paper has limitations, but those are not discussed in the paper.
+• The authors are encouraged to create a separate "Limitations" section in their paper.
+• The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be.
+• The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated.
+• The authors should reflect on the factors that influence the performance of the approach.
+For example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon.
+• The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size.
+• If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness.
+• While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren't acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an important role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations.
+
+# 1 Introduction
+
+Machine learning and statistical models can leak information about individuals in their training data, which can be recovered by membership inference, attribute inference, and reconstruction attacks (Fredrikson et al., 2015; Shokri et al., 2017; Yeom et al., 2018; Balle et al., 2022) . The most common defenses against these attacks are based on differential privacy (DP) (Dwork et al., 2014) . Differential privacy introduces noise to either the data, the training algorithm, or the model parameters (Chaudhuri et al., 2011) . This noise provably limits the adversary's ability to run successful attacks at the cost of reducing the utility of the model.
+In DP, the parameters ε and δ control the privacy-utility trade-off. These parameters determine the scale (e.g., variance) of the noise added during training: Smaller values of these parameters correspond to larger noise. Larger noise provides stronger privacy guarantees but reduces the utility of the trained model. Typically, δ is set to a small fixed value (usually between 10 -8 and 10 -5 ), leaving ε as the primary tunable parameter. Without additional analyses, the values of parameters (ε, δ) alone do not provide a tangible and intuitive operational notion of privacy risk (Nanayakkara et al., 2023) . This begs the question: how should practitioners, regulators, and data subjects decide on acceptable values of ε and δ and calibrate the noise scale to achieve a desired level of protection?
+
+## 2.1 Preliminaries
+
+Setup and notation. Let D n denote the set of all datasets of size n over a space D, and let S ≃ S ′ denote a neighboring relation, e.g. S, S ′ that differ by one datapoint. We study randomized algorithms (mechanisms) M (S) that take as input a dataset S ∈ 2 D , and output the result of a computation, e.g., statistical queries or an ML model. We denote the output domain of the mechanism by Θ. For ease of presentation, we mainly consider randomized mechanisms that are parameterized by a single noise parameter ω ∈ Ω, but our results extend to mechanisms with multiple parameters. For example, in the Gaussian mechanism (Dwork et al., 2014) , M (S) = q(S) + Z, where Z ∼ N (0, σ 2 ) and q(S) is a non-private statistical algorithm, the parameter is ω = σ with Ω = R ≥0 . We denote a parameterized mechanism by M ω (S). We summarize the notation in Table 1 in the Appendix.
+
+## 2.2 Operational Privacy Risks
+
+We can interpret differential privacy through the lens of membership inference attacks (MIAs) in the so-called strong-adversary model (see, e.g., Nasr et al., 2021) . In this framework, the adversary aims to determine whether a given output θ ∈ Θ came from M (S) or M (S ′ ), where S ′ = S ∪ {z} for some target example z ∈ D. † The adversary has access to the mechanism M (•), the dataset S, and the target example z ∈ D. Such an attack is equivalent to a binary hypothesis test (Wasserman and Zhou, 2010; Kairouz et al., 2015; Dong et al., 2022) :
+EQUATION
+where the MIA is modelled as a test ϕ : Θ → [0, 1] that maps a given mechanism output θ to the probability of the null hypothesis H 0 being rejected. We can analyze this hypothesis test through the trade-off between the achievable false positive rate (FPR) α ϕ ≜ E M (S) [ϕ] and false negative rate (FNR)
+β ϕ ≜ 1 -E M (S ′ ) [ϕ]
+, where the expectations are taken over the coin flips in the mechanism. ‡ Dong et al. (2022) formalize the trade-off function and define f -DP as follows:
+Definition 2.3. A trade-off function T (M (S), M (S ′ )) : [0, 1] → [0, 1] outputs the FNR of the most powerful attack at any given level α ∈ [0, 1]:
+EQUATION
+See Figure 5 in the Appendix for an illustration.
+Definition 2.4. A mechanism M (•) satisfies f -DP, where f is the trade-off curve for some other mechanism, if for all α ∈ [0, 1], we have inf S≃S ′ T (M (S), M (S ′ ))(α) ≥ f (α).
+Next, we state the equivalence between (ε, δ)-DP guarantees and f -DP guarantees. Proposition 2.1 (Dong et al. (2022) ). If a mechanism M (•) is (ε, δ)-DP, then it is f -DP with
+EQUATION
+Moreover, a mechanism M (•) satisfies (ε(δ), δ)-DP for all δ ∈ [0, 1] iff it is f -DP with
+EQUATION
+We overview three particular notions of attack risk: advantage/accuracy of MIAs, FPR/FNR of MIAs, and reconstruction robustness. These risks can be thought of as summary statistics of the f curve.
+Advantage/Accuracy. Wood et al. (2018) proposed § to measure the attack risk as the maximum achievable attack accuracy. To avoid confusion with task accuracy, we use advantage over random guessing, which is the difference between the attack TPR 1 -β ϕ and FNR α ϕ :
+EQUATION
+The advantage η is a linear transformation of the maximum attack accuracy
+sup 1 /2 • (1 -β ϕ ) + 1 /2 • (1 -α ϕ ),
+where supremum is over S ≃ S ′ and ϕ : Θ → [0, 1]. Moreover, η can be obtained from a fixed point α * = f (α * ) of the f curve as 1 -2α * , and it is bounded given an (ε, δ)-DP guarantee: Proposition 2.2 (Kairouz et al. 2015). If a mechanism M (•) is (ε, δ)-DP, then we have:
+EQUATION
+FPR/FNR Risk. Recent work (Carlini et al., 2022; Rezaei and Liu, 2021) has argued that MIAs are a relevant threat only when the attack true positive rate 1 -β ϕ is high at low enough α ϕ . As a concrete notion of risk, we thus consider minimum level of attack FNR β ⋆ within an FPR region α ∈ [0, α ⋆ ], where α ⋆ is a low value. This approach is similar to the statistically significant p-values often used in the sciences. Following the scientific standards and Carlini et al. (2022) , we consider α ⋆ ∈ {0.01, 0.05, 0.1}.
+
+## 2.3 Our Objective: Attack-Aware Noise Calibration
+
+The standard practice in DP is to calibrate the noise scale ω of a mechanism M ω (•) to some target (ε ⋆ , δ ⋆ )-DP guarantee, with ε ⋆ from a recommended range, e.g., ε ⋆ ∈ [2, 10], and δ ⋆ fixed to δ ⋆ < 1 /n, as in Eq. ( 2). Then, the privacy guarantees provided by the chosen (ε ⋆ , δ ⋆ ) are obtained by mapping these values to bounds on sensitivity and specificity (by Proposition 2.1) or advantage (by Proposition 2.2) of membership inference attacks. In this work, we show that if the goal is to provide an operational and interpretable guarantee such as attack advantage or FPR/FNR, this approach leads to unnecessarily pessimistic noise requirements and a deterioration in utility due to the intermediate step of setting (ε ⋆ , δ ⋆ ). We show it is possible to skip this intermediate step by using the hypothesis-testing interpretation of DP to directly calibrate noise to operational notions of privacy risk. In practice, this means replacing the constraint in Eq. ( 2) with an operational notion of risk:
+EQUATION
+Solving this optimization problem requires two components. First, a way to optimize ω given a method to compute risk ω . As we assume that risk is monotonic in ω, Eq. ( 9) can be solved via binary search (see, e.g., Paszke et al., 2019) using calls to the risk ω function to an arbitrary precision. Second, we need a way to compute risk ω for any value ω. In the next section, we provide efficient methods for doing so for general DP mechanisms, including composed mechanisms such as DP-SGD, by extending the tight privacy analysis from Doroshenko et al. (2022) to computing f -DP. Having these methods, we instantiate Eq. ( 9) for the notions of risks introduced in Section 2.2.
+
+# 3 Numeric Calibration to Attack Risks
+
+In this section, we provide methods for calibrating DP mechanisms to the notions of privacy risk in Section 2.2. As a first step, we introduce the core technical building blocks of our calibration method: methods for evaluating advantage η ω and the trade-off curve f ω (α) for a given value of ω.
+Dominating Pairs and PLRVs. We make use of two concepts, originally developed in the context of computing tight privacy profiles under composition: dominating pairs (Zhu et al., 2022a) and privacy loss random variables (PLRV) (Dwork and Rothblum, 2016) .
+Definition 3.1. We say that a pair of distributions (P, Q) is a dominating pair for a mechanism M (•) if for every ε ∈ R, we have sup
+S≃S ′ D e ε (M (S) ∥ M (S ′ )) ≤ D e ε (P ∥ Q).
+Importantly, a dominating pair also provides a lower bound on the trade-off curve of a mechanism: Proposition 3.1. If (P, Q) is a dominating pair for a mechanism M , then for α ∈ [0, 1],
+EQUATION
+The proofs of this and all the following statements are in Appendix E. Proposition 3.1 implies that a mechanism M (•) is f -DP with f = T (P, Q). Next, we introduce privacy loss random variables, which provide a natural parameterization of the curve T (P, Q).
+Definition 3.2. Suppose that a mechanism M (•) has a discrete-valued dominating pair (P, Q). Then, we define the privacy loss random variables (PLRVs) (X, Y ) as Y ≜ log Q(o) /P (o), with o ∼ Q, and
+X ≜ log Q(o ′ ) /P (o ′ ) with o ′ ∼ P .
+We can now state the result which serves as a main building block for our calibration algorithms, and forms the main theoretical contribution of our work. Theorem 3.3 (Accounting for advantage and f -DP with PLRVs). Suppose that a mechanism M (•) has a discrete-valued dominating pair (P, Q) with associated PLRVs (X, Y ). The attack advantage η for this mechanism is bounded:
+EQUATION
+Moreover, for any τ ∈ R ∪ {∞, -∞} and γ ∈ [0, 1], define
+EQUATION
+For any level α ∈ [0, 1], choosing τ = (1 -α)-quantile of X and
+γ = α-Pr[X>τ ] Pr[X=τ ] guarantees that T (P, Q)(α) = β * (τ, γ).
+To show this, we use the Neyman-Pearson lemma to explicitly parameterize the most powerful attack at level α in terms the threshold τ on the Neyman-Pearson test statistic and the probability γ of guessing when the test statistic exactly equals the threshold. See Appendix E.2 for the detailed proof.
+We remark that similar results for the trade-off curve appear in (Zhu et al., 2022a) without the γ terms, as Zhu et al. assume continuous PLRVs (X, Y ). In our work, we rely on the technique due to Doroshenko et al. (2022) , summarized in Appendix D, which discretizes continuous mechanisms such as the subsampled Gaussian in DP-SGD, and provides a dominating pair that is discrete and finitely supported over an evenly spaced grid. As the dominating pairs are discrete, the γ terms are non-zero, thus are necessary to fully reconstruct the trade-off curve.
+
+## 3. Theory Assumptions and Proofs
+
+Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof? Answer: [Yes]
+• Depending on the country in which research is conducted, IRB approval (or equivalent) may be required for any human subjects research. If you obtained IRB approval, you should clearly state this in the paper.
+• We recognize that the procedures for this may vary significantly between institutions and locations, and we expect authors to adhere to the NeurIPS Code of Ethics and the guidelines for their institution.
+• For initial submissions, do not include any information that would break anonymity (if applicable), such as the institution conducting the review.
+
+## 3.1 Calibration to Advantage
+
+First, we show how to instantiate Eq. ( 9) to calibrate noise to a target advantage η ⋆ ∈ [0, 1]. Let η ω denote the advantage of the mechanism M ω (•) as defined in Eq. ( 7):
+EQUATION
+)
+Given the PLRVs (X ω , Y ω ), we can obtain a substantially tighter bound than converting (ε, δ) guarantees using Proposition 2.2 under standard calibration. Specifically, Theorem 3.3 provides the following way to solve the problem:
+EQUATION
+)
+We call this approach advantage calibration, and show how to practically implement it in Algorithms 3 and 4 in the Appendix. Given a method for obtaining valid PLRVs X ω , Y ω for any ω, such as the one by Doroshenko et al. (2022) , advantage calibration is guaranteed to ensure bounded advantage, which follows by combining Proposition 3.1 and Theorem 3.3:
+0.00 0.05 0.10 0.15 0.20 0.25 Attack advantage, η 10 0 10 1 Noise scale, σ Method Standard calibration Advantage calibration (a) Calibrating noise to attack advantage significantly reduces the required noise scale compared to the standard approach. y axis is logarithmic. 
+3.2. Given PLRVs (X ω , Y ω ) of a discrete-valued dominating pair of a mechanism M ω (•), choosing ω * using Eq. (14) ensures η ω * ≤ η ⋆ .
+
+## 3.2 Safer Choice: Calibration to FNR within a Given FPR Region
+
+In this section, we show how to calibrate the noise in any practical DP mechanism to a given minimum level of attack FNR β ⋆ within an FPR region α ∈ [0, α ⋆ ], which enables to avoid the pitfalls of advantage calibration. We base this notion of risk off the previous work (Carlini et al., 2022; Rezaei and Liu, 2021) which argued that MIAs are a relevant threat only when the achievable TPR 1 -β is high at low FPR α. We instantiate the calibration problem in Eq. ( 9) as follows, assuming
+EQUATION
+To solve Eq. ( 16), we begin by showing that such calibration is in fact equivalent to requiring a given level of attack FNR β ⋆ and FPR α ⋆ .
+Algorithm 1 Construct the trade-off curve using discrete privacy loss random variables (X, Y )
+Require: PMF Pr[X ω = x i ] over grid {x 1 , x 2 , . . . , x k } with x 1 < x 2 < . . . < x k Require: PMF Pr[Y ω = y j ] over grid {y 1 , y 2 , . . . , y l } with y 1 < y 2 < . . . < y l 1: procedure COMPUTEBETA(ω; α ⋆ ; X ω , Y ω ) 2: t ← min{i ∈ {0, 1, . . . , k} | Pr[X ω > x i ] ≤ α ⋆ }, where x 0 ≜ -∞ 3: γ ← α ⋆ -Pr[Xω>xt]
+Pr [Xω=xt] 4:
+return f ω (α ⋆ ) = Pr[Y ω ≤ x t ] -γ Pr[Y ω = x t ]
+Proposition 3.4. For any α ⋆ ≥ 0, β ⋆ ≥ 0 such that α ⋆ + β ⋆ ≤ 1, and any f -DP mechanism M (•):
+EQUATION
+)
+This follows directly by monotonicity of the trade-off function f (Dong et al., 2022) . The optimization problem becomes:
+EQUATION
+Unlike advantage calibration to η ⋆ , the approach in Eq. ( 18) limits the adversary's capabilities without increasing the risk in the privacy-critical low-FPR regime, as we can explicitly control the acceptable attack sensitivity for a given low FPR.
+To obtain f ω (α), we use the PLRVs X ω , Y ω along with Theorem 3.3 to compute f = T (P, Q) ¶ (see Algorithm 1), and solve Eq. ( 18) using binary search over ω ∈ Ω. We provide the precise procedure in Algorithm 6 in the Appendix. This approach guarantees the desired level of risk: Proposition 3.5. Given PLRVs (X ω , Y ω ) of a discrete-valued dominating pair of a mechanism M ω (•), choosing ω * using Eq. ( 18) and Algorithm 1 to compute f ω (α) ensures f ω * (α ⋆ ) ≥ β ⋆ .
+
+## 3.3 Other Approaches to Trade-Off Curve Accounting
+
+In this section, we first contextualize the proposed method within existing work. Then, we discuss settings in which alternatives to PLRV-based procedures could be more suitable.
+
+# 4 Experiments
+
+In this section, we empirically evaluate the utility improvement of our calibration method over traditional approaches. We do so in simulations as well as in realistic applications of DP-SGD. In Appendix H, we also evaluate the utility gain when performing simpler statistical analyses.
+Simulations. First, we demonstrate the noise reduction when calibrating the DP-SGD algorithm for given error rates using the setup in Section 3.1. We fix three low FPR values: α ⋆ ∈ {0.01, 0.05, 0.1}, and vary maximum attack sensitivity 1 -β ⋆ from 0.1 to 0.5 in each FPR regime. We show the results in Figure 3 . We observe a significant decrease in the noise scale for all values. Although the decrease is smaller than with calibration for advantage (see Figure 2a ), calibrating directly for risk in the low FPR regime avoids the pitfall of advantage calibration: inadvertently increasing risk in this regime.
+
+# 5 Concluding Remarks
+
+In this work, we proposed novel methods for calibrating noise in differentially private learning targeting a given level of operational privacy risk: advantage and FPR/FNR of membership inference attacks. We introduced an accounting algorithm which directly and tightly estimates privacy guarantees in terms of f -DP, which characterizes these operational risks. Using simulations and end-to-end experiments on common use cases, we showed that our attack-aware noise calibration significantly decreases the required level of noise compared to the standard approach at the same level of operational risk. In the case of calibration for advantage, we also showed that the noise decrease could be harmful as it could allow for increased attack success in the low FPR regime compared to the standard approach, whereas calibration for a given level of FPR/FNR mitigates this issue. Next, we discuss limitations and possible directions for future work.
+Choice of Target FPR/FNR. We leave open the question on how to choose the target FPR α ⋆ and FNR β ⋆ , e.g., whether standard significance levels in sciences such as α ⋆ = 0.05 are compatible with data protection regulation and norms. Further work is needed to develop concrete guidance on the choice of target FPR and FNR informed by legal and practical constraints.
+Catastrophic Failures. It is possible to construct pathological DP mechanisms which admit catastrophic failures (see, e.g., Ponomareva et al., 2023) , i.e., mechanisms which allow non-trivial attack TPR at FPR α = 0 so that their trade-off curve is such that T (M (S), M (S ′ ))(0) < 1 for some S ≃ S ′ . A classical example in the context of private data release is a mechanism that releases a data record in the clear with probability δ > 0, in which case we have T (M (S), M (S ′ ))(0) = 1 -δ.
+See the proof of Proposition 3.3 in Appendix E for a concrete construction. In the case that such a pathological mechanism is used in practice, one should use standard calibration to (ε, δ) with δ ≪ 1 /n to directly limit the chance of catastrophic failures. Fortunately, practical mechanisms such as DP-SGD do not admit catastrophic failures, as they ensure T (M (S), M (S ′ ))(0) = 1.

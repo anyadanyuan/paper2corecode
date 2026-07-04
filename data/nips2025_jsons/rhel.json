@@ -1,0 +1,2928 @@
+{
+  "paper_id": "rhel",
+  "title": "Learning long range dependencies through time reversal symmetry breaking",
+  "authors": [
+    {
+      "first": "Guillaume",
+      "middle": [],
+      "last": "Pourcel",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "INRIA",
+        "location": {}
+      }
+    },
+    {
+      "first": "Maxence",
+      "middle": [],
+      "last": "Ernoult",
+      "affiliation": {
+        "laboratory": "UMR 9189 -CRIStAL",
+        "institution": "Centrale Lille",
+        "location": {}
+      }
+    },
+    {
+      "first": "Google",
+      "middle": [],
+      "last": "Deepmind",
+      "affiliation": {
+        "laboratory": "UMR 9189 -CRIStAL",
+        "institution": "Centrale Lille",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Deep State Space Models (SSMs) reignite physics-grounded compute paradigms, as RNNs could natively be embodied into dynamical systems. This calls for dedicated learning algorithms obeying to core physical principles, with efficient techniques to simulate these systems and guide their design. We propose Recurrent Hamiltonian Echo Learning (RHEL), an algorithm which provably computes loss gradients as finite differences of physical trajectories of non-dissipative, Hamiltonian systems. In ML terms, RHEL only requires three \"forward passes\" irrespective of model size, without explicit Jacobian computation, nor incurring any variance in the gradient estimation. Motivated by the potential to implement our algorithm in non-digital physical systems, we first introduce RHEL in continuous time and demonstrate its formal equivalence with the continuous adjoint state method. To facilitate the simulation of Hamiltonian systems trained by RHEL, we propose a discrete-time version of RHEL which is equivalent to Backpropagation Through Time (BPTT) when applied to a class of recurrent modules which we call Hamiltonian Recurrent Units (HRUs). This setting allows us to demonstrate the scalability of RHEL by generalizing these results to hierarchies of HRUs, which we call Hamiltonian SSMs (HSSMs). We apply RHEL to train HSSMs with linear and nonlinear dynamics on a variety of time-series tasks ranging from mid-range to long-range classification and regression with sequence length reaching ∼ 50k. We show that RHEL consistently matches the performance of BPTT across all models and tasks 3 . This work opens new doors for the design of scalable, energy-efficient physical systems endowed with self-learning capabilities for sequence modelling.",
+  "body": {
+    "1_Introduction": "The resurgence of Recurrent Neural Networks (RNNs) for sequence modeling [1] , particularly when integrated with State Space Models (SSMs) [1] [2] [3] [4] [5] [6] , reopens the debate about the \"hardware lottery\". This raises a critical question with high stakes [7] : should future hardware development continue to optimize for the long-dominant GPU/TPU-Transformer-backprop paradigm [8] , or should it explore alternative computational approaches alongside novel training algorithms?\nThis paper embraces a distinctive standpoint in the realm of AI hardware by not distinguishing algorithms from hardware [9] and posits that some SSMs could be physically realized in dynamical physical systems and, when endowed with bespoke credit assignment mechanisms, be turned into \"self-learning\" machines [10, 11] -see Section 5 for a detailed discussion. To this end, such algorithms should fulfill at least two requirements: i) use \"forward passes\" only (i.e. no backward passes), ii) do not use explicit state-Jacobian (i.e. Jacobian of the system's dynamics). The vast majority of existing algorithms endowed with these features revolve around forward-mode automatic differentiation (AD) [12] . The standard forward-mode AD algorithm for temporal processing is Recurrent Real-Time Learning [13] (RTRL). Due to its cubic memory complexity with respect to the number of neurons, RTRL can only be exactly implemented on architectures of limited size [14] and either requires low-rank approximations [15] , or hardcoded [16] or metalearned [17] heuristics.\nFigure 1 : HEB core mechanics [10] . After following a free forward trajectory (blue curve) and undergoing \"rebound\", the neurons exactly travel backward (grey curve). Instead, HEB prescribes nudging the \"echo\" trajectory (red curve) closer to y before rebound, with the resulting position gap encoding the error gradient with respect to momentum (the left green arrow).\nRTRL fails to satisfy criteria ii) because it explicitly uses the Jacobian to compute directional derivatives of the loss L along each direction v i of the canonical basis of parameters θ as a supplementary computation during the forward pass. However, it can be reformulated as a zeroth-order procedure by approximating the directional derivatives via ∇ θ L • v = lim ϵ→0 ϵ -1 (L(θ + ϵv) -L(θ)). This recipe theoretically aligns with our three algorithmic requirements but incurs a prohibitive complexity cost by requiring separate forward passes for each perturbation along every parameter direction. Alternative methods attempt to circumvent this by sampling random directions from the parameter space [18] [19] [20] [21] rather than exhaustively computing gradients along the entire canonical basis. However, these approaches suffer from either excessive variance [22] or high bias [23] , limiting their effectiveness to small-scale applications [24] or fine-tuning tasks [25] . To avoid the pitfalls of RTRL and other forward-mode AD proxies, a better approach would be to instead emulate backward-mode AD, forward in time [26] . Yet, such techniques have only developed to emulate backwardmode implicit differentiation on energy-based models on static inputs [27] and have not been extended out of equilibrium to sequential data.\nIn this work, we propose an alternative approach that emulates backward-mode AD forward in time, inspired by the Hamiltonian Echo Backprop (HEB) algorithm [10] , illustrated in Fig. 1 for a single neuron. Consider a system of neurons described by their position ϕ i and momentum π i which do not dissipate energy. This means, for instance for coupled oscillators (Eq. ( 8)), that the initial energy provided to this system is preserved and transferred across oscillators from kinetic energy to elastic potential or vice versa. Such systems can be modelled by the Hamiltonian formalism (section 2.1). Let us say that we want to learn the initial conditions on this system such that it reaches some target y after some time. HEB proceeds in three steps. For the first step, the system evolves freely, but does not reach y. For the second step, HEB perturbs the trajectory for a brief duration to drive the system slightly closer to y per some metric L. Then in the last step, the neurons are \"bounced\" backwards, causing the system to evolve backward. If the perturbation was omitted, the system would exactly retrace its previous trajectory backward in time, a property which is called time-reversal symmetry. Because the perturbation breaks time-reversal symmetry, the system no longer retraces its initial trajectory exactly-the resulting deviation encodes the gradient of L with respect to its initial state.\nIn spite of its significant implications for physical learning, HEB has multiple features which may hinder its broader investigation within the ML community: i) HEB is difficult to compare to standard ML algorithmic baselines as it was derived with dedicated theoretical physics tools and is entangled with fine-grained physics of the systems being trained; ii) HEB theory assumes that model parameters are also dynamical variables and that only their initial state is learnable, which is in stark contrast with standard RNN parametrization; iii) it is unclear how HEB would extend to SSMs, i.e. in discrete time, on sequential data with losses defined at all timesteps, on hierarchical recurrent units; iv) finally, HEB was only evaluated on small static problems (e.g. XOR, MNIST) and not proved at larger scale.\nTaking inspiration from HEB and using standard ML tools, we propose Recurrent Hamiltonian Echo Learning (RHEL) as a simple, general and scalable forward-only proxy of backward-mode AD applying to a broad class of dissipative-free Hamiltonian models with the following key contributions:\n• With the primary goal in mind to inform the design of self-learning physical systems and to facilitate its comparison to HEB, we first introduce RHEL in continuous time. We show that RHEL generalizes HEB to a broader class of models and problems and demonstrate its equivalence, at every timestep, with the continuous adjoint state method [28] in the limit of small trajectory perturbations (Theorem 3.1). We numerically highlight this property on a toy physical model (Eq. ( 8), Fig. 2 ).\n• To efficiently simulate this algorithm, we extend RHEL to discrete time and demonstrate its equivalence with Backpropagation Through Time (BPTT) (Theorem 3.2) on Hamiltonian Recurrent Units (HRUs) -which are discrete-time, symplectic integrators of separable Hamiltonian dynamics. We further generalize this result to learning a hierarchy of HRUs, which we call Hamiltonian State Space Models (HSSMs, Fig. 2 ), and propose a RHL chaining procedure accordingly (Theorem 3.3).\n• With this simulation toolbox in hand, we finally demonstrate the effectiveness of the proposed approach on HSSMs with linear [29] and nonlinear [30] recurrent units. We show that: i) gradients estimates produced by RHEL near perfectly match gradients computed by end-to-end AD (Fig. 4 ), ii) RHEL remains on par with AD in terms of resulting model performance across classification and regression long-range tasks (Tables 1 2 ).\n2 Problem statement",
+    "2.1_Notations_&_model_description.": "Notations. Given a differentiable mapping H : R d → R, we denote ∇ v1 H ∈ R dv 1 ×1 and ∇ 2 v1,v2 H ∈ R dv 1 ×dv 2 the gradient and Hessian of H respectively. When necessary, we use the Leibniz notation to denote as ∇ i H the gradient of H with respect to the i th variable. When considering a differentiable mapping M : R d → R n , we denote its Jacobian matrix as ∂M ∈ R n×d . We also use the notation d v1 to denote a total derivative with respect to some variable v 1 which accounts for both direct and indirect effects of the variable v 1 on the function being differentiated.",
+    "2.2_Learning_as_constrained_optimization": "Problem formulation. Our goal can be framed as a constrained optimization problem where we aim to find a set of model parameters θ such that, under some input sequence t → u(t), the model trajectory approaches as much as possible some target trajectory, as measured by a loss function L, under the constraint that the model trajectory is physically feasible in the sense of satifying Eq. ( 1):\nEQUATION\n... where L reads as the sum of cost functions t → ℓ(•, t). The most common approach to solve Eq. ( 3) is by gradient descent or variants thereof such that the problem boils down to computing d θ L. Note that the problem defined by Eq. ( 3) is more general than the one solved by the seminal HEB work [10] as: i) the loss function L is defined over the whole trajectory, ii) the Hamiltonian is time-dependent (through t → u(t)) and parametrized by θ which is shared across the whole computational graph.",
+    "3.1_Definition_in_continuous_time_&_equivalence_with_continuous_ASM": "We are now equipped to introduce Recurrent Hamiltonian Echo Learning (RHEL). In comparison to the continuous ASM, RHEL does not require solving a separate adjoint ODE akin to Eq. ( 4). Instead, RHEL simply prescribes running multiple additional times the forward trajectory Eq. ( 1) with three modifications: i) the neurons are first conjugated, i.e. Φ → Φ ⋆ ; ii) the inputs t → u(-t) are processed backwards; iii) the trajectory of the neurons is slightly nudged, with a strength ϵ, towards direction of decreasing loss values with cost functions t → ℓ[•, -t] processed backwards too. More precisely, let us assume a \"free\" forward trajectory Eq. ( 1) has been executed between -T and 0 yielding some neuron state Φ(0). Then, we define the echo dynamics of the neurons Φ e through:\nEQUATION\nA crucial observation is that when ϵ = 0, the echo trajectory simply matches the forward trajectory in reverse: Φ e (t, ϵ = 0) = Φ ⋆ (-t) for t ∈ [0, T ] (Lemma A.3), reflecting time-reversal symmetry. When ϵ ̸ = 0, this symmetry is broken: the resulting trajectory difference Φ e (t, ϵ) -Φ e (t, ϵ = 0) implicitly encodes for the error signals carried by the continuous ASM. We introduce this result more formally in Theorem 3.1 with the help of the following quantities capturing the essence of RHEL as a forward-only, difference-based gradient estimator:\nEQUATION\nTheorem 3.1 (Informal). Under mild assumptions on the Hamiltonian function and with t → λ(t) and t → g θ (t) defined by Eq. ( 4)-( 5), the continuous ASM and RHEL are equivalent at all times in the sense that: Example. We numerically verify Theorem 3.1 on a toy model of six coupled harmonic oscillators i (Fig. 2 ) with masses m i and spring parameters k i , k ij . The system is driven by an external input force u(t) applied to oscillator 1 and produces an output on oscillator 4, which is nudged toward a target trajectory y(t) during the echo phase. The corresponding Hamiltonian reads:\n∀t ∈ [0, T ], λ(t) = lim ϵ→0 ∆ RHEL Φ (t, ϵ), g θ (t) = lim ϵ→0 ∆ RHEL θ (t, ϵ) Proof sketch. Defining ∆ RHEL Φ (t) := lim ϵ→0 ∆ RHEL Φ (t, ϵ) and noticing that ∆ RHEL Φ (t) = Σ x • ∂ ϵ (Φ e (t,\nEQUATION\nwith parameters θ = {m i , k i , k ij } i,j . This yields the following dynamics and associated RHEL gradient estimators (see App. A.4.1):\n     ∀i ∈ 1, 6 , ∂ t ϕ i = π i /m i , ∂ t π i = -k i ϕ i + j̸ =i k ij (ϕ j -ϕ i ) + δ i1 u + δ i4 δ e ϵ(ϕ 4 -y), g kij (t) = lim ϵ→0 -1 2ϵ ϕ e j (t, ϵ) -ϕ e i (t, ϵ) 2 -ϕ e j (t, -ϵ) -ϕ e i (t, -ϵ) 2 ,\nwhere u(t) denotes the external driving force applied to oscillator 1, y(t) the target trajectory associated with the output oscillator 4, δ ij the Kronecker delta, and δ e an indicator equal to 1 during the echo phase and 0 otherwise.",
+    "3.2_Extension_to_discrete_time_&_equivalence_with_BPTT": "In this section, we propose a discrete-time version of RHEL by first defining a family of discrete models as integrators of the Hamiltonian flow which exactly preserve time-reversal symmetry, defining an associated surrogate problem and then solving it. This \"discretize-then-optimize\" approach ensures a better gradient estimation than directly discretizing RHEL theory in continuous time [32] . Hamiltonian Recurrent Units (HRUs). We now assume that the neurons Φ obey the following discrete-time dynamics, starting from Φ -K = x and:\nEQUATION\nwhere M H,δ denotes the integrator associated with the Hamiltonian function H with time discretization δ. We classically pick M H,δ as the Leapfrog integrator [33] and restrict ourselves to separable Hamiltonians of the form H[Φ] = T [π] + V [ϕ] to yield a reversible and explicit integration scheme. One possible parametrization of the Leapfrog integrator in this case is as the composition of three explicit Euler integrators, which alternate between updates of the position ϕ (first and third steps) and of the momentum (second step) -see Def. A.3 for a detailed description and Fig. 3 for the associated computational graph. As these two intermediate integrator time steps are needed to accurately define the RHEL learning rule in discrete time, we explicitly denote them as fractional time units:\nEQUATION\nWe call such models Hamiltonian Recurrent Units (HRUs). Therefore by design, the time-reversal symmetry property defined in Eq. ( 2) extends in discrete time to HRUs (Corollary A.6).",
+    "3.3_Learning_stacks_of_HRUs_via_RHL_chaining": "Vectorized notations. Given a discrete vector field\n(V k ) k∈ -K,0 , we denote V := (V ⊤ -K , • • • , V ⊤ 0 ) ⊤ ∈ R T ×d V and V := (V ⊤ 0 , • • • , V ⊤ -K ) ⊤ ∈ R T ×d V\nthe forward and backward trajectories associated with V . We define the vectorized operator M H,δ such that the dynamics of a single HRU unit as defined in Eq. ( 9) and the the nudged dynamics prescribed by RHEL as given in Eq. ( 13) rewrite more compactly as:\nΦ = M H,δ [Φ, θ, u], Φ e = M H,δ [Φ e , θ, u] -ϵJ • ∇ Φ e L[Φ e ].\nLearning Hamiltonian State Space Models (HSSMs) as multi-level optimization. We now consider hierarchical models reading as a composition of N HRU units of the form:\nEQUATION\nwhere the trajectory of the (ℓ)-th HRU unit is fed as an input sequence into the (ℓ + 1)-th HRU unit (Fig. 2 ). We call such hierarchies of HRUs Hamiltonian State Space Models (HSSMs). The corresponding optimization problem reads: ℓ) ] ∀ℓ ∈ 0, N -1 (16) Alg. 1 prescribes an intuitive receipe to compute d θ L for the above optimization problem (Eq. ( 16)), chaining RHEL backward through HRUs. Namely, the echo dynamics of the top-most HRU read as Eq. ( 13) using the initial learning signal ∇ Φ L to nudge its trajectory. On top of estimating its parameter gradients, we also estimate its input gradients which are used to nudge the echo dynamics of the preceding HRU. This procedure is repeated until reaching the first HRU -see Fig. 2 .\nEQUATION\nAlgorithm 1 Recurrent Hamiltonian Echo Learning (RHEL) on a single HRU Inputs: Φ 0 (final state of the forward trajectory), ∆ Φ (incoming gradient), ϵ (nudging strength), δ (timestep) Outputs: ∆θ (parameter gradient estimate), ∆ u (input gradient estimate) 1:\nEQUATION\n) 7: ∆ u -k ← -δ 2ϵ ∇ 3 H 1/2 [Φ e ϵ , θ, u -(k+1) ] -∇ 3 H 1/2 [Φ e\n-ϵ , θ, u -(k+1) ] 8: end for 9: return ∆θ, ∆ u Theorem 3.3 (Informal). Given u an input sequence and a HSSM with layer-wise Hamiltonians {H (ℓ) } k∈[1,N ] , applying Alg. 1 recursively backward from the top-most HRU solves the multilevel optimization problem defined in Eq. ( 16) in the sense that:\n∀ℓ = 0, • • • , N : d θ (ℓ) L = lim ϵ→0 ∆θ (ℓ) (ϵ)\nThe full formal statement and proof are provided in Appendix A.4.",
+    "4_Experiments": {
+      "4.1_Static_gradient_comparison": "As a sanity check of Theorem 3.3 and preamble to training experiments, we first check that RHEL gradients are computed correctly. Given a HSSM model, we randomly sample a tuple (u i , y i ) ∼ D from the SCP1 dataset (see App. A.5.1 for details on this dataset) and pass u i through the model. Given y, we then run BPTT and RHEL through the model and compare them in terms of cosine similarity and norm ratio of the resulting layer-wise parameter gradients. We run this experiment on a HSSM made up of six linear HRU blocks (which we call \"linear HSSM\") and another HSSM comprising six nonlinear HRU blocks (resp. \"nonlinear HSSM\") and obtain Fig. 4 . We observe that in terms of these two comparison metrics, RHEL and BPTT parameter gradients are near-perfectly aligned for all parameters and across all HRU blocks, for both the linear and nonlinear HSSMs.",
+      "4.2_Training_experiments": "Classification. To further check our theoretical guarantees, we now perform training experiments with BPTT and RHEL across six multivariate sequence classification datasets with various sequence lengths (from ∼ 400 to ∼ 18k) and number of classes, on linear and nonlinear HSSMs (see App. A.5.1 for details on these datasets) and display our results in Table 1 . This series of tasks was recently introduced [34] as a subset of the University of East Anglia (UEA) datasets [35] with the longest sequences for increased difficulty and recently used to benchmark the linear HSSM previously introduced [29] . We observe that models trained by RHEL almost match, on average across the datasets, those trained by BPTT in terms of resulting performance on the test dataset.",
+      "_text": "Foreword. We first introduce the two types HRUs at use, empirically assess the validity of Theorem 3.3 by statically comparing gradients computed by RHEL and BPTT on HSSMs made up of these two types of HRUs, then perform training experiments across classification and regression sequence tasks. Importantly, the goal of the proposed experiments is not to improve the SOTA performance on these tasks. Rather we want to show, on a given model satisfying the requirements of RHEL (i.e. being a HRU or a stack thereof), that RHEL maintains training performance with respect to BPTT.\nLinear HRU block. Following recent work [29] , we introduce the linear HRU block with the parametrization θ (ℓ) = {A (ℓ) , B (ℓ) , W (ℓ) } and Hamiltonian:\nEQUATION\nwhere\nA ∈ R (d Φ /2)×(d Φ /2\n) is assumed to be diagonal and to have positive entries, B (ℓ) ∈ R (d Φ /2)×du , α ∈ R, and F is the nonlinear spatial building block parametrized by W (ℓ) (see App. A.4.3). Under these assumptions, it can be shown that such HRUs have a bounded spectrum and yield HSSMs which are universal approximators of continuous and causal operators between time-series [29] .\nNonlinear HRU block. To demonstrate the validity of our approach beyond linear HRUs, we also introduce a nonlinear HRU block [30] with θ (ℓ) = {A (ℓ) , W (ℓ) , B (ℓ) , b (ℓ) , α (ℓ) } and:\nEQUATION\nwhere\nA ∈ R (d Φ /2)×(d Φ /2) is also assumed to be diagonal, B (ℓ) ∈ R (d Φ /2)×du , b (ℓ) ∈ R (d Φ /2)\n, α ∈ R, and F is the nonlinear spatial building block parametrized by W (ℓ) (see App. A.4.5). It has been shown that these HRUs mitigate by design vanishing and exploding gradients [30] ; we provide empirical validation in App. A.5.5.."
+    }
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Resurrecting recurrent neural networks for long sequences",
+      "authors": [
+        {
+          "first": "Antonio",
+          "middle": [],
+          "last": "Orvieto",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Samuel",
+          "suffix": ""
+        },
+        {
+          "first": "Albert",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Anushan",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Caglar",
+          "middle": [],
+          "last": "Fernando",
+          "suffix": ""
+        },
+        {
+          "first": "Razvan",
+          "middle": [],
+          "last": "Gulcehre",
+          "suffix": ""
+        },
+        {
+          "first": "Soham",
+          "middle": [],
+          "last": "Pascanu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "De",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Combining recurrent, convolutional, and continuous-time models with linear state space layers",
+      "authors": [
+        {
+          "first": "Albert",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Isys",
+          "middle": [],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "Karan",
+          "middle": [],
+          "last": "Goel",
+          "suffix": ""
+        },
+        {
+          "first": "Khaled",
+          "middle": [],
+          "last": "Saab",
+          "suffix": ""
+        },
+        {
+          "first": "Tri",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        },
+        {
+          "first": "Atri",
+          "middle": [],
+          "last": "Rudra",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Ré",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Efficiently modeling long sequences with structured state spaces",
+      "authors": [
+        {
+          "first": "Albert",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Karan",
+          "middle": [],
+          "last": "Goel",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Ré",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Diagonal state spaces are as effective as structured state spaces",
+      "authors": [
+        {
+          "first": "Ankit",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "Albert",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Berant",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Simplified state space layers for sequence modeling",
+      "authors": [
+        {
+          "first": "Jimmy Th",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Warrington",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [
+            "W"
+          ],
+          "last": "Linderman",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Mamba: Linear-time sequence modeling with selective state spaces",
+      "authors": [
+        {
+          "first": "Albert",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Tri",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "The hardware lottery",
+      "authors": [
+        {
+          "first": "Sara",
+          "middle": [],
+          "last": "Hooker",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Communications of the ACM"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Niki",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Llion",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Łukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Illia",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "The hardware is the software",
+      "authors": [
+        {
+          "first": "Jérémie",
+          "middle": [],
+          "last": "Laydevant",
+          "suffix": ""
+        },
+        {
+          "first": "Logan",
+          "middle": [
+            "G"
+          ],
+          "last": "Wright",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "L"
+          ],
+          "last": "Mcmahon",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Neuron"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Self-learning machines based on hamiltonian echo backpropagation",
+      "authors": [
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Lopez-Pastor",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Marquardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Physical Review X"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Training of physical neural networks",
+      "authors": [
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Momeni",
+          "suffix": ""
+        },
+        {
+          "first": "Babak",
+          "middle": [],
+          "last": "Rahmani",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Scellier",
+          "suffix": ""
+        },
+        {
+          "first": "Logan",
+          "middle": [
+            "G"
+          ],
+          "last": "Wright",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "L"
+          ],
+          "last": "Mcmahon",
+          "suffix": ""
+        },
+        {
+          "first": "Clara",
+          "middle": [
+            "C"
+          ],
+          "last": "Wanjura",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Anas",
+          "middle": [],
+          "last": "Skalli",
+          "suffix": ""
+        },
+        {
+          "first": "Natalia",
+          "middle": [
+            "G"
+          ],
+          "last": "Berloff",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsuhiro",
+          "middle": [],
+          "last": "Onodera",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Automatic differentiation in machine learning: a survey",
+      "authors": [
+        {
+          "first": "Atilim",
+          "middle": [],
+          "last": "Gunes Baydin",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Barak",
+          "suffix": ""
+        },
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Pearlmutter",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [
+            "Mark"
+          ],
+          "last": "Andreyevich Radul",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Siskind",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Journal of machine learning research"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "A learning algorithm for continually running fully recurrent neural networks",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ronald",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zipser",
+          "suffix": ""
+        }
+      ],
+      "year": 1989,
+      "venue": "Neural computation"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Online learning of long-range dependencies",
+      "authors": [
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Zucchet",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Meier",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Schug",
+          "suffix": ""
+        },
+        {
+          "first": "Asier",
+          "middle": [],
+          "last": "Mujika",
+          "suffix": ""
+        },
+        {
+          "first": "João",
+          "middle": [],
+          "last": "Sacramento",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Unbiased online recurrent optimization",
+      "authors": [
+        {
+          "first": "Corentin",
+          "middle": [],
+          "last": "Tallec",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Ollivier",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "A solution to the learning dilemma for recurrent networks of spiking neurons",
+      "authors": [
+        {
+          "first": "Guillaume",
+          "middle": [],
+          "last": "Bellec",
+          "suffix": ""
+        },
+        {
+          "first": "Franz",
+          "middle": [],
+          "last": "Scherr",
+          "suffix": ""
+        },
+        {
+          "first": "Anand",
+          "middle": [],
+          "last": "Subramoney",
+          "suffix": ""
+        },
+        {
+          "first": "Elias",
+          "middle": [],
+          "last": "Hajek",
+          "suffix": ""
+        },
+        {
+          "first": "Darjan",
+          "middle": [],
+          "last": "Salaj",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Legenstein",
+          "suffix": ""
+        },
+        {
+          "first": "Wolfgang",
+          "middle": [],
+          "last": "Maass",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature communications"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "A truly sparse and general implementation of gradient-based synaptic plasticity",
+      "authors": [
+        {
+          "first": "Jamie",
+          "middle": [],
+          "last": "Lohoff",
+          "suffix": ""
+        },
+        {
+          "first": "Anil",
+          "middle": [],
+          "last": "Kaya",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Assmuth",
+          "suffix": ""
+        },
+        {
+          "first": "Emre",
+          "middle": [],
+          "last": "Neftci",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Accelerating stochastic gradient descent using predictive variance reduction",
+      "authors": [
+        {
+          "first": "Rie",
+          "middle": [],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Stochastic subspace descent",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Kozak",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Becker",
+          "suffix": ""
+        },
+        {
+          "first": "Alireza",
+          "middle": [],
+          "last": "Doostan",
+          "suffix": ""
+        },
+        {
+          "first": "Luis",
+          "middle": [],
+          "last": "Tenorio",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Multivariate stochastic approximation using a simultaneous perturbation gradient approximation",
+      "authors": [
+        {
+          "first": "James",
+          "middle": [
+            "C"
+          ],
+          "last": "Spall",
+          "suffix": ""
+        }
+      ],
+      "year": 1992,
+      "venue": "IEEE Transactions on Automatic Control"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Model of birdsong learning based on gradient estimation by dynamic perturbation of neural conductances",
+      "authors": [
+        {
+          "first": "Michale",
+          "middle": [
+            "S"
+          ],
+          "last": "Ila R Fiete",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Fee",
+          "suffix": ""
+        },
+        {
+          "first": "Seung",
+          "middle": [],
+          "last": "Sebastian",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "Journal of neurophysiology"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Scaling forward gradient with local losses",
+      "authors": [
+        {
+          "first": "Mengye",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Kornblith",
+          "suffix": ""
+        },
+        {
+          "first": "Renjie",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Learning by directional gradient descent",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Silver",
+          "suffix": ""
+        },
+        {
+          "first": "Anirudh",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Ivo",
+          "middle": [],
+          "last": "Danihelka",
+          "suffix": ""
+        },
+        {
+          "first": "Matteo",
+          "middle": [],
+          "last": "Hessel",
+          "suffix": ""
+        },
+        {
+          "first": "Hado",
+          "middle": [],
+          "last": "Van Hasselt",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Can forward gradient match backpropagation?",
+      "authors": [
+        {
+          "first": "Louis",
+          "middle": [],
+          "last": "Fournier",
+          "suffix": ""
+        },
+        {
+          "first": "Stéphane",
+          "middle": [],
+          "last": "Rivaud",
+          "suffix": ""
+        },
+        {
+          "first": "Eugene",
+          "middle": [],
+          "last": "Belilovsky",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Eickenberg",
+          "suffix": ""
+        },
+        {
+          "first": "Edouard",
+          "middle": [],
+          "last": "Oyallon",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Fine-tuning language models with just forward passes",
+      "authors": [
+        {
+          "first": "Sadhika",
+          "middle": [],
+          "last": "Malladi",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyu",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Eshaan",
+          "middle": [],
+          "last": "Nichani",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Damian",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [
+            "D"
+          ],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Danqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Sanjeev",
+          "middle": [],
+          "last": "Arora",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "A cookbook for hardware-friendly implicit learning on static data",
+      "authors": [
+        {
+          "first": "Maxence",
+          "middle": [],
+          "last": "Ernoult",
+          "suffix": ""
+        },
+        {
+          "first": "Rasmus",
+          "middle": [],
+          "last": "Høier",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Kendall",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "NeurIPS 2024 Workshop Machine Learning with new Compute Paradigms"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Equilibrium propagation: Bridging the gap between energy-based models and backpropagation",
+      "authors": [
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Scellier",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Frontiers in computational neuroscience"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Mathematical theory of optimal processes",
+      "authors": [
+        {
+          "first": "Lev",
+          "middle": [],
+          "last": "Semenovich",
+          "suffix": ""
+        },
+        {
+          "first": "Pontryagin",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 1985,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Oscillatory state-space models",
+      "authors": [
+        {
+          "first": "Konstantin",
+          "middle": [],
+          "last": "Rusch",
+          "suffix": ""
+        },
+        {
+          "first": "Daniela",
+          "middle": [],
+          "last": "Rus",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Unicornn: A recurrent model for learning very long time dependencies",
+      "authors": [
+        {
+          "first": "Konstantin",
+          "middle": [],
+          "last": "Rusch",
+          "suffix": ""
+        },
+        {
+          "first": "Siddhartha",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Neural ordinary differential equations",
+      "authors": [
+        {
+          "first": "Yulia",
+          "middle": [],
+          "last": "Ricky Tq Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jesse",
+          "middle": [],
+          "last": "Rubanova",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "K"
+          ],
+          "last": "Bettencourt",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Duvenaud",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "The elements of differentiable programming",
+      "authors": [
+        {
+          "first": "Mathieu",
+          "middle": [],
+          "last": "Blondel",
+          "suffix": ""
+        },
+        {
+          "first": "Vincent",
+          "middle": [],
+          "last": "Roulet",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Numerical methods for ordinary differential equations",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Habib Ammari",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Sanghyeon",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Notes of Course"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Log neural controlled differential equations: The lie brackets make a difference",
+      "authors": [
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Walker",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "D"
+          ],
+          "last": "Mcleod",
+          "suffix": ""
+        },
+        {
+          "first": "Tiexin",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Yichuan",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Haoliang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Terry",
+          "middle": [],
+          "last": "Lyons",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "The uea multivariate time series classification archive",
+      "authors": [
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Bagnall",
+          "suffix": ""
+        },
+        {
+          "first": "Anh",
+          "middle": [],
+          "last": "Hoang",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Dau",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Lines",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Flynn",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Large",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Bostrom",
+          "suffix": ""
+        },
+        {
+          "first": "Eamonn",
+          "middle": [],
+          "last": "Southam",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Keogh",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Deep ppg: Large-scale heart rate estimation with convolutional neural networks",
+      "authors": [
+        {
+          "first": "Attila",
+          "middle": [],
+          "last": "Reiss",
+          "suffix": ""
+        },
+        {
+          "first": "Ina",
+          "middle": [],
+          "last": "Indlekofer",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [],
+          "last": "Schmidt",
+          "suffix": ""
+        },
+        {
+          "first": "Kristof",
+          "middle": [],
+          "last": "Van Laerhoven",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Sensors"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Scaling equilibrium propagation to deep convnets by drastically reducing its gradient estimator bias",
+      "authors": [
+        {
+          "first": "Axel",
+          "middle": [],
+          "last": "Laborieux",
+          "suffix": ""
+        },
+        {
+          "first": "Maxence",
+          "middle": [],
+          "last": "Ernoult",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Scellier",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Julie",
+          "middle": [],
+          "last": "Grollier",
+          "suffix": ""
+        },
+        {
+          "first": "Damien",
+          "middle": [],
+          "last": "Querlioz",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Frontiers in neuroscience"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "The stochastic thermodynamics of computation",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "David",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wolpert",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Journal of Physics A: Mathematical and Theoretical"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Solving the compute crisis with physics-based ASICs",
+      "authors": [
+        {
+          "first": "Maxwell",
+          "middle": [],
+          "last": "Aifer",
+          "suffix": ""
+        },
+        {
+          "first": "Zach",
+          "middle": [],
+          "last": "Belateche",
+          "suffix": ""
+        },
+        {
+          "first": "Suraj",
+          "middle": [],
+          "last": "Bramhavar",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Kerem",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [
+            "J"
+          ],
+          "last": "Camsari",
+          "suffix": ""
+        },
+        {
+          "first": "Gavin",
+          "middle": [],
+          "last": "Coles",
+          "suffix": ""
+        },
+        {
+          "first": "Douglas",
+          "middle": [
+            "J"
+          ],
+          "last": "Crooks",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [
+            "J"
+          ],
+          "last": "Durian",
+          "suffix": ""
+        },
+        {
+          "first": "Anastasia",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Antonio",
+          "middle": [
+            "J"
+          ],
+          "last": "Marchenkova",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "L"
+          ],
+          "last": "Martinez",
+          "suffix": ""
+        },
+        {
+          "first": "Faris",
+          "middle": [],
+          "last": "Mcmahon",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Sbahi",
+          "suffix": ""
+        },
+        {
+          "first": "Logan",
+          "middle": [
+            "G"
+          ],
+          "last": "Weiner",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wright",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Mlir: Scaling compiler infrastructure for domain specific computation",
+      "authors": [
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Lattner",
+          "suffix": ""
+        },
+        {
+          "first": "Mehdi",
+          "middle": [],
+          "last": "Amini",
+          "suffix": ""
+        },
+        {
+          "first": "Uday",
+          "middle": [],
+          "last": "Bondhugula",
+          "suffix": ""
+        },
+        {
+          "first": "Albert",
+          "middle": [],
+          "last": "Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Davis",
+          "suffix": ""
+        },
+        {
+          "first": "Jacques",
+          "middle": [],
+          "last": "Pienaar",
+          "suffix": ""
+        },
+        {
+          "first": "River",
+          "middle": [],
+          "last": "Riddle",
+          "suffix": ""
+        },
+        {
+          "first": "Tatiana",
+          "middle": [],
+          "last": "Shpeisman",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Vasilache",
+          "suffix": ""
+        },
+        {
+          "first": "Oleksandr",
+          "middle": [],
+          "last": "Zinenko",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE/ACM International Symposium on Code Generation and Optimization (CGO)"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Fast transformer decoding: One write-head is all you need",
+      "authors": [
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Flashattention: Fast and memory-efficient exact attention with io-awareness",
+      "authors": [
+        {
+          "first": "Tri",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "Atri",
+          "middle": [],
+          "last": "Rudra",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Ré",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Thermodynamic AI and the fluctuation frontier",
+      "authors": [
+        {
+          "first": "Patrick",
+          "middle": [
+            "J"
+          ],
+          "last": "Coles",
+          "suffix": ""
+        },
+        {
+          "first": "Collin",
+          "middle": [],
+          "last": "Szczepanski",
+          "suffix": ""
+        },
+        {
+          "first": "Denis",
+          "middle": [],
+          "last": "Melanson",
+          "suffix": ""
+        },
+        {
+          "first": "Kaelan",
+          "middle": [],
+          "last": "Donaleta",
+          "suffix": ""
+        },
+        {
+          "first": "Antonio",
+          "middle": [
+            "J"
+          ],
+          "last": "Martinez",
+          "suffix": ""
+        },
+        {
+          "first": "Faris",
+          "middle": [],
+          "last": "Sbahi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Neuromorphic computing using non-volatile memory",
+      "authors": [
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "W"
+          ],
+          "last": "Burr",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [
+            "M"
+          ],
+          "last": "Shelby",
+          "suffix": ""
+        },
+        {
+          "first": "Abu",
+          "middle": [],
+          "last": "Sebastian",
+          "suffix": ""
+        },
+        {
+          "first": "Sangbum",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Seyoung",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Severin",
+          "middle": [],
+          "last": "Sidler",
+          "suffix": ""
+        },
+        {
+          "first": "Kumar",
+          "middle": [],
+          "last": "Virwani",
+          "suffix": ""
+        },
+        {
+          "first": "Masatoshi",
+          "middle": [],
+          "last": "Ishii",
+          "suffix": ""
+        },
+        {
+          "first": "Pritish",
+          "middle": [],
+          "last": "Narayanan",
+          "suffix": ""
+        },
+        {
+          "first": "Alessandro",
+          "middle": [],
+          "last": "Fumarola",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [
+            "L"
+          ],
+          "last": "Sanches",
+          "suffix": ""
+        },
+        {
+          "first": "Irem",
+          "middle": [],
+          "last": "Boybat",
+          "suffix": ""
+        },
+        {
+          "first": "Manuel",
+          "middle": [
+            "Le"
+          ],
+          "last": "Gallo",
+          "suffix": ""
+        },
+        {
+          "first": "Kibong",
+          "middle": [],
+          "last": "Moon",
+          "suffix": ""
+        },
+        {
+          "first": "Jiyoo",
+          "middle": [],
+          "last": "Woo",
+          "suffix": ""
+        },
+        {
+          "first": "Hyunsang",
+          "middle": [],
+          "last": "Hwang",
+          "suffix": ""
+        },
+        {
+          "first": "Yusuf",
+          "middle": [],
+          "last": "Leblebici",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in Physics: X"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "An optimization network for matrix inversion",
+      "authors": [
+        {
+          "first": "Ju-Seog",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "Soo-Young",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Sang-Yung",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        }
+      ],
+      "year": 1987,
+      "venue": "Neural information processing systems"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "In-memory hyperdimensional computing",
+      "authors": [
+        {
+          "first": "Geethan",
+          "middle": [],
+          "last": "Karunaratne",
+          "suffix": ""
+        },
+        {
+          "first": "Manuel",
+          "middle": [
+            "Le"
+          ],
+          "last": "Gallo",
+          "suffix": ""
+        },
+        {
+          "first": "Giovanni",
+          "middle": [],
+          "last": "Cherubini",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Benini",
+          "suffix": ""
+        },
+        {
+          "first": "Abbas",
+          "middle": [],
+          "last": "Rahimi",
+          "suffix": ""
+        },
+        {
+          "first": "Abu",
+          "middle": [],
+          "last": "Sebastian",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature Electronics"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Physics successfully implements lagrange multiplier optimization",
+      "authors": [
+        {
+          "first": "Krishna",
+          "middle": [],
+          "last": "Sri",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyao",
+          "middle": [],
+          "last": "Vadlamani",
+          "suffix": ""
+        },
+        {
+          "first": "Eli",
+          "middle": [],
+          "last": "Patrick Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Yablonovitch",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Analog optical computer for ai inference and combinatorial optimization",
+      "authors": [
+        {
+          "first": "Jannes",
+          "middle": [],
+          "last": "Kirill P Kalinin",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaqi",
+          "middle": [],
+          "last": "Gladrow",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [
+            "H"
+          ],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Clegg",
+          "suffix": ""
+        },
+        {
+          "first": "Douglas",
+          "middle": [
+            "J"
+          ],
+          "last": "Cletheroe",
+          "suffix": ""
+        },
+        {
+          "first": "Babak",
+          "middle": [],
+          "last": "Kelly",
+          "suffix": ""
+        },
+        {
+          "first": "Grace",
+          "middle": [],
+          "last": "Rahmani",
+          "suffix": ""
+        },
+        {
+          "first": "Burcu",
+          "middle": [],
+          "last": "Brennan",
+          "suffix": ""
+        },
+        {
+          "first": "Fabian",
+          "middle": [],
+          "last": "Canakci",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Falck",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Supervised learning in physical networks: From machine learning to learning machines",
+      "authors": [
+        {
+          "first": "Menachem",
+          "middle": [],
+          "last": "Stern",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Hexner",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [
+            "W"
+          ],
+          "last": "Rocks",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [
+            "J"
+          ],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Physical Review X"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Training end-to-end analog neural networks with equilibrium propagation",
+      "authors": [
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Kendall",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Pantone",
+          "suffix": ""
+        },
+        {
+          "first": "Kalpana",
+          "middle": [],
+          "last": "Manickavasagam",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Scellier",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Supervised learning in physical networks: From machine learning to learning machines",
+      "authors": [
+        {
+          "first": "Menachem",
+          "middle": [],
+          "last": "Stern",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Hexner",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [
+            "W"
+          ],
+          "last": "Rocks",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [
+            "J"
+          ],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Physical Review X"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Holomorphic equilibrium propagation computes exact gradients through finite size oscillations",
+      "authors": [
+        {
+          "first": "Axel",
+          "middle": [],
+          "last": "Laborieux",
+          "suffix": ""
+        },
+        {
+          "first": "Friedemann",
+          "middle": [],
+          "last": "Zenke",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Energy-based learning algorithms for analog computing: a comparative study",
+      "authors": [
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Scellier",
+          "suffix": ""
+        },
+        {
+          "first": "Maxence",
+          "middle": [],
+          "last": "Ernoult",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Kendall",
+          "suffix": ""
+        },
+        {
+          "first": "Suhas",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Towards training digitally-tied analog blocks via hybrid gradient computation",
+      "authors": [
+        {
+          "first": "Timothy",
+          "middle": [],
+          "last": "Nest",
+          "suffix": ""
+        },
+        {
+          "first": "Maxence",
+          "middle": [],
+          "last": "Ernoult",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "A fast algorithm to simulate nonlinear resistive networks",
+      "authors": [
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Scellier",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Symplectic recurrent neural networks",
+      "authors": [
+        {
+          "first": "Zhengdao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jianyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Arjovsky",
+          "suffix": ""
+        },
+        {
+          "first": "Léon",
+          "middle": [],
+          "last": "Bottou",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Hamiltonian neural networks",
+      "authors": [
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Greydanus",
+          "suffix": ""
+        },
+        {
+          "first": "Misko",
+          "middle": [],
+          "last": "Dzamba",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Yosinski",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Lagrangian neural networks",
+      "authors": [
+        {
+          "first": "Miles",
+          "middle": [],
+          "last": "Cranmer",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Greydanus",
+          "suffix": ""
+        },
+        {
+          "first": "Stephan",
+          "middle": [],
+          "last": "Hoyer",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Battaglia",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Spergel",
+          "suffix": ""
+        },
+        {
+          "first": "Shirley",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Hamiltonian generative networks",
+      "authors": [
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Toth",
+          "suffix": ""
+        },
+        {
+          "first": "Danilo",
+          "middle": [],
+          "last": "Jimenez Rezende",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Jaegle",
+          "suffix": ""
+        },
+        {
+          "first": "Sébastien",
+          "middle": [],
+          "last": "Racanière",
+          "suffix": ""
+        },
+        {
+          "first": "Aleksandar",
+          "middle": [],
+          "last": "Botev",
+          "suffix": ""
+        },
+        {
+          "first": "Irina",
+          "middle": [],
+          "last": "Higgins",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Hybrid monte carlo",
+      "authors": [
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Duane",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [
+            "D"
+          ],
+          "last": "Kennedy",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [
+            "J"
+          ],
+          "last": "Pendleton",
+          "suffix": ""
+        },
+        {
+          "first": "Duncan",
+          "middle": [],
+          "last": "Roweth",
+          "suffix": ""
+        }
+      ],
+      "year": 1987,
+      "venue": "Physics letters B"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Mcmc using hamiltonian dynamics",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Neal",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Handbook of markov chain monte carlo"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Magnetic hamiltonian monte carlo",
+      "authors": [
+        {
+          "first": "Nilesh",
+          "middle": [],
+          "last": "Tripuraneni",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Rowland",
+          "suffix": ""
+        },
+        {
+          "first": "Zoubin",
+          "middle": [],
+          "last": "Ghahramani",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Turner",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Memory-efficient optimization with factorized hamiltonian descent",
+      "authors": [
+        {
+          "first": "Son",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "Lizhang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Qiang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Training deep nets with sublinear memory cost",
+      "authors": [
+        {
+          "first": "Tianqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Chiyuan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Carlos",
+          "middle": [],
+          "last": "Guestrin",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Quzo: Quantized zeroth-order fine-tuning for large language models",
+      "authors": [
+        {
+          "first": "Jiajun",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Yifan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Zhen",
+          "suffix": ""
+        },
+        {
+          "first": "Ziyue",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yequan",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Ershad",
+          "middle": [],
+          "last": "Banijamali",
+          "suffix": ""
+        },
+        {
+          "first": "Athanasios",
+          "middle": [],
+          "last": "Mouchtaris",
+          "suffix": ""
+        },
+        {
+          "first": "Ngai",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Agnostic physicsdriven deep learning",
+      "authors": [
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Scellier",
+          "suffix": ""
+        },
+        {
+          "first": "Siddhartha",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Ollivier",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF66",
+      "title": "A photonics perspective on computing with physical substrates",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Abreu",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Boikov",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Goldmann",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Jonuzi",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lupo",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Masaad",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Picco",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Pourcel",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Skalli",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Talandier",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Vettelschoss",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "A"
+          ],
+          "last": "Vlieg",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Argyris",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bienstman",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Brunner",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Dambre",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Daudet",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "D"
+          ],
+          "last": "Domenech",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Horst",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Massar",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "R"
+          ],
+          "last": "Mirasso",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "J"
+          ],
+          "last": "Offrein",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rossi",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "C"
+          ],
+          "last": "Soriano",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sygletos",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "K"
+          ],
+          "last": "Turitsyn",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Reviews in Physics"
+    },
+    {
+      "id": "BIBREF67",
+      "title": "SuperMind: A survey of the potential of superconducting electronics for neuromorphic computing",
+      "authors": [
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Schneider",
+          "suffix": ""
+        },
+        {
+          "first": "Emily",
+          "middle": [],
+          "last": "Toomey",
+          "suffix": ""
+        },
+        {
+          "first": "Graham",
+          "middle": [],
+          "last": "Rowlands",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Shainline",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Tschirhart",
+          "suffix": ""
+        },
+        {
+          "first": "Ken",
+          "middle": [],
+          "last": "Segall",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Superconductor Science and Technology"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Neuromorphic spintronics",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Grollier",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Querlioz",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "Y"
+          ],
+          "last": "Camsari",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Everschor-Sitte",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Fukami",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "D"
+          ],
+          "last": "Stiles",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature Electronics"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Learning dissipative hamiltonian dynamics with reproducing kernel hilbert spaces and random fourier features",
+      "authors": [
+        {
+          "first": "Torbjørn",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Olav",
+          "middle": [],
+          "last": "Egeland",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "IFAC-PapersOnLine"
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Equilibrium propagation for periodic dynamics",
+      "authors": [
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Berneman",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Hexner",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF71",
+      "title": "Gaussian Error Linear Units (GELUs)",
+      "authors": [
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Gimpel",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF72",
+      "title": "Language Modeling with Gated Convolutional Networks",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Yann",
+          "suffix": ""
+        },
+        {
+          "first": "Angela",
+          "middle": [],
+          "last": "Dauphin",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Auli",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Grangier",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the 34th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF73",
+      "title": "JAX: composable transformations of Python+NumPy programs",
+      "authors": [
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "Roy",
+          "middle": [],
+          "last": "Frostig",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Hawkins",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [
+            "James"
+          ],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Leary",
+          "suffix": ""
+        },
+        {
+          "first": "Dougal",
+          "middle": [],
+          "last": "Maclaurin",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Necula",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Paszke",
+          "suffix": ""
+        },
+        {
+          "first": "Jake",
+          "middle": [],
+          "last": "Vanderplas",
+          "suffix": ""
+        },
+        {
+          "first": "Skye",
+          "middle": [],
+          "last": "Wanderman-Milne",
+          "suffix": ""
+        },
+        {
+          "first": "Qiao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    }
+  ]
+}

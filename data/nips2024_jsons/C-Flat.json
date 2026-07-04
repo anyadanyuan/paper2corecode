@@ -1,0 +1,2658 @@
+{
+  "paper_id": "C-Flat",
+  "title": "Make Continual Learning Stronger via C-Flat",
+  "authors": [
+    {
+      "first": "Ang",
+      "middle": [],
+      "last": "Bian",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Sichuan University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Wei",
+      "middle": [],
+      "last": "Li",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Sichuan University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Hangjie",
+      "middle": [],
+      "last": "Yuan",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Zhejiang University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Chengrong",
+      "middle": [],
+      "last": "Yu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Sichuan University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Zixiang",
+      "middle": [],
+      "last": "Zhao",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Xi'an Jiaotong University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Mang",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ByteDance Inc",
+        "location": {}
+      }
+    },
+    {
+      "first": "Aojun",
+      "middle": [],
+      "last": "Lu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Sichuan University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Tao",
+      "middle": [],
+      "last": "Feng",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Tsinghua University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Model generalization ability upon incrementally acquiring dynamically updating knowledge from sequentially arriving tasks is crucial to tackle the 'sensitivity-stability' dilemma in Continual Learning (CL). Weight loss landscape sharpness minimization seeking for flat minima lying in neighborhoods with uniform low loss or smooth gradient is proven to be a strong training regime improving model generalization compared with loss minimization based optimizer like SGD. Yet only a few works have discussed this training regime for CL, proving that dedicated designed zeroth-order sharpness optimizer can improve CL performance. In this work, we propose a Continual Flatness (C-Flat) method featuring a flatter loss landscape tailored for CL. C-Flat could be easily called with only one line of code 1 and is plug-and-play to any CL methods. A general framework of C-Flat applied to all CL categories and a thorough comparison with loss minima optimizer and flat minima based CL approaches is presented in this paper, showing that our method can boost CL performance in almost all cases. Code will be publicly available upon publication.",
+  "body": {
+    "1_Introduction": "Why study Continual Learning (CL)? CL is generally acknowledged as a necessary attribute for Artificial General Intelligence (AGI) [15, 22, 39, 52, 59] .\nIn the open world, CL holds the potential for substantial benefits across many applications: e.g. vision model needs to learn a growing images set [16, 58] , or, embodied model needs to incrementally add skills to their repertoire [11, 17, 68] .\nChallenges. A good CL model is expected to keep memory of all seen tasks upon learning new knowledge [22] . However, given limited access to the previous data, CL suffers from a phenomenon called catastrophic forgetting [8] , which refers to the drastic performance drop on past knowledge after learning new knowledge. How to improve the model generalization ability for a stable learning performance on diverse tasks arriving sequentially is the key to overcome this major challenge in CL.",
+    "2_Related_work": "Continual learning methods roughly are categorized into three groups: Memorybased methods write experience in memory to alleviate forgetting. Some work [25, 41, 42, 49] design different sampling strategies to establish limited budgets in a memory buffer for rehearsal. However, these methods require access to raw past data, which is discouraged in practice due to privacy concerns. Instead, recently a series of works [9, 33, 34, 44, 48] elaborately construct special subspace of old tasks as the memory. Regularization-based methods aims to realize consolidation of the previous knowledge by introducing additional regularization terms in the loss function. Some works [6, 29, 32] enforce the important weights in the parameter space [2, 28, 43] , feature representations [5, 21] , or the logits outputs [32, 40] of the current model function to be close to that of the old one. Expansionbased methods dedicate different incremental model structures towards each task to minimize forgetting [65] . Some work [24, 46, 56] exploit modular network architectures (dynamically extending extra components [54, 66] , or freeze partial parameters [1, 36] ) to overcome forgetting. Trivially, methods in this category implicitly shifts the burden of storing numerous raw data into the retention of model [65] .\nGradient-based solutions a.k.a the problem at the source [8, 22] . Motivated by the tug-of-war learning dynamics during optimization, one promising solution is to modify the gradients of different tasks to overcome forgetting [7, 38] , e.g., aligning the gradients of current and old one [14, 18] , or, learning more efficient in the case of conflicting objectives [13, 45, 53] . Other solution [9, 47] focus on characterizing the generalization from the loss landscape perspectives to improve CL performance, and yet, this sort of solution is rarely explored.\nSharpness minimization in CL Many recent works [4, 19, 23] are proposed to optimize neural networks in standard training scenarios towards flat minima. In CL, the flat minima also are proven to be effective for mitigating catastrophic forgetting [9, 47] . For example, FS-DPGM [9] proposed a dynamic gradient memory projection method using sharpness evaluation to address the 'sensitivity-stability' dilemma in pseudo rehearsal based CL. F2M [47] introduced a fine tuning strategy for the model parameters within the flatness minima re-gions only in the base session for incremental few-shot learning. These efforts kicked off the study of flat minima in CL by proving that sharpness-aware minimization [20] can improve the performance of incremental class learning, but the current works consider zeroth-order sharpness only, while the application scenario is limited. The practical methods that beyond zeroth-order flatness in CL will be further studied in this work.",
+    "3_Method": {
+      "3.1_C-Flat:_Continual_Flatness_Method": "Model generalization is a severe task in CL for joint learning knowledge obtained from different catalogues domains or tasks. Various approaches using diverse memory replay, regularization or model expansion strategies are proposed to balance the learning stability and sensitivity when adopting new knowledge. Gradient landscape sharpness, i.e., zeroth-order sharpness has been proved to be effective in certain CL methods to mitigate forgetting. In this work, a general but stranger optimization method enhanced by the latest gradient landscape flatness is proposed as a 'plug-and-play' tool to any CL approach.\nDefinition. Let B(θ, ρ) = {θ ′ : ∥θ ′ -θ∥ < ρ} denotes the neighborhood of θ with radius ρ > 0 in the the Euclidean space Θ ⊂ R d , the zeroth-order sharpness at point θ is commonly defined by the maximal training loss difference within its neighborhood B(θ, ρ):\nEQUATION\nwhere l S (θ) denotes the loss of an arbitrary model with parameter θ on any dataset S with an oracle loss function l(•). The zeroth-order sharpness R 0 ρ (θ) regularization can be directly applied to restrain the maximal neighborhood training loss:\nl R 0 ρ S (θ) = l S (θ) + R 0 ρ (θ) = max{l S (θ ′ ) : θ ′ ∈ B(θ, ρ)},\nRecently, first-order gradient landscape flatness is proposed as a measurement of the maximal neighborhood gradient norm, which reflects landscape curvature, to better describe the smoothness of the loss landscape, which is defined as follows,\nEQUATION\nThe direct sum of the zeroth-order sharpness with loss is enough to force the training converge to a local minimal. However, the first-order flatness constraining on the gradient norm can not guarantee to be an optimal with minimal loss. Therefore, a hyperparameter λ is required to balance the influence of R 1 ρ as an additional regularization to loss function l:\nEQUATION\nTo maximize the generalization ability of loss landscape sharpness for continual learning task, we propose a zeroth-first-order sharpness aware optimizer C-Flat for CL. Considering the data space, model or blocks to be trained are altered regarding the training phase and CL method, (as detailed in the next subsection), we define the the C-Flat loss as follows:\nEQUATION\nwith the minimization objective:\nEQUATION\nwhere l R 0 ρ S (θ) is constructed to replace the original CL loss, while R 1 ρ (θ) further regularizes the smoothness of the neighborhood. Hence, the local minima within a flat and smooth neighborhood is calculated for a generalized model possessing both old and new knowledge.\nOptimization. In our work, the two regularization terms in the proposed C-Flat are resolved correspondingly in each iteration. Assuming the loss function l(•) is differentiable and bounded, the gradient of\nEQUATION\nAlgorithm 1 C-Flat Optimization Input: Training phase T , training data S T , model f T -1 with parameter θ T -1 from last phase if T > 1, batch size b, oracle loss function l, learning rate η > 0, neighborhood size ρ, trade-off coefficient λ, small constant ξ. Output: Model trained at the current time T with C-Flat. Initialization: if T=1: then Randomly Initialize parameter θ T =1 , η T =1 = η, ρ T =1 = ρ. else Reconstruct the model and training set if necessary, Initialize model parameter θ T = θ T -1 , η T = η, ρ T = ρ, Frozen part of the parameter if required. end if Optimization: while θ T not converge, do Sample batch B T of b random instances from S T Compute batch's loss gradient ▽l B T (f T\n(θ T )) Compute R 0 ρ perturbation: ϵ0 = ρ T • sign(▽l B T (f T (θ T )) • |▽l B T (f T (θ T ))| ∥▽l B T (f T (θ T ))∥ 2 +ϵ\nCompute zeroth-order gradient approximation:\nh0 = ▽l B T (f T (θ T + ϵ0)) Compute h = ▽ 2 lS(θ) • ▽l B T (f T (θ T )) ∥▽l B T (f T (θ T ))∥ 2 +ϵ Compute R 1 ρ perturbation: ϵ1 = ρ T • ▽∥▽l B T (f T (θ T ))∥ 2 ∥▽∥▽l B T (f T (θ T ))∥ 2 ∥ 2 +ϵ\nCompute first-order gradient approximation:\nh1 = ▽ 2 l B T (f T (θ T + ϵ1)) • ▽l B T (f T (θ T +ϵ 1 )) ∥▽l B T (f T (θ T +ϵ 1 ))∥ 2 +ϵ\nUpdate: Model parameter: θ T = θ T -η T (h0 + λh1); Update training parameters η T , ρ T according to a scheduler that the values drop with iterations; end while Post-Processing on Model and Training data if required.\nreturn Model f T with parameter θ T\nwhere | • | denotes elementwise absolute value. And the gradient of the first-order flatness regularization ▽R 1 ρ (θ T ) can be approximated by\nEQUATION\n) with θ T 1 = θ T + ρ • ▽∥ ▽ l S (θ T )∥ 2 ∥ ▽ ∥ ▽ l S (θ T )∥ 2 ∥ 2 where ▽ ∥ ▽ l S (θ T )∥ 2 = ▽ 2 l S (θ T ) • ▽l S (θ T ) ∥ ▽ l S (θ T )∥ 2 .\nThe optmization is detailed in Algorithm 1. Note that ▽l is the gradient of l with respect to θ through this paper, and instead of the expensive computation of Hessian matrix ∇ 2 l, Hessian-vector product calculation is used in our algorithm, where the time and especially space complexity are greatly reduced to o(n).\nTheoretical analysis. Given R 0 ρ (θ) measuring the maximal limit of the training loss difference, the first-order flatness is its upper bound by nature.\nDenoting θ + ϵ ∈ B(θ, ρ) the local maximum point, a constant ϵ * ∈ [0, ϵ] exists according to the mean value theorem that\nEQUATION\nAssuming the loss function is twice differentiable, β-Lipschitz smooth, bounded by M , obeys the triangle inequality, and its gradient have bounded variance σ 2 , we can prove that, according to [3, 60] , C-Flat converges in all tasks with η ≤ 1/β, ρ ≤ 1/4β, and\nEQUATION\n)\nwhere n T is the total iteration numbers of task T , and b is the batch size. Let ∇ 2 l S (θ * ) denotes the Hessian matrix at local minimum θ * , its maximal eigenvalue λ max (∇ 2 l S (θ * )) is a proper measure of the landscape curvature. The first-order flatness is proven to be related to the maximal eigenvalue of the Hessian matrix as R 1 ρ (θ * ) = ρ 2 • λ max (∇ 2 l S (θ * )), thus the C-Flat regularization can also be used as an index of model's generalization ability:\nEQUATION\n)",
+      "3.2_A_Unified_CL_Framework_Using_C-Flat": "This subsection presents an unified CL framework using C-Flat with applications covering Class Incremental Learning (CIL) approaches. To keep focus, the scope of our study is limited in CIL task, which is the most intractable CL scenarios that seek for a lifelong learning model for sequentially arriving classagnostic data. Most CIL approaches belong to three main families, Memorybased, Regularization-based and Expansion-based methods. Memory-based methods store samples from the previous phases within the memory limit, or produce pseudo-samples by generative approaches to extend the current training data space, thus a memory replay strategy is used to preserve the seen class features with ŜT = S T ∪ Sample t<T . iCaRL is one of the early works. It learns classifiers and a feature representation simultaneously, and preserves the first few most representative exemplars according to Nearest-Mean-of-Exemplars Classification. Thus a loss function l ŜT = l CE ŜT + l KL ŜT combining both cross entropy for the current task and a knowledge distillation loss for the previous classes is introduced to balance the learning sensitivity and model generalization to the previous tasks. Solution: for memory-based method, including, the C-Flat can be easily applied to these scenarios by reconstruct the oracle loss function with its zerothand first-order flatness measurement as Eq. ( 13), and trained with Algorithm 1 using data set extended with the previous exemplars.\nEQUATION\nRegularization-based methods seeks for a apply regularization on the model develop to preserver the learnt knowledge. For instance, WA introduces weight aligning on the final inference part to balance the old and new classes. Denoting ϕ the feature learning layers of the model, ψ = [ψ old , ψ new ] the decision head for all classes consisting of two branches for the old and new seen data classes, the output is corrected to f (x) = [ψ old (ϕ(x)), γ • ψ new (ϕ(x))], where γ is the fraction of average norm of ψ old , ψ new of all classes.\nGradient Projection Memory (GPM) is another main regularization based group, introducing explicit align the gradient direction to new knowledge learning. It stores a minimum set of bases of the Core Gradient Space as Gradient Projection Memory, thus gradient steps are only taken in its orthogonal direction to learn the new features without forgetting the core information from the previous phases. FS-DGPM further improves this method by updating model parameter along the aligned orthogonal gradient at the zeroth-order sharpness minima in dynamic GMP space.\nSolution: for regularization-based approaches, the same plug-and-play strategy can be used to reconstruct the loss function as Eq. ( 13), and optimized by Algorithm 1.\nAn alternative solution for the gradient-based methods like GPM and the improved FS-DGPM, is to introduce C-Flat optimization at the gradient alignment stage, so that the orthogonal gradient at a flatter minima is used to ensure that the training can cross over the knowledge gap between different data categories. The implementation of our C-Flat-GPM is detailed in Algorithm 2.\nExpansion-based methods explicitly construct task-specific parameters to resolve the new class learning and inference problem. For instance, Memoryefficient Expandable Model (Memo) decomposes the embedding module into deep layers and shallow layers that ϕ = ϕ f (ϕ g ), where ϕ f , ϕ g correspond to the specialized block for different tasks and the generalized block that can be shared during training phases. An additional block ϕ new f is added to the deep layers for specified feature extraction for the new classes, where the model can be reconstructed as\nf T = ψ T ([ϕ T -1 f (ϕ g ), ϕ new f (ϕ g )]\n). Thus the new model training is focusing on the task specified component while the shared shallow layers are frozen with loss function l M emo\nŜT = l CE ŜT (ψ T ([ϕ T -1 f (ϕ g ), ϕ new f (ϕ g )])\n)). Foster uses KL-based loss function to regularize the three combinations of old and new blocks for a stable performance on the previous data. It also introduces an effective redundant parameters and feature pruning strategy to maintain the single backbone model using knowledge distillation. DER follows the same dynamical expansion and redundant pruning framework, and introduces an auxiliary classifier to encourage the model to learn diverse and discriminate features for novel concepts. Accordingly, a cross entropy based loss function with an additional item for the auxiliary inference.\nSolution: for expansion-based approaches, the plug-and-play strategy is still available. The C-Flat loss can be reformed with the reconstructed model as Eq. ( 14). Thus C-Flat optimization using Algorithm 1 is applied onto the first stage, where the new constructed block are optimized, while the generalized blocks are kept frozen. The final model is obtained after post-processing.\nEQUATION\n)\nTo conclude, including, not limited to the above, C-Flat can be easily applied to any CL method with reconstructed loss function, and thus trained with the corresponding optimize as shown in Algorithm 1. Dedicated design using C-Flat like for the GPM family is also possible wherever flat minima is required.",
+      "_text": "In this section, we present a joint loss landscape sharpness aware optimization for CL, namely C-Flat, in Subsec. 3.1. Subsec. 3.2 introduces how can our C-Flat easily plug-and-play onto any CL methods with corresponding solutions.\nNotations Continual learning is to get a generalized model from data of different distributions dynamically arriving in sequences. Let D t = (X t × Y t ) represent the data distribution on at time t = 1, • • • , T , where X t and Y t are the input data and corresponding label spaces, and S t = {(x t i , y t i )} n t i=1 denotes the training set with n t samples independently drawn from data space D t . Let f t denotes the model trained at time t with parameter θ t ∈ Θ ⊂ R d , and l : Θ × X ×Y an arbitrary loss function. The goal of CL is to find the optimized model f T that controls the statistical risk of all seen tasks given limited or no access to data S t = {(X t , Y t )} from previous tasks t < T :\nEQUATION\nFor the current task at time T , it can be approximated by the empirical risk:\nEQUATION"
+    },
+    "4.1_Experimental_Setup": "Datasets. We evaluate the performance on CIFAR-100, ImageNet-100 and Tiny-ImageNet. Adherence to [63, 64] , the random seed for class-order shuffling is fixed at 1993. Subsequently, we follow two typical class splits in CIL: (i) Divide all ∥Y b ∥ classes equally into B phases, denoted as B0_Incy; (ii) Treat half of the total classes as initial phases, followed by an equally division of the remaining classes into incremental phases, denoted as B50_Incy. In both settings, y denotes that learns y new classes per task.\nBaselines. To evaluate the efficacy of our method, we plug it into 7 topperforming baselines across each CL category: Replay [42] and iCaRL [41] are classical replay-based methods, using raw data as memory cells. PODNet [10] is akin to iCaRL, incorporating knowledge distillation to constraint the logits of pooled representations. WA [61] corrects prediction bias via regularizing discrimination and fairness. DER [54] , FOSTER [51] and MEMO [65] are network expansion methods, dedicate modular architectures towards each task by extending sub-network or freezing partial parameters. The aforementioned methods span three categories in CL [8, 50] : Memory-based methods, Regularizationbased methods and Expansion-based methods.",
+    "4.2_Make_Continual_Learning_Stronger": "Table 1 empirically demonstrates the superiority of the proposed method: Makes Continual Learning Stronger. In this experiment, we plug C-Flat into 7 state-ofthe-art methods that cover the full range of CL methods. From Tab. 1, we observe that (i) C-Flat presents consistent outperformance on all models, spanning Memory-based methods, Regularization-based methods, and Expansion-based methods. This superiority is indicative of the plug-and-play feature inherent in our method, allowing effortless installation with all sorts of CL paradigms. (ii) Across multiple benchmark datasets, including CIFAR-100, ImageNet-100, and Tiny-ImageNet, C-Flat exhibits consistent improvement. This underscores its generalization ability and effectiveness against diverse data distributions. (iii) C- Flat presents consistent boosting across multiple incremental scenarios, encompassing B0_Inc5, B0_Inc10, B0_Inc20, B50_Inc10, B50_Inc25, and B0_Inc40. This consistent boosting reaffirms robustness of C-Flat for various CL scenarios. To sum up, C-Flat advances baselines across each CL category, serves as a valuable addition to CL, offering a versatile solution that can complement existing methods.",
+    "4.3_Revisiting_Zeroth-order_Flatness": "Average accuracy(%)\n55 65 75 Replay iCaRL WA PODNet DER FOSTER MEMO w/ zeroth-order w/ C-Flat (a) B0_Inc10 Average accuracy(%) 55 65 75 Replay iCaRL WA PODNet DER FOSTER MEMO w/ zero-order w/ C-Flat (b) B0_Inc20 Limited work [9, 47] proved that the zeroth-order sharpness leads to flat minima boosted CL. Here, we employ a zeroth-order optimizer [19] instead of vanilla-SGD to verify the performance of C-Flat. As shown in Fig. 2 , C-Flat (purple line) stably outperforms the zeroth-order sharpness (blue line) on all baselines. We empirically demonstrated that flatter is better for continual learning.\nFormer work FS-DGPM [9] regulates the gradient direction with flat minima to promote CL. The FS (Flattening Sharpness) term derived from FS-DGPM is a typical zeroth-order flatness. We revisit the FS-DGPM series (including La/FS-GPM, DGPM, La/FS-DGPM) [9, 44] to evaluate performance using C-Flat instead of FS (see Algorithm 2). method induces a flatter minimum. These findings not only align with but also substantiate the theoretical insights presented in the methodology section.",
+    "4.6_Computation_Overhead": "30 40 50 0 40 80 120 160 Average accuracy (%) Epoch SGD SAM GAM C-Flat (a) Convergence speed on Replay with CIFAR-100/B0_Inc20. ",
+    "4.7_Ablation_Study": "We perform ablation study in two cases: (i) the influence of λ and ρ on different CL methods; (ii) the influence of ρ and its scheduler on different optimizers.\nHow λ and ρ affects various CL methods? We first present the performance of C-Flat with varying λ and ρ. As described in Eq. 13, λ controls the strength of the C-Flat penalty (when λ is equal to 0, this means that firstorder flatness is not implemented). As shown in Fig. 6a , compared with vanilla optimizer, C-Flat shows remarkable improvement with varying λ. Moreover, ρ controls the step length of gradient ascent. As shown in Fig. 6b , C-Flat with ρ larger than 0 outperforms C-Flat without gradient ascent, showing that C-Flat benefits from the gradient ascent.\nρ and ρ scheduler on flat sharpness optimizers. For each CL task T , same learning rate η T and neighborhood size ρ T initialization are used. By default, ρ T i ∈ [ρ _ , ρ + ] is set as a constant, which decays with respect to the learning rate η T i ∈ [η _ , η + ] by ρ T i = ρ _ + (ρ+-ρ_) η+-η_ (η T i -η _ ). Fig. 6c and Fig. 6d present a comparison on ρ initialization and {ρ _ , ρ + } scheduler. C-Flat outperforms across various settings, and is not oversensitive to hyperparameters in a reasonable range. As is known to all, forward, and in particular backward transfer, are the desirable conditions for CL [22] . Here, we thoroughly examine the performance of C-Flat in both aspects. Forward Transfer (FT) means better performance on each subsequent task. Backward Transfer (BT) means better performance on previous tasks, when revisited. We count the performance of new and old tasks on several CL benchmarks before and after using C-Flat. As observed in Tab. 3, C-Flat consistently improves the learning performance of both new and old tasks. This observation indicates that C-Flat empowers these baselines with robust forward and backward transfer capabilities, that is learning a task should improve related tasks, both past and future. But, thus far, achieving a baseline that maintains perfect recall (by forgetting nothing) remains elusive. Should such a baseline emerge, C-Flat stands poised to empower it with potent backward transfer, potentially transcending the limitations of mere not-forgetting.",
+    "5_Conclusion": "This paper presents a versatile optimization framework, C-Flat, to confront forgetting. Empirical results demonstrate C-Flat's consistently outperform on all sorts of CL methods, showcasing its plug-and-play feature. Moreover, the exploration of Hessian eigenvalues and traces reaffirms the efficacy of C-Flat in inducing flatter minima to enhance CL. In essence, C-Flat emerges as a simple yet powerful addition to the CL toolkit, making continual learning stronger."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Conditional channel gated networks for task-aware continual learning",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Abati",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tomczak",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Blankevoort",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Calderara",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Cucchiara",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "E"
+          ],
+          "last": "Bejnordi",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Subspace regularizers for few-shot class incremental learning",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "F"
+          ],
+          "last": "Akyürek",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Akyürek",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "T"
+          ],
+          "last": "Wijaya",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Andreas",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Towards understanding sharpness-aware minimization",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Andriushchenko",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Flammarion",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Shaping the learning landscape in neural networks around wide flat minima",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Baldassi",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Pittorino",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Zecchina",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Task-aware information routing from common representation space in lifelong learning",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bhat",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zonooz",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Arani",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Cpr: classifier-projection regularization for continual learning",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Cha",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Hsu",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Hwang",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "P"
+          ],
+          "last": "Calmon",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Moon",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Efficient lifelong learning with a-gem",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Chaudhry",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ranzato",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Rohrbach",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Elhoseiny",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "A continual learning survey: Defying forgetting in classification tasks",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Delange",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Aljundi",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Masana",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Parisot",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Leonardis",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Slabaugh",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Tuytelaars",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Flattening sharpness for dynamic gradient projection memory benefits continual learning",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hao",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "A"
+          ],
+          "last": "Heng",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Podnet: Pooled outputs distillation for small-tasks incremental learning",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Douillard",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Cord",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Ollion",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Robert",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Valle",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Palm-e: An embodied multimodal language model",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Driess",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "S"
+          ],
+          "last": "Sajjadi",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lynch",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Chowdhery",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Ichter",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Wahid",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tompson",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Vuong",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Sharpness-aware training for free",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "T"
+          ],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Adapting auxiliary losses using gradient similarity",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [
+            "M"
+          ],
+          "last": "Czarnecki",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "M"
+          ],
+          "last": "Jayakumar",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Farajtabar",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Pascanu",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Lakshminarayanan",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Orthogonal gradient descent for continual learning",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Farajtabar",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Azizan",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mott",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Identifying players in broadcast videos using graph convolutional network",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bian",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Pattern Recognition"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Overcoming catastrophic forgetting in incremental object detection via elastic response distillation",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Towards mask-robust face recognition",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Progressive learning without forgetting",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bian",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Sharpness-aware minimization for efficiently improving generalization",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Foret",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kleiner",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Mobahi",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Neyshabur",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Sharpness-aware minimization for efficiently improving generalization",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Foret",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kleiner",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Mobahi",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Neyshabur",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "R-dfcil: Relation-guided representation learning for data-free class incremental learning",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Ghanem",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Embracing change: Continual learning in deep neural networks",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Hadsell",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "A"
+          ],
+          "last": "Rusu",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Pascanu",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Trends in cognitive sciences"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Asymmetric valleys: Beyond sharp and flat local minima",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Dense network expansion for class incremental learning",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Vasconcelos",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Birt: Bio-inspired replay in vision transformers for continual learning",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Jeeveswaran",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bhat",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zonooz",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Arani",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Gradient-based editing of memory examples for online task-free continual learning",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sadhu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "On largebatch training for deep learning: Generalization gap and sharp minima",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [
+            "S"
+          ],
+          "last": "Keskar",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Mudigere",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Nocedal",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Smelyanskiy",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "T P"
+          ],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Warping the space: Weight space rotation for class-incremental few-shot learning",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "Y"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "J"
+          ],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Seo",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Moon",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Overcoming catastrophic forgetting in neural networks",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Kirkpatrick",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Pascanu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Rabinowitz",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Veness",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Desjardins",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "A"
+          ],
+          "last": "Rusu",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Milan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Quan",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Ramalho",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Grabska-Barwinska",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "PNAS"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Overcoming catastrophic forgetting in continual learning by exploring eigenvalues of hessian matrix",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Kacprzyk",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Tao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE Transactions on Neural Networks and Learning Systems"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Parameter-level soft-masking for continual learning",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Konishi",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Kurokawa",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Ono",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Ke",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Learning without forgetting",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Hoiem",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "IEEE Trans. Pattern Anal. Mach. Intell"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Pcr: Proxy-based contrastive replay for online class-incremental continual learning",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Trgp: Trust region gradient projection for continual learning",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Continual learning with recursive gradient optimization",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Adaptive aggregation networks for class-incremental learning",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Schiele",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Towards efficient and scalable sharpness-aware minimization",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Mai",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "J"
+          ],
+          "last": "Hsieh",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "You",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Gradient episodic memory for continual learning",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Lopez-Paz",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ranzato",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Class-incremental learning: survey and performance evaluation on image classification",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Masana",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Twardowski",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Menta",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "D"
+          ],
+          "last": "Bagdanov",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Van De Weijer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Alife: Adaptive logit regularizer and feature replay for incremental semantic segmentation",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Oh",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Baek",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Ham",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "icarl: Incremental classifier and representation learning",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [
+            "A"
+          ],
+          "last": "Rebuffi",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Sperl",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "H"
+          ],
+          "last": "Lampert",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Experience replay for continual learning",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Rolnick",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ahuja",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schwarz",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Lillicrap",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Wayne",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Continual learning via sequential function-space variational inference",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [
+            "G"
+          ],
+          "last": "Rudner",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "B"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "W"
+          ],
+          "last": "Teh",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Gal",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Gradient projection memory for continual learning",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Saha",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Garg",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Multi-task learning as multi-objective optimization",
+      "authors": [
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Sener",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Koltun",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Overcoming catastrophic forgetting with hard attention to the task",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Serrà",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Suris",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Miron",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Karatzoglou",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Overcoming catastrophic forgetting in incremental few-shot learning by finding flat minima",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "M"
+          ],
+          "last": "Zhan",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [
+            "M"
+          ],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Decoupling learning and remembering: A bilevel memory framework with knowledge projection for taskincremental learning",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Geng",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Regularizing second-order influences for continual learning",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Mu",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Hua",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Three types of incremental learning",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [
+            "M"
+          ],
+          "last": "Van De Ven",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Tuytelaars",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "S"
+          ],
+          "last": "Tolias",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Nature Machine Intelligence"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Foster: Feature boosting and compression for class-incremental learning",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [
+            "Y"
+          ],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "W"
+          ],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "J"
+          ],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "C"
+          ],
+          "last": "Zhan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "European conference on computer vision"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "A comprehensive survey of continual learning: Theory, method and application",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Gradient vaccine: Investigating and improving multi-task optimization in massively multilingual models",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Tsvetkov",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "DER: dynamically expandable representation for class incremental learning",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Pyhessian: Neural networks through the lens of the hessian",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gholami",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Keutzer",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "W"
+          ],
+          "last": "Mahoney",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Scalable and order-robust continual learning with additive parameter decomposition",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Yoon",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "J"
+          ],
+          "last": "Hwang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Rlip: Relational language-image pre-training for human-object interaction detection",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Albanie",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Ni",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Rlipv2: Fast scaling of relational language-image pre-training",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Albanie",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Ni",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Instructvideo: Instructing video diffusion models with human feedback",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Albanie",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Ni",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Gradient norm aware minimization seeks first-order flatness and improves generalization",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR 2023"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Maintaining discrimination and fairness in class incremental learning",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Gan",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "T"
+          ],
+          "last": "Xia",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Improving sharpnessaware minimization with fisher mask for better generalization on language models",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Mi",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Tao",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Pycil: A python toolbox for classincremental learning",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "W"
+          ],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "Y"
+          ],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "J"
+          ],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "C"
+          ],
+          "last": "Zhan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Deep classincremental learning: A survey",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "W"
+          ],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [
+            "W"
+          ],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [
+            "H"
+          ],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "J"
+          ],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "C"
+          ],
+          "last": "Zhan",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF64",
+      "title": "A model or 603 exemplars: Towards memory-efficient class-incremental learning",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "W"
+          ],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [
+            "W"
+          ],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "J"
+          ],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "C"
+          ],
+          "last": "Zhan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Self-sustaining representation expansion for non-exemplar class-incremental learning",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [
+            "J"
+          ],
+          "last": "Zha",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Surrogate gap minimization improves sharpness-aware training",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Adam",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Dvornek",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Tatikonda",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Duncan",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Embodied ai as science: Models of embodied cognition, embodied models of cognition",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Ziemke",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Online convex programming and generalized infinitesimal gradient ascent",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zinkevich",
+          "suffix": ""
+        }
+      ],
+      "year": 2003,
+      "venue": "Proceedings of the Twentieth International Conference (ICML)"
+    }
+  ]
+}

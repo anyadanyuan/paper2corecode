@@ -1,0 +1,1789 @@
+{
+  "paper_id": "SparseTSF",
+  "title": "SparseTSF: Modeling Long-term Time Series Forecasting with 1k Parameters",
+  "authors": [
+    {
+      "first": "Shengsheng",
+      "middle": [],
+      "last": "Lin",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "South China University of Technology",
+        "location": {
+          "postCode": "510006",
+          "settlement": "Guangzhou",
+          "country": "China"
+        }
+      }
+    },
+    {
+      "first": "Weiwei",
+      "middle": [],
+      "last": "Lin",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Peng Cheng Laboratory",
+        "location": {
+          "postCode": "518066",
+          "settlement": "Shenzhen",
+          "country": "China"
+        }
+      }
+    },
+    {
+      "first": "Wentai",
+      "middle": [],
+      "last": "Wu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "South China University of Technology",
+        "location": {
+          "postCode": "510006",
+          "settlement": "Guangzhou",
+          "country": "China"
+        }
+      }
+    },
+    {
+      "first": "Haojun",
+      "middle": [],
+      "last": "Chen",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "South China University of Technology",
+        "location": {
+          "postCode": "510006",
+          "settlement": "Guangzhou",
+          "country": "China"
+        }
+      }
+    },
+    {
+      "first": "Junjie",
+      "middle": [],
+      "last": "Yang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "South China University of Technology",
+        "location": {
+          "postCode": "510006",
+          "settlement": "Guangzhou",
+          "country": "China"
+        }
+      }
+    }
+  ],
+  "abstract": "This paper introduces SparseTSF, a novel, extremely lightweight model for Long-term Time Series Forecasting (LTSF), designed to address the challenges of modeling complex temporal dependencies over extended horizons with minimal computational resources. At the heart of SparseTSF lies the Cross-Period Sparse Forecasting technique, which simplifies the forecasting task by decoupling the periodicity and trend in time series data. This technique involves downsampling the original sequences to focus on crossperiod trend prediction, effectively extracting periodic features while minimizing the model's complexity and parameter count. Based on this technique, the SparseTSF model uses fewer than 1k parameters to achieve competitive or superior performance compared to state-of-the-art models. Furthermore, SparseTSF showcases remarkable generalization capabilities, making it wellsuited for scenarios with limited computational resources, small samples, or low-quality data. The code is publicly available at this repository:",
+  "body": {
+    "4._Experiments": "In this section, we present the experimental results of SparseTSF on mainstream LTSF benchmarks. Additionally, we discuss the efficiency advantages brought by the lightweight architecture of SparseTSF. Furthermore, we conduct ablation studies and analysis to further reveal the effectiveness of the Sparse technique.",
+    "3.2._SparseTSF": "Given that the data to be forecasted often exhibits constant, periodicity a priori (e.g., electricity consumption and traffic flow typically have fixed daily cycles), we propose the Cross-Period Sparse Forecasting technique to enhance the extraction of long-term sequential dependencies while reducing the model's parameter scale. Utilizing a single linear layer to model the LTSF task within this framework leads to our SparseTSF model, as illustrated in Figure 2 .\nCross-Period Sparse Forecasting Assuming that the time series x (i) t-L+1:t has a known periodicity w, the first step is to downsample the original series into w subsequences of length n = L w . A model with shared parameters is then applied to these subsequences for prediction. After prediction, the w subsequences, each of length m = H w , are upsampled back to a complete forecast sequence of length H.\nIntuitively, this forecasting process appears as a sliding forecast with a sparse interval of w, performed by a fully connected layer with parameter sharing within a constant period w. This can be viewed as a model performing sparse sliding prediction across periods.\nTechnically, the downsampling process is equivalent to reshaping x (i) t-L+1:t into a n × w matrix, which is then transposed to a w × n matrix. The sparse sliding prediction is equivalent to applying a linear layer of size n×m on the last dimension of the matrix, resulting in a w × m matrix. The upsampling step is equivalent to transposing the w × m matrix and reshaping it back into a complete forecast sequence of length H.\nHowever, this approach currently still faces two issues: (i) loss of information, as only one data point per period is utilized for prediction, while the rest are ignored; and (ii) amplification of the impact of outliers, as the presence of extreme values in the downsampled subsequences can directly affect the prediction.\nTo address these issues, we additionally perform a sliding aggregation on the original sequence before executing sparse prediction, as depicted in Figure 2 . Each aggregated data point incorporates information from other points within its surrounding period, addressing issue (i). Moreover, as the aggregated value is essentially a weighted average of surrounding points, it mitigates the impact of outliers, thus resolving issue (ii). Technically, this sliding aggregation can be implemented using a 1D convolution with zero-padding and a kernel size of 2 × w 2 + 1. The process can be formulated as follows:\nEQUATION\nInstance Normalization Time series data often exhibit distributional shifts between training and testing datasets.\nRecent studies have shown that employing simple sample normalization strategies between the input and output of models can help mitigate this issue (Kim et al., 2021; Zeng et al., 2023) . In our work, we also utilize a straightforward normalization strategy. Specifically, we subtract the mean of the sequence from itself before it enters the model and add it back after the model's output. This process is formulated as follows:\nEQUATION\nx(i) t+1:t+H = x(i) t+1:t+H + E t (x (i) t-L+1:t ). (3) Loss Function In alignment with current mainstream practices in the field, we adopt the classic Mean Squared Error (MSE) as the loss function for SparseTSF. This function measures the discrepancy between the predicted values x(i) t+1:t+H and the actual ground truth y (i) t+1:t+H . It is formulated as: L = 1 C C i=1 y (i) t+1:t+H -x(i) t+1:t+H 2 2 . (4) Downsample Upsample Aggregate 𝑥 𝑡-𝐿+1:𝑡 ∈ ℝ 𝐿 𝑥′ 𝑡-𝐿+1:𝑡 ∈ ℝ 𝐿 𝑿 ∈ ℝ 𝑤×𝑛 𝒀 ∈ ℝ 𝑤×𝑚 ҧ 𝑥 𝑡+1:𝑡+𝐻 ∈ ℝ 𝐻 ",
+    "3.3.1._PARAMETER_EFFICIENCY_OF_SPARSETSF": "Theorem 3.1. Given a historical look-back window length L, a forecast horizon H, and a constant periodicity w, the total number of parameters required for the SparseTSF model is L w × H w + 2 × w 2 + 1.\nIn LTSF tasks, the look-back window length L and forecast horizon H are usually quite large, for instance, up to 720, while the intrinsic periodicity w of the data is also typically large, such as 24. In this scenario, L w × H w + 2 × w 2 + 1 ≪ L × H. This means that the parameter scale of the SparseTSF model is much lighter than even the simplest single-layer linear model. This demonstrates the lightweight architecture of the SparseTSF model.",
+    "3.1._Preliminaries": "Long-term Time Series Forecasting The task of LTSF involves predicting future values over an extended horizon using previously observed multivariate time series (MTS) data. It is formalized as xt+1:t+H = f (x t-L+1:t ), where x t-L+1:t ∈ R L×C and xt+1:t+H ∈ R H×C . In this formulation, L represents the length of the historical observation window, C is the number of distinct features or channels, and H is the length of the forecast horizon. The main goal of LTSF is to extend the forecast horizon H as it provides richer and more advanced guidance in practical applications. However, an extended forecast horizon H also increases the complexity of the model, leading to a significant increase in parameters in mainstream models. To address this challenge, our research focuses on developing models that are not only extremely lightweight but also robust and effective.",
+    "5.2._Differences_Compared_to_Existing_Methods": "The Sparse technique proposed in this paper involves downsampling/upsampling to achieve periodicity/trend decoupling. It may share a similar idea with existing methods, as downsampling/upsampling and periodic/trend decomposition techniques are prevalent in related literature nowadays.\nSpecifically, we provide a detailed analysis of the differences with respect to N-HiTS (Challu et al., 2023) and OneShotSTL (He et al., 2023) as follows, and present the comparison results in Appendix D.4.\nSparseTSF Compared to N-HiTS N-HiTS incorporates novel hierarchical interpolation and multi-rate data sampling techniques to achieve better results (Challu et al., 2023) . The downsampling and upsampling techniques proposed in SparseTSF are indeed quite different from those used in N-HiTS, including:\n• The downsampling and upsampling in SparseTSF occur before and after the model's prediction process, respectively, whereas N-HiTS conducts these operations within internally stacked modules.\n• SparseTSF's downsampling involves resampling by a factor of w to w subsequences of length L/w, which is technically equivalent to matrix reshaping and transposition, whereas N-HiTS employs downsampling through max-pooling.\n• SparseTSF's upsampling involves transposing and reshaping the predicted subsequences back to the original sequence, whereas N-HiTS achieves upsampling through interpolation.\nSparseTSF Compared to OneShotSTL Seasonal-trend decomposition (STD) is a classical and powerful tool for time series forecasting, and OneShotSTL makes a great contribution to advancing the lightweight long-term forecasting process, featuring fast, lightweight, and powerful capabilities (He et al., 2023) . However, SparseTSF differs significantly from OneShotSTL in several aspects:\n• SparseTSF is a neural network model while OneShot-STL is a non-neural network method focused on online forecasting.\n• OneShotSTL minimizes residuals and calculates trend and seasonal subseries separately from the original sequence with lengths of L, whereas our SparseTSF resamples the original sequence into w subseries of length L/w with a constant period w.\n• OneShotSTL accelerates inference by optimizing the original computation for online processing, while SparseTSF achieves lightweighting by using parametersharing linear layers for prediction across all subseries.",
+    "2._Related_Work": "Development of Long-term Time Series Forecasting The LTSF tasks, which aim at predicting over an extended horizon, are inherently more challenging. Initially, the Transformer architecture (Vaswani et al., 2017) , known for its robust long-term dependency modeling capabilities, gained widespread attention in the LTSF domain. Models such as Informer (Zhou et al., 2021) , Autoformer (Wu et al., 2021) , and FEDformer (Zhou et al., 2022b ) have modified the native structure of Transformer to suit time series forecasting tasks. More recent advancements, like PatchTST (Nie et al., 2023) and PETformer (Lin et al., 2023a) , demonstrate that the original Transformer architecture can achieve impressive results with an appropriate patch strategy, a technique that is prevalently employed in the realm of computer vision (Dosovitskiy et al., 2020; He et al., 2022) . Besides Transformer architectures, Convolutional Neural Networks (CNNs) and Multilayer Perceptrons (MLPs) are also mainstream approaches, including SCINet (Liu et al., 2022a) , TimesNet (Wu et al., 2023) , MICN (Wang et al., 2022) , TiDE (Das et al., 2023) , and HD-Mixer (Huang et al., 2024a) . Recent studies have shown that transferring pretrained Large Language Models (LLMs) to the time series domain can also yield commendable results (Chang et al., 2024; Jin et al., 2023; Xue & Salim, 2023) . Moreover, recent works have revealed that RNN and GNN networks can also perform well in LTSF tasks, as exemplified by SegRNN (Lin et al., 2023b) and CrossGNN (Huang et al., 2024b) .\nProgress in Lightweight Forecasting Models Since DLinear (Zeng et al., 2023) demonstrated that simple models could already extract strong temporal periodic dependencies, numerous studies have been pushing LTSF models towards lightweight designs, including LightTS (Zhang et al., 2022) , TiDE (Das et al., 2023) , TSMixer (Ekambaram et al., 2023) , and HDformer (Deng et al., 2024) . Recently, FITS emerged as a milestone in the lightweight LTSF process, being the first to reduce the LTSF model scale to the 10k parameter level while maintaining excellent predictive performance (Xu et al., 2024) . FITS achieved this by transforming time-domain forecasting tasks into frequency-domain ones and using low-pass filters to reduce the required number of parameters. In this paper, our proposed SparseTSF model takes lightweight model design to the extreme. Utilizing the Cross-Period Sparse Forecasting technique, it's the first to reduce model parameters to below 1k.",
+    "3._Max_Memory:": "The maximum memory usage during the model training process.\n4. Epoch Time: The training duration for a single epoch. This metric was averaged over 3 runs. ",
+    "3.3.2._EFFECTIVENESS_OF_SPARSETSF": "The time series targeted for long-term forecasting often exhibits constant periodicity. Here, we first define the representation of such a sequence X. Definition 3.2. Consider a univariate time series X with a known period w, which can be decomposed into a periodic component P (t) and a trend component T (t), such that X(t) = P (t) + T (t). Here, P (t) represents the periodic part and satisfies the condition:\nEQUATION\nFurthermore, we can derive the form of the modeling task after downsampling.\nIn the context of a truncated subsequence x t-L+1:t of X(t) and its corresponding future sequence x t+1:t+H to be forecasted, the conventional approach involves using x t-L+1:t directly to predict x t+1:t+H , essentially estimating the function:\nEQUATION\n)\nHowever, with the application of the Sparse technique, this forecasting task transforms into predicting downsampled subsequences, as per Lemma 3.3. Lemma 3.3. The SparseTSF model reformulates the forecasting task into predicting downsampled subsequences, namely:\nEQUATION\nCombining Definition 3.2 and Lemma 3.3, we can further deduce Theorem 3.4. Theorem 3.4. Given a time series dataset that satisfies Definition 3.2, the SparseTSF model's formulation becomes:\nEQUATION\nwhere, for any i ∈ [t -n + 1 : t + m] and j ∈ [t -n + 1 : t + m], satisfying:\nEQUATION\n)\nTheorem 3.4 implies that the task of the SparseTSF model effectively transforms into predicting future trend components (i.e., t ′ ), using the constant periodic components (i.e., p ′ ) as a reference. This process effectively separates the periodic components, which are no longer explicitly modeled, allowing the model to focus more on the trend variations.\nIntuitively, We can further validate this finding from the perspective of autocorrelation, a powerful tool for identifying patterns such as seasonality or periodicity in time series data.\nDefinition 3.5 (AutoCorrelation Function (ACF) (Madsen, 2007) ). Given a time series {X t }, where t represents discrete time points, the ACF at lag k is defined as:\nEQUATION\n)\nwhere N is the total number of observations in the time series, X t is the value of the series at time t, X t+k is the value of the series at time t + k, and µ is the mean of the series {X t }. The lag time k in the ACF reveals the periodic patterns in the series, that is, when k equals the periodic length of the series, the ACF value typically shows a significant peak.\nAs shown in Figure 3 , the original sequence exhibits clear periodicity, while the downsampled subsequences retain only trend characteristics. This demonstrates that, through its downsampling strategy, the SparseTSF model can efficiently separate and extract accurate periodic features from time series data. This not only reduces the complexity of the model but also enables it to focus on predicting trend variations, thereby exhibiting impressive performance in LTSF tasks.\nIn summary, the SparseTSF model's design, characterized by its parameter efficiency and focus on decoupling periodic features, makes it well-suited for LTSF tasks, especially in scenarios where the data exhibits clear periodic patterns.",
+    "3.3._Theoretical_Analysis": "In this section, we provide a theoretical analysis of the SparseTSF model, focusing on its parameter efficiency and the effectiveness of the Sparse technique. The relevant theoretical proofs are provided in Appendix B.",
+    "4.3._Efficiency_Advantages_of_SparseTSF": "Beyond its powerful predictive performance, another significant benefit of the SparseTSF model is its extreme lightweight nature. Previously, Figure 1 visualized the parameter-performance comparison of SparseTSF with other mainstream models. Here, we further present a comprehensive comparison between SparseTSF and these base- line models in terms of both static and runtime metrics, including:\n1. Parameters: The total number of trainable parameters in the model, representing the model's size.\n2. MACs (Multiply-Accumulate Operations): A common measure of computational complexity in neural networks, indicating the number of multiply-accumulate operations required by the model.",
+    "5.1._Limitations_and_Future_Work": "The SparseTSF model proposed in this paper excels in handling data with a stable main period, demonstrating enhanced feature extraction capabilities and an extremely lightweight architecture. However, there are two scenarios where SparseTSF may not be as effective:\n1. Ultra-Long Periods: In cases involving ultra-long periods (for example, periods exceeding 100), the Sparse technique results in overly sparse parameter connections. Consequently, SparseTSF does not perform optimally in such scenarios.\n2. Multiple Periods: SparseTSF may struggle with data that intertwines multiple periods, as the Sparse technique can only downsample and decompose one main period.\nWe have further investigated the performance of SparseTSF in these scenarios in Appendix C and concluded that: (1) in ultra-long period scenarios, a denser connected model would be a better choice; (2) SparseTSF can still perform excellently in some multi-period scenarios (such as daily periods superimposed with weekly periods).\nFinally, one of our key future research directions is to further address the these potential limitations by designing additional modules to enhance SparseTSF's ability, thus achieving a balance between performance and parameter size.",
+    "4.1._Experimental_Setup_Datasets": "We conducted experiments on four mainstream LTSF datasets that exhibit daily periodicity. These datasets include ETTh1&ETTh2foot_0 , Electricityfoot_1 , and Trafficfoot_2 . The details of these datasets are presented in Table 1 . Baselines We compared our approach with state-of-theart and representative methods in the field. These include Informer (Zhou et al., 2021) , Autoformer (Wu et al., 2021) , Pyraformer (Liu et al., 2022b) , FEDformer (Zhou et al., 2022b) , Film (Zhou et al., 2022a) , TimesNet (Wu et al., 2023) , and PatchTST (Nie et al., 2023) . Additionally, we specifically compared SparseTSF with lightweight models, namely DLinear (Zeng et al., 2023) and FITS (Xu et al., 2024) . Following FITS, SparseTSF defaults to a look-back length of 720.\nEnvironment All experiments in this study were implemented using PyTorch (Paszke et al., 2019) and conducted on a single NVIDIA RTX 4090 GPU with 24GB of memory.\nMore experimental details are provided in Appendix A.2.",
+    "4.2._Main_Results": "Table 2 presents a performance comparison between SparseTSF and other baseline modelsfoot_3 . It is observable that SparseTSF ranks within the top two in all scenarios, achieving or closely approaching state-of-the-art levels with a significantly smaller parameter scale. This emphatically demonstrates the superiority of the Sparse technique proposed in this paper. Specifically, the Sparse technique is capable of more effectively extracting the periodicity and trends from data, thereby enabling exceptional predictive performance in long horizon scenarios. Additionally, the standard deviation of SparseTSF's results is notably small. In most cases, the standard deviation across 5 runs is within 0.001, which strongly indicates the robustness of the SparseTSF model.",
+    "4.4._Ablation_Studies_and_Analysis": "Beyond its ultra-lightweight characteristics, the Sparse technique also possesses a robust capability to extract periodic features, which we will delve further into in this section.",
+    "1._Introduction": "Time series forecasting holds significant value in domains such as traffic flow, product sales, and energy consumption, as accurate predictions enable decision-makers to plan proactively. Achieving precise forecasts typically relies on powerful yet complex deep learning models, such as RNNs (Zhang et al., 2023) , TCNs (Bai et al., 2018; Franceschi et al., 2019) , and Transformers (Wen et al., 2022) . In recent years, there has been a growing interest in Longterm Time Series Forecasting (LTSF), which demands mod-Proceedings of the 41 st International Conference on Machine Learning, Vienna, Austria. PMLR 235, 2024. Copyright 2024 by the author(s). els to provide an extended predictive view for advanced planning (Zhou et al., 2021) .\nAlthough a longer predictive horizon offers convenience, it also introduces greater uncertainty (Lin et al., 2023b) . This demands models capable of extracting more extensive temporal dependencies from longer historical windows. Consequently, modeling becomes more complex to capture these long-term temporal dependencies. For instance, Transformer-based models often have millions or tens of millions of parameters, limiting their practical usability, especially in scenarios with restricted computational resources (Deng et al., 2024) .\nIn fact, the basis for accurate long-term time series forecasting lies in the inherent periodicity and trend of the data. For example, long-term forecasts of household electricity consumption are feasible due to the clear daily and weekly patterns in such data. Particularly for daily patterns, if we resample the electricity consumption at a certain time of the day into a daily sequence, each subsequence exhibits similar or consistent trends. In this case, the original sequence's periodicity and trend are decomposed and transformed. That is, periodic patterns are transformed into inter-subsequence dynamics, while trend patterns are reinterpreted as intrasubsequence characteristics. This decomposition offers a novel perspective for designing lightweight LTSF models.\nIn this paper, we pioneer the exploration of how to utilize this inherent periodicity and decomposition in data to construct specialized lightweight time series forecasting models. Specifically, we introduce SparseTSF, an extremely lightweight LTSF model. Technically, we propose the Cross-Period Sparse Forecasting technique (hereinafter referred to as Sparse technique). It first downsamples the original sequences with constant periodicity into subsequences, then performs predictions on each downsampled subsequence, simplifying the original time series forecasting task into a cross-period trend prediction task. This approach yields two benefits: (i) effective decoupling of data periodicity and trend, enabling the model to stably identify and extract periodic features while focusing on predicting trend changes, and (ii) extreme compression of the model's parameter size, significantly reducing the demand for computational resources. As shown in Figure 1 , SparseTSF achieves near state-of-the-art prediction performance with less than 1k trainable parameters, which makes it 1∼4 orders of magnitude smaller than its counterparts. 1 0 2 1 0 3 1 0 4 1 0 5 1 0 6 1 0 7 1 0 In summary, our contributions in this paper are as follows:\n• We propose a novel Cross-Period Sparse Forecasting technique, which downsamples the original sequences to focus on cross-period trend prediction, effectively extracting periodic features while minimizing the model's complexity and parameter count.\n• Based on the Sparse technique, we present the SparseTSF model, which requires fewer than 1k parameters, significantly reducing the computational resource demand of forecasting models.\n• The proposed SparseTSF model not only attains competitive or surpasses state-of-the-art predictive accuracy with a remarkably minimal parameter scale but also demonstrates robust generalization capabilities.",
+    "6._Conclusion": "In this paper, we introduce the Cross-Period Sparse Forecasting technique and the corresponding SparseTSF model.\nThrough detailed theoretical analysis and experimental validation, we demonstrated the lightweight nature of the SparseTSF model and its capability to extract periodic features effectively. Achieving competitive or even surpassing the performance of current state-of-the-art models with a minimal parameter scale, SparseTSF emerges as a strong contender for deployment in computation resourceconstrained environments. Additionally, SparseTSF exhibits potent generalization capabilities, opening new possibilities for applications in transferring to small samples and low-quality data scenarios. SparseTSF stands as another milestone in the journey towards lightweight models in the field of long-term time series forecasting. Finally, we aim to further tackle the challenges associated with extracting features from ultra-long-periodic and multi-periodic data in the future, striving to achieve an optimal balance between model performance and parameter size."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "An empirical evaluation of generic convolutional and recurrent networks for sequence modeling",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "Z"
+          ],
+          "last": "Kolter",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Koltun",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Neural hierarchical interpolation for time series forecasting",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Challu",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "G"
+          ],
+          "last": "Olivares",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "N"
+          ],
+          "last": "Oreshkin",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "G"
+          ],
+          "last": "Ramirez",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "M"
+          ],
+          "last": "Canseco",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dubrawski",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nhits",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Llm4ts: Aligning pre-trained llms as data-efficient timeseries forecasters",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "W.-Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "W.-C",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "T.-F",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Learning phrase representations using rnn encoder-decoder for statistical machine translation",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Cho",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Van Merriënboer",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Gulcehre",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Bahdanau",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Bougares",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Schwenk",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Long-term forecasting with tide: Time-series dense encoder",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Leach",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Mathur",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Sen",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "The bigger the better? rethinking the effective model scale in long-term time series forecasting",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [
+            "W"
+          ],
+          "last": "Tsang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "An image is worth 16x16 words: Transformers for image recognition at scale",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Weissenborn",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Minderer",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Heigold",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gelly",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Lightweight mlp-mixer model for multivariate time series forecasting",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Ekambaram",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Jati",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sinthong",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Kalagnanam",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Tsmixer",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Unsupervised scalable representation learning for multivariate time series",
+      "authors": [
+        {
+          "first": "J.-Y",
+          "middle": [],
+          "last": "Franceschi",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dieuleveut",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jaggi",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "The capacity and robustness trade-off: Revisiting the channel independent strategy for multivariate time series forecasting",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "H.-J",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "D.-C",
+          "middle": [],
+          "last": "Zhan",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "IEEE Transactions on Knowledge and Data Engineering"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Masked autoencoders are scalable vision learners",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Oneshotstl: One-shot seasonal-trend decomposition for online time series anomaly detection and forecasting",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Hierarchical dependency with extendable patch for multivariate time series forecasting",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hdmixer",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Confronting noisy multivariate time series via cross interaction refinement",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Crossgnn",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Time-llm: Time series forecasting by reprogramming large language models",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "Y"
+          ],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "P.-Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Y.-F",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Reversible instance normalization for accurate time-series forecasting against distribution shift",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Tae",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "J.-H",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Choo",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "A method for stochastic optimization",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "P"
+          ],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Adam",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Long-term time series forecasting via placeholderenhanced transformer",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Petformer",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Segment recurrent neural network for long-term time series forecasting",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Mo",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Segrnn",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Scinet: Time series modeling and forecasting with sample convolution and interaction",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Pyraformer: Low-complexity pyramidal attention for long-range time series modeling and forecasting",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "X"
+          ],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Dustdar",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International conference on learning representations"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Time series analysis",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Madsen",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "A time series is worth 64 words: Long-term forecasting with transformers",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Nie",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Sinthong",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Kalagnanam",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Pytorch: An imperative style, high-performance deep learning library",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Paszke",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gross",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lerer",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Chanan",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Killeen",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Gimelshein",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Antiga",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Tfb: Towards comprehensive and fair benchmarking of time series forecasting methods",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "S"
+          ],
+          "last": "Jensen",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Ł",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Multi-scale local and global context modeling for long-term series forecasting",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Micn",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Transformers in time series: A survey",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Autoformer: Decomposition transformers with auto-correlation for long-term series forecasting",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Long",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Timesnet: Temporal 2d-variation modeling for general time series analysis",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Long",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Modeling time series with 10k parameters",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Fits",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Promptcast: A new promptbased learning paradigm for time series forecasting",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Xue",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "D"
+          ],
+          "last": "Salim",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE Transactions on Knowledge and Data Engineering"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Are transformers effective for time series forecasting",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Less is more: Fast multivariate time series forecasting with light sampling-oriented mlp structures",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bian",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Yi",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Robust recurrent neural networks for time series forecasting",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [
+            "W"
+          ],
+          "last": "Ng",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Neurocomputing"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Informer: Beyond efficient transformer for long sequence time-series forecasting",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Film: Frequency improved legendre memory model for long-term time series forecasting",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Fedformer: Frequency enhanced decomposed transformer for long-term series forecasting",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Jin",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International conference on machine learning"
+    }
+  ]
+}

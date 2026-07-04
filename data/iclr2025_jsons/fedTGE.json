@@ -1,0 +1,3190 @@
+{
+  "paper_id": "fedTGE",
+  "title": "ENERGY-BASED BACKDOOR DEFENSE AGAINST FED-ERATED GRAPH LEARNING",
+  "authors": [
+    {
+      "first": "Guancheng",
+      "middle": [],
+      "last": "Wan",
+      "affiliation": {
+        "laboratory": "National Engineering Research Center for Multimedia Software",
+        "institution": "Wuhan University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Zitong",
+      "middle": [],
+      "last": "Shi",
+      "affiliation": {
+        "laboratory": "National Engineering Research Center for Multimedia Software",
+        "institution": "Wuhan University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Wenke",
+      "middle": [],
+      "last": "Huang",
+      "affiliation": {
+        "laboratory": "National Engineering Research Center for Multimedia Software",
+        "institution": "Wuhan University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Guibin",
+      "middle": [],
+      "last": "Zhang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Tongji University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Dacheng",
+      "middle": [],
+      "last": "Tao",
+      "affiliation": {
+        "laboratory": "Generative AI Lab",
+        "institution": "Nanyang Technological University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Mang",
+      "middle": [],
+      "last": "Ye",
+      "affiliation": {
+        "laboratory": "National Engineering Research Center for Multimedia Software",
+        "institution": "Wuhan University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Federated Graph Learning is rapidly evolving as a privacy-preserving collaborative approach. However, backdoor attacks are increasingly undermining federated systems by injecting carefully designed triggers that lead the model making incorrect predictions. Trigger structures and injection locations in Federated Graph Learning are more diverse, making traditional federated defense methods less effective. In our work, we propose an effective Federated Graph Backdoor Defense using Topological Graph Energy (FedTGE). At the client level, it injects distribution knowledge into the local model, assigning low energy to benign samples and high energy to the constructed malicious substitutes, and selects benign clients through clustering. At the server level, the energy elements uploaded by each client are treated as new nodes to construct a global energy graph for energy propagation, making the selected clients' energy elements more similar and further adjusting the aggregation weights. Our method can handle high data heterogeneity, does not require a validation dataset, and is effective under both small and large malicious proportions. Extensive results on various settings of federated graph scenarios under backdoor attacks validate the effectiveness of this approach. The code is available at https://github.com/ZitongShi/fedTGE.",
+  "body": {
+    "1_INTRODUCTION": "Federated Learning (FL) (Yang et al., 2019a; Mammen, 2021) has rapidly emerged as a significant research area in decentralized machine learning. This methodology allows multiple clients to collaboratively train a shared global model while preserving the privacy of sensitive data, thus eliminating the need to aggregate distributed data and ensuring adherence to privacy protocols (Zhang et al., 2021a; Kairouz et al., 2021) . Consequently, FL presents a promising solution for training Graph Neural Networks (GNNs) on isolated graph data. Moreover, some existing work has utilized FL to train GNNs (Ju et al., 2024a; Kipf & Welling, 2016; Veličković et al., 2017) , which we denote as Federated Graph Learning (FGL). While this distributed nature brings numerous benefits (Gilmer et al., 2017; Bruna et al., 2013) , it also introduces additional vulnerabilities, particularly in the form of backdoor attacks from malicious participants (Chen et al., 2017; Li et al., 2022) . These attacks involve injecting harmful data or models into the training process, embedding hidden behaviors that can trigger incorrect model outputs under specific conditions. These attacks aim to cause local models to learn incorrect information and activate the backdoor at critical times, resulting in erroneous predictions.\nWith the objective of better defending against these malicious attacks, defense methods against backdoor attacks in federated learning have been widely studied (Guerraoui et al., 2018; Yin et al., 2018a; Pillutla et al., 2022) . Certain methods exclude outlier updates based on the statistical characteristics of model outputs. Some approaches examine pairwise distances among local models or the distances between local models and the global model to mitigate the influence of anomalous clients (Shejwalkar & Houmansadr, 2021) . However, these methods often struggle to perform effectively in FGL environments, where graph data typically exhibit non-iid characteristics and complex topological structures. Some byzantine-robust federated learning methods require a clean and representative validation dataset (Cao et al., 2021) . Consequently, they are less effective in scenarios where collecting a validation data set is challenging, such as in medical (Li et al., 2019b) and financial (Yang et al., 2019b) scenarios. Although recent studies (Huang et al., 2024b) have explored graph classification, there remains a significant gap in backdoor defense for node classification. Based on the aforementioned discussion, we review the challenges existing in FGL under backdoor attacks. First of all, to address the high heterogeneity of the data, some methods choose to monitor the similarity of the updates of each client to adjust their contribution to the global model (Fung et al., 2018; Pillutla et al., 2022) . However, the inherent topological complexity of graph data allows the trigger location and shape to be more arbitrary. It can be inserted at any position in the graph, leading to non-aligned updates, which hinders the effective identification of malicious clients and inevitably affects defense performance, as demonstrated in Table 1 . Based on this observation, we raise the question: 1) How can we design a backdoor defense method that can address scenarios where triggers exhibit complex topological characteristics? Secondly, some methods attempt to simply calculate the distances between clients or the similarity of certain distributions without any additional processing to differentiate between malicious and benign clients (Cao et al., 2021; Huang et al., 2023a) , or filter out benign clients based on outlier detection (Shejwalkar & Houmansadr, 2021) . However, these methods can easily misclassify perturbations caused by heterogeneity as malicious outliers due to their incomplete modeling of the data distribution. The additional structural heterogeneity introduced by FGL further complicates the ability to capture distributional information, inadvertently providing additional protection against backdoor attacks. This ultimately hinders the ability to effectively distinguish between malicious and benign clients in the metrics used for measurement, leading to the question: 2) How can we learn structural distributions in a fine-grained manner and differentiate them from backdoor attacks to better filter out malicious clients?\nTo address the two mentioned issues, we turn to energy-based models and explore their potential. Energy is an unnormalized probability likelihood (Song & Kingma, 2021) , offering a flexible modeling approach that is not constrained by normalization. The strength of energy-based models lies in their ability to be integrated with virtually any model architecture. In our work, we combine energy with GCN to form an Energy-based GCN, preserving GCN's capability to capture complex structural information while benefiting from the flexibility of energy-based modeling. We introduce Topological Energy Client Clustering (TECC) to solve problem 1). TECC quantifies differences in client data distributions. Clients with significant energy distribution differences are marked as malicious and excluded from the aggregation process. We enhance local models by incorporating distribution awareness, combining their predictive capabilities with the ability to distinguish data energy distributions. Specifically, we add a final step in the training process to ensure the model assigns lower energy to the benign sample. However, indiscriminately lowering sample energy can lead to trivial solution. Therefore, we construct perturbed samples to simulate malicious triggers and raise the energy of these samples. Ultimately decoupling the distributions of benign and malicious samples. We then cluster the client energy distributions, identifying clients with significantly different energy distributions as potentially malicious.\nTo solve the second issue, further decoupling the energy distributions of malicious and benign clients, we propose Topological Energy Similarity Propagation (TESP). We collect the energy distributions of each client and establish an energy graph based on the similarity of the energy distributions uploaded by the clients. Specifically, we consider the energy of samples uploaded by each client as its energy element. They are considered as new nodes for constructing the global energy graph. We then establish edges between highly similar energy elements to complete the construction of the energy graph. We enhance the similarity of energy distributions among clients that have established edge indices, thereby increasing the distinction between these clients and unselected malicious ones. Concurrently, energy elements with fewer established indices are considered outliers and are assigned lower transmission and aggregation weights. This energy adjustment in turn improves the clustering effectiveness of TECC. In synergy, this framework enables the model to learn effective topological distributions while achieving fine-grained decoupling of malicious and benign clients. We refer to the combination of these two strategies as FedTGE, an effective Federated Graph Backdoor Defense via Topological Graph Energy. Our principal contributions are summarized as follows.\n• We study a challenging problem: defending against backdoor attacks in Federated Graph Learning. Our focus is on mitigating these attacks while overcoming several assumptions made by existing methods, such as data homogeneity, the availability of validated samples, and the presence of a moderate proportion of malicious clients.\n• We propose FedTGE, an innovative approach that addresses backdoor attacks characterized by complex topological triggers and highly arbitrary injection positions in FGL from the energy perspective. Our method enables clients to model the energy of graph structures at a fine-grained level, assigning higher aggregation weights to clients with high similarity in their energy distributions. This enhances the robustness of graph backdoor defenses.\n• We conducted experiments on five mainstream datasets under both IID and Non-IID scenarios, as well as with varying proportions of malicious clients. The results demonstrate that our approach outperforms the current state-of-the-art methods in traditional FL.",
+    "2.1_FEDERATED_GRAPH_LEARNING": "Federated Graph Learning (FGL) (Fu et al., 2022; Huang et al., 2023b; Li et al., 2023; Wan et al., 2024; Cai et al., 2024; Li et al., 2025; Fu et al., 2025) combines the characteristics of FL (Ye et al., 2023; Huang et al., 2024a; Liao et al., 2024) and GNNs (Chen et al., 2023b; Yin et al., 2024; Ju et al., 2024b) , enabling collaborative learning of graph-structured data while preserving data privacy. In recent years, extensive research has focused on improving the generalization of the global model or obtaining personalized models that can span different graph domains (Wu et al., 2020; Chen et al., 2022; 2023a; 2024) . However, the inherent heterogeneity and the complex, dynamic topology of graph data, along with the distributed nature of FGL, create significant vulnerabilities for backdoor attacks. Although there has been extensive work on effectively backdooring GNNs (Xi et al., 2021; Zhang et al., 2021c; Sun et al., 2020) , there is a scarcity of research on backdoor defense paradigms specifically suited for FGL. To the best of our knowledge, we are the first to delve into backdoor defense in FGL, striving to create relevant benchmarks and contribute to this field.",
+    "2.2_BACKDOOR_DEFENSE_IN_FEDERATED_LEARNING": "Malicious backdoor attackers pose a serious threat to federated systems (Huang et al., 2024b) . To tackle the problem, researchers have proposed numerous defense methods, such as vector filtering techniques such as Bulyan (Guerraoui et al., 2018) , RFA (Pillutla et al., 2022) , and DnC (Shejwalkar & Houmansadr, 2021) . Additionally, some defense methods utilize proxy data to further leverage server knowledge to defend against attacks, such as FLTrust (Cao et al., 2021) and Sageflow (Park et al., 2021) . While most of these approaches can ensure successful defense under certain assumptions, they fail to provide stable defense performance in scenarios with non-iid data, difficulty in collecting proxy datasets, or a large number of attackers. Compared to traditional FL, FGL backdoor attacks often have triggers with higher randomness and greater stealth due to the more complex topological structure of graph data, making them more susceptible to attacks. While an excellent defense study has been proposed in FGL (Yang et al., 2024) , it primarily focuses on graph classification tasks, and is not directly applicable to node classification tasks. We propose using energy as a bridge to address the aforementioned issues and fill the gap in backdoor defense for node classification.",
+    "2.3_ENERGY-BASED_MODEL": "The Energy-Based Model (EBM) is a generative model that directly models the unnormalized probability density function of the underlying data distribution. EBM represent the probability distribution of data by defining an energy function. A key feature of EBM is their flexibility: the energy function can be implemented using various forms of neural networks without strict structural constraints. This allows EBM to be adapted to a wide range of data types and tasks, including images, videos, and text (Deng et al., 2020; Arbel et al., 2020) . In the domain of graphs, EBM have been applied to tasks such as substructure-preserving molecule design, molecular graph generation, and scene graph generation (Roy et al., 2023; Wu et al., 2023) . The success of EBM in learning high-dimensional and complex molecular structures, such as proteins, underscores their powerful modeling capabilities (Cao & Shen, 2020; Xiao et al., 2023) . In our work, we develop an Energy-Based GCN on the client side to model the energy of the entire graph. Benign samples that conform to the data distribution are assigned lower energy values. These energy distributions are subsequently uploaded, and on the server side, we further align the energy distributions among the selected clients. This alignment increases the separation between the energy elements of benign and malicious clients, thereby establishing a robust defense system against malicious attacks.",
+    "3.1_FEDERATED_GRAPH_LEARNING": "We follow the general paradigm of federated graph learning, where multiple clients collaboratively train a shared global model. Consider K clients, indexed by k and defined as C = {c k } K k=1 . At the beginning of the t th communication round, we denote the current global model as M t with parameters w t , and the local model as M t k with corresponding parameters\nw t k . Each client c k possesses private data G k = (V k , E k ), where V k = {v i } N k i represents the set of nodes containing |V k | = N k nodes\n, and E k = {e mn } m,n denotes the set of edges. The adjacency matrix of G k is defined as A k = {A ij } i,j , where A ij = 1 if there is an edge between nodes v i and v j , and A ij = 0 otherwise. Similarly, X k represents node features, and Y k represents the corresponding label set.",
+    "3.2_ENERGY-BASED_MODEL": "Consider a sample x ∈ R D . The energy-based model builds a function E(x, y) : R D → R that maps input instances with given labels to a scalar value, known as energy. The Boltzmann distribution expressed in terms of energy is represented as:\nEQUATION\nwhere\ny * exp(-E(X, y * )) is the partition function. Observe that in Eq. (1), it is very similar to our discriminative neural classifier. To relate the two, we set E(x, y) = -f (x)[y], where f (x)[y] is the logits output of the model, and the energy function E(x) can be formulated as follows:\nEQUATION\n4 METHODOLOGY 4.1 OVERVIEW\nThe overall framework of FedTGE is illustrated in Figure 2 , and its algorithmic pseudocode is presented in Algorithm 1. At the client level, We inject structural energy awareness into the local models, lowering the energy of benign samples and raising that of malicious samples, respectively. At the server level, we cluster based on the differences in energy elements across clients to identify benign clusters. From a global perspective, we further construct an energy graph to enhance the similarity of the energy elements of the selected clients and adjust the aggregation weights accordingly.",
+    "4.2_TOPOLOGICAL_ENERGY_DIFFERENCE_CLUSTERING": "Motivation. In FGL backdoor attacks, the intricate topological structure of the graph data introduces considerable uncertainty in the methods used for trigger injection. This uncertainty is evident in both the selection of injection positions and the diverse shapes that the triggers can assume. Although there are many effective defense paradigms in traditional FL, they often rely on impractical assumptions and are unable to handle triggers with complex topologies and diverse injection positions.",
+    "4.3_TOPOLOGICAL_ENERGY_SIMILARITY_PROPAGATION": "Motivation. Some defense methods simply measure certain distances between clients or certain distribution similarities without any additional processing to differentiate between malicious and benign clients. In scenarios with moderate to high proportions of malicious clients, these methods are susceptible to the combined effects of heterogeneity and backdoor attacks. This results in their inability to accurately filter out malicious clients, and in some cases, they even misclassify benign clients as malicious due to the heterogeneity.\nConstruct Global Energy Graph. Excluding the identified malicious clients, we utilize the energy elements of benign clients to compute the cosine similarity between each pair and construct a cosine similarity matrix, denoted as S. We define the similarity between clients c m and c n as the element S mn in the m-th row and n-th column of the matrix S. Additionally, we set a threshold, denoted as τ , to determine which samples are considered similar. When the value of S ij is less than τ , we consider the energy sequences of these two clients to be sufficiently similar. This implies that we can add an edge between these two clients in the global energy graph:\nEQUATION\nEQUATION\nHere, N denotes the number of selected clients. The notation ∥E k ∥ represents the norm of the energy sequence for client c k . e mn represents the edge between energy distributions E m and E n , and τ is the set threshold. If e mn = 1, it indicates that the two clients are sufficiently similar, and an edge will be established between them; otherwise, e mn = 0.\nEnergy Graph Similarity Propagation. After establishing edge indices in the previous step, we obtain a global energy Graph with N nodes. From the above analysis, it is evident that E k with more established indices has higher similarity with other clients. We consider these clients to be more benign and assign them higher propagation weights. We define energy transmission to occur over multiple rounds, and we consider the update rule for energy transmission as follows:\nEQUATION\nHere, n represents the number of indices established by E k . E l k denotes the l-th neighbor of E k , and β k represents the energy propagation weight of E k .",
+    "5_EXPERIMENTS": {
+      "5.3_DIAGNOSTIC_ANALYSIS_Key_Components.": "We conducted an ablation study on the key components of our method using the Cora and PubMed datasets, with a malicious client proportion of Υ = 30%. The results, demonstrating the effectiveness of each component, are presented in Table 2 . TEDC significantly increases the backdoor failure rate R, while TESP alleviates backdoor attacks to some extent on the server side through energy propagation and adjustment of aggregation weights. Different Cluster Methods. We compared FINCH with several mainstream clustering strategies, including K-Means (Arthur & Vassilvitskii, 2006; Macqueen, 1967) , DBSCAN (Ester et al., 1996) , and OT (Cuturi, 2013; Solomon et al., 2015) . The results are presented in Table 3 . Both K-Means and DBSCAN require careful tuning of their respective hyper-parameters, which limits their effectiveness in heterogeneous federated environments. In contrast, the OT method is more sensitive to noise and has a higher computational complexity. On the other hand, FINCH does not require any hyper-parameter tuning and operates with near-linear complexity, making it more suitable for heterogeneous or federated systems with unknown scales. Hyper-Parameters. We performed a hyper-parameter ablation analysis on the Cora, PubMed, and Photo datasets. The analysis focused on key hyper-parameters: the number of energy calibration epochs at the client level (energy-epochs) and the threshold τ for edge index establishment at the server level. We observed that the choice of hyperparameters does not lead to significant fluctuations in the evaluation metrics. In most of our experiments, we set the default values as 10 for energy-epochs and 0.8 for τ . ",
+      "_text": "We conducted experiments under both IID and Non-IID-Louvain (Wang et al., 2022; Zhang et al., 2021b) s2222ettings on five datasets to validate the superiority of our proposed FedTGE."
+    },
+    "6_CONCLUSION": "In this paper, we are pioneers in innovatively exploring the problem of backdoor defenses in federated graph learning. We propose a novel framework called FedTGE, an effective Federated Graph Backdoor Defense via Topological Graph Energy. At the client level, we inject the local models with energy-awareness, allowing them to learn the energy distribution of real data, assigning lower energy to benign samples and relatively higher energy to malicious samples. At the server level, We cluster clients based on their energy elements and determine their aggregation weights according to the similarity of energy elements between clients and the magnitude of each client's total energy. This method has demonstrated effectiveness and robustness across multiple scenarios. We hope this work offers a novel perspective for future research on federated graph backdoor defenses."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Generalized energy based models",
+      "authors": [
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Arbel",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Gretton",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "k-means++: The advantages of careful seeding",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Arthur",
+          "suffix": ""
+        },
+        {
+          "first": "Sergei",
+          "middle": [],
+          "last": "Vassilvitskii",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Emergence of scaling in random networks",
+      "authors": [
+        {
+          "first": "Albert-László",
+          "middle": [],
+          "last": "Barabási",
+          "suffix": ""
+        },
+        {
+          "first": "Réka",
+          "middle": [],
+          "last": "Albert",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": "science"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Spectral networks and locally connected networks on graphs",
+      "authors": [
+        {
+          "first": "Joan",
+          "middle": [],
+          "last": "Bruna",
+          "suffix": ""
+        },
+        {
+          "first": "Wojciech",
+          "middle": [],
+          "last": "Zaremba",
+          "suffix": ""
+        },
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Szlam",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Lg-fgad: An effective federated graph anomaly detection framework",
+      "authors": [
+        {
+          "first": "Jinyu",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Yunhe",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jicong",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "See-Kiong",
+          "middle": [],
+          "last": "Ng",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the International Joint Conference on Artificial Intelligence (IJCAI)"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "FLTrust: Byzantine-robust Federated Learning via Trust Bootstrapping",
+      "authors": [
+        {
+          "first": "Xiaoyu",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Minghong",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Zhenqiang",
+          "suffix": ""
+        },
+        {
+          "first": "Gong",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Energy-based graph convolutional networks for scoring protein docking models",
+      "authors": [
+        {
+          "first": "Yue",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proteins: Structure, Function, and Bioinformatics"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Nagphormer: A tokenized graph transformer for node classification in large graphs",
+      "authors": [
+        {
+          "first": "Jinsong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Kaiyuan",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Gaichao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kun",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Leveraging contrastive learning for enhanced node representations in tokenized graph transformers",
+      "authors": [
+        {
+          "first": "Jinsong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Hanpeng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [
+            "E"
+          ],
+          "last": "Hopcroft",
+          "suffix": ""
+        },
+        {
+          "first": "Kun",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the 38th Annual Conference on Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Graphfraudster: Adversarial attacks on graph neural network-based vertical federated learning",
+      "authors": [
+        {
+          "first": "Jinyin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Guohan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Haibin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Shanqing",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Wenrong",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE Transactions on Computational Social Systems"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Targeted backdoor attacks on deep learning systems using data poisoning",
+      "authors": [
+        {
+          "first": "Xinyun",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Chang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kimberly",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Dual low-rank graph autoencoder for semantic and topological networks",
+      "authors": [
+        {
+          "first": "Zhaoliang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Zhihao",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Shiping",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenzhong",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the Thirty-Seventh AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Sinkhorn distances: Lightspeed computation of optimal transport",
+      "authors": [
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Cuturi",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Unnoticeable backdoor attacks on graph neural networks",
+      "authors": [
+        {
+          "first": "Enyan",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Minhua",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Suhang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the ACM Web Conference 2023"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Remarks on some nonparametric estimates of a density function",
+      "authors": [
+        {
+          "first": "Keh-Shin",
+          "middle": [],
+          "last": "Richard A Davis",
+          "suffix": ""
+        },
+        {
+          "first": "Dimitris",
+          "middle": [
+            "N"
+          ],
+          "last": "Lii",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Politis",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Selected Works of Murray Rosenblatt"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Residual energy-based models for text generation",
+      "authors": [
+        {
+          "first": "Yuntian",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Anton",
+          "middle": [],
+          "last": "Bakhtin",
+          "suffix": ""
+        },
+        {
+          "first": "Myle",
+          "middle": [],
+          "last": "Ott",
+          "suffix": ""
+        },
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Szlam",
+          "suffix": ""
+        },
+        {
+          "first": "Marc'aurelio",
+          "middle": [],
+          "last": "Ranzato",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "A density-based algorithm for discovering clusters in large spatial databases with noise",
+      "authors": [
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Ester",
+          "suffix": ""
+        },
+        {
+          "first": "Hans-Peter",
+          "middle": [],
+          "last": "Kriegel",
+          "suffix": ""
+        },
+        {
+          "first": "Jörg",
+          "middle": [],
+          "last": "Sander",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaowei",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        }
+      ],
+      "year": 1996,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Freqfed: A frequency analysis-based approach for mitigating poisoning attacks in federated learning",
+      "authors": [
+        {
+          "first": "Hossein",
+          "middle": [],
+          "last": "Fereidooni",
+          "suffix": ""
+        },
+        {
+          "first": "Alessandro",
+          "middle": [],
+          "last": "Pegoraro",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Rieger",
+          "suffix": ""
+        },
+        {
+          "first": "Alexandra",
+          "middle": [],
+          "last": "Dmitrienko",
+          "suffix": ""
+        },
+        {
+          "first": "Ahmad-Reza",
+          "middle": [],
+          "last": "Sadeghi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Federated graph machine learning: A survey of concepts, techniques, and applications",
+      "authors": [
+        {
+          "first": "Xingbo",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Binchi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yushun",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jundong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ACM SIGKDD Explorations Newsletter"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Virtual nodes can help: Tackling distribution shifts in federated graph learning",
+      "authors": [
+        {
+          "first": "Xingbo",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Zihan",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yinhan",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Song",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Binchi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jundong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Mitigating sybils in federated learning poisoning",
+      "authors": [
+        {
+          "first": "Clement",
+          "middle": [],
+          "last": "Fung",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [
+            "Jm"
+          ],
+          "last": "Yoon",
+          "suffix": ""
+        },
+        {
+          "first": "Ivan",
+          "middle": [],
+          "last": "Beschastnikh",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Neural message passing for quantum chemistry",
+      "authors": [
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Gilmer",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Samuel",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [
+            "F"
+          ],
+          "last": "Schoenholz",
+          "suffix": ""
+        },
+        {
+          "first": "Oriol",
+          "middle": [],
+          "last": "Riley",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [
+            "E"
+          ],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dahl",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "The hidden vulnerability of distributed learning in byzantium",
+      "authors": [
+        {
+          "first": "Rachid",
+          "middle": [],
+          "last": "Guerraoui",
+          "suffix": ""
+        },
+        {
+          "first": "Sébastien",
+          "middle": [],
+          "last": "Rouault",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Towards attack-tolerant federated learning via critical parameter analysis",
+      "authors": [
+        {
+          "first": "Sungwon",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Sungwon",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Fangzhao",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Sundong",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Xing",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Meeyoung",
+          "middle": [],
+          "last": "Cha",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Multi-metrics adaptively identifies backdoors in federated learning",
+      "authors": [
+        {
+          "first": "Siquan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Yijiang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Chong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Leyu",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Federated graph semantic and structural learning",
+      "authors": [
+        {
+          "first": "Wenke",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Guancheng",
+          "middle": [],
+          "last": "Wan",
+          "suffix": ""
+        },
+        {
+          "first": "Mang",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IJCAI"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "A federated learning for generalization, robustness, fairness: A survey and benchmark",
+      "authors": [
+        {
+          "first": "Wenke",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Mang",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Zekun",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Guancheng",
+          "middle": [],
+          "last": "Wan",
+          "suffix": ""
+        },
+        {
+          "first": "He",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Qiang",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "TPAMI"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Federated learning for generalization, robustness, fairness: A survey and benchmark",
+      "authors": [
+        {
+          "first": "Wenke",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Mang",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Zekun",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Guancheng",
+          "middle": [],
+          "last": "Wan",
+          "suffix": ""
+        },
+        {
+          "first": "He",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Qiang",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Estimation of non-normalized statistical models by score matching",
+      "authors": [
+        {
+          "first": "Aapo",
+          "middle": [],
+          "last": "Hyvärinen",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Dayan",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "A comprehensive survey on deep graph representation learning",
+      "authors": [
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Ju",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Yiyang",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Zequn",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Qingqing",
+          "middle": [],
+          "last": "Long",
+          "suffix": ""
+        },
+        {
+          "first": "Ziyue",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        },
+        {
+          "first": "Yifang",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Jianhao",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Fang",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiping",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Neural Networks"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "A survey of graph neural networks in real world: Imbalance, noise, privacy and ood challenges",
+      "authors": [
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Ju",
+          "suffix": ""
+        },
+        {
+          "first": "Siyu",
+          "middle": [],
+          "last": "Yi",
+          "suffix": ""
+        },
+        {
+          "first": "Yifan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiping",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengyang",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Hourun",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yiyang",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Yifang",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Nan",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Senzhang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Advances and open problems in federated learning",
+      "authors": [
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Kairouz",
+          "suffix": ""
+        },
+        {
+          "first": "Brendan",
+          "middle": [],
+          "last": "Mcmahan",
+          "suffix": ""
+        },
+        {
+          "first": "Brendan",
+          "middle": [],
+          "last": "Avent",
+          "suffix": ""
+        },
+        {
+          "first": "Aurélien",
+          "middle": [],
+          "last": "Bellet",
+          "suffix": ""
+        },
+        {
+          "first": "Mehdi",
+          "middle": [],
+          "last": "Bennis",
+          "suffix": ""
+        },
+        {
+          "first": "Nitin",
+          "middle": [],
+          "last": "Arjun",
+          "suffix": ""
+        },
+        {
+          "first": "Kallista",
+          "middle": [],
+          "last": "Bhagoji",
+          "suffix": ""
+        },
+        {
+          "first": "Zachary",
+          "middle": [],
+          "last": "Bonawitz",
+          "suffix": ""
+        },
+        {
+          "first": "Graham",
+          "middle": [],
+          "last": "Charles",
+          "suffix": ""
+        },
+        {
+          "first": "Rachel",
+          "middle": [],
+          "last": "Cormode",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Cummings",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Foundations and trends® in machine learning"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Adam: A method for stochastic optimization",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Diederik",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Semi-supervised classification with graph convolutional networks",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Thomas",
+          "suffix": ""
+        },
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Kipf",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "A tutorial on energybased learning",
+      "authors": [
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        },
+        {
+          "first": "Sumit",
+          "middle": [],
+          "last": "Chopra",
+          "suffix": ""
+        },
+        {
+          "first": "Raia",
+          "middle": [],
+          "last": "Hadsell",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ranzato",
+          "suffix": ""
+        },
+        {
+          "first": "Fujie",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Predicting structured data"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Rsa: Byzantine-robust stochastic aggregation methods for distributed learning from heterogeneous datasets",
+      "authors": [
+        {
+          "first": "Liping",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Georgios",
+          "middle": [
+            "B"
+          ],
+          "last": "Giannakis",
+          "suffix": ""
+        },
+        {
+          "first": "Qing",
+          "middle": [],
+          "last": "Ling",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Federated optimization in heterogeneous networks",
+      "authors": [
+        {
+          "first": "Tian",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Anit",
+          "middle": [],
+          "last": "Kumar Sahu",
+          "suffix": ""
+        },
+        {
+          "first": "Manzil",
+          "middle": [],
+          "last": "Zaheer",
+          "suffix": ""
+        },
+        {
+          "first": "Maziar",
+          "middle": [],
+          "last": "Sanjabi",
+          "suffix": ""
+        },
+        {
+          "first": "Ameet",
+          "middle": [],
+          "last": "Talwalkar",
+          "suffix": ""
+        },
+        {
+          "first": "Virginia",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of Machine learning and systems"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Privacy-preserving federated brain tumour segmentation",
+      "authors": [
+        {
+          "first": "Wenqi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Fausto",
+          "middle": [],
+          "last": "Milletarì",
+          "suffix": ""
+        },
+        {
+          "first": "Daguang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Nicola",
+          "middle": [],
+          "last": "Rieke",
+          "suffix": ""
+        },
+        {
+          "first": "Jonny",
+          "middle": [],
+          "last": "Hancox",
+          "suffix": ""
+        },
+        {
+          "first": "Wentao",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Maximilian",
+          "middle": [],
+          "last": "Baust",
+          "suffix": ""
+        },
+        {
+          "first": "Yan",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Sébastien",
+          "middle": [],
+          "last": "Ourselin",
+          "suffix": ""
+        },
+        {
+          "first": "Jorge",
+          "middle": [],
+          "last": "Cardoso",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Machine Learning in Medical Imaging: 10th International Workshop, MLMI 2019, Held in Conjunction with MICCAI 2019"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Fedgta: Topology-aware averaging for federated graph learning",
+      "authors": [
+        {
+          "first": "Xunkai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengyu",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Wentao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yinlin",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Rong-Hua",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Guoren",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the VLDB Endowment"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Openfgl: A comprehensive benchmarks for federated graph learning",
+      "authors": [
+        {
+          "first": "Xunkai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yinlin",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Boyang",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "Guochen",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Yeyu",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Zening",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengyu",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Wentao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Rong-Hua",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Guoren",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Proceedings of the VLDB Endowment"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Backdoor learning: A survey",
+      "authors": [
+        {
+          "first": "Yiming",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yong",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhifeng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Shu-Tao",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE Transactions on Neural Networks and Learning Systems"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "A swiss army knife for heterogeneous federated learning: Flexible coupling via trace norm",
+      "authors": [
+        {
+          "first": "Tianchi",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "Lele",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Jialong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Wang",
+          "middle": [],
+          "last": "Zhen",
+          "suffix": ""
+        },
+        {
+          "first": "Zibin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Chuan",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "The Thirtyeighth Annual Conference on Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Bkd-fedgnn: A benchmark for classification backdoor attacks on federated graph neural network",
+      "authors": [
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Siqi",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "Yansong",
+          "middle": [],
+          "last": "Ning",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Graphebm: Molecular graph generation with energy-based models",
+      "authors": [
+        {
+          "first": "Meng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Keqiang",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Bora",
+          "middle": [],
+          "last": "Oztekin",
+          "suffix": ""
+        },
+        {
+          "first": "Shuiwang",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Some methods for classification and analysis of multivariate observations",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Macqueen",
+          "suffix": ""
+        }
+      ],
+      "year": 1967,
+      "venue": "Proceedings of 5-th Berkeley Symposium on Mathematical Statistics and Probability"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Federated learning: Opportunities and challenges",
+      "authors": [
+        {
+          "first": "Mary",
+          "middle": [],
+          "last": "Priyanka",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mammen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Image-based recommendations on styles and substitutes",
+      "authors": [
+        {
+          "first": "Julian",
+          "middle": [],
+          "last": "Mcauley",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Targett",
+          "suffix": ""
+        },
+        {
+          "first": "Qinfeng",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Anton",
+          "middle": [],
+          "last": "Van Den",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hengel",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Proceedings of the 38th international ACM SIGIR conference on research and development in information retrieval"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Communication-efficient learning of deep networks from decentralized data",
+      "authors": [
+        {
+          "first": "Brendan",
+          "middle": [],
+          "last": "Mcmahan",
+          "suffix": ""
+        },
+        {
+          "first": "Eider",
+          "middle": [],
+          "last": "Moore",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Ramage",
+          "suffix": ""
+        },
+        {
+          "first": "Seth",
+          "middle": [],
+          "last": "Hampson",
+          "suffix": ""
+        },
+        {
+          "first": "Blaise",
+          "middle": [],
+          "last": "Aguera Y Arcas",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Artificial intelligence and statistics"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Communication-efficient learning of deep networks from decentralized data",
+      "authors": [
+        {
+          "first": "Brendan",
+          "middle": [],
+          "last": "Mcmahan",
+          "suffix": ""
+        },
+        {
+          "first": "Eider",
+          "middle": [],
+          "last": "Moore",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Ramage",
+          "suffix": ""
+        },
+        {
+          "first": "Seth",
+          "middle": [],
+          "last": "Hampson",
+          "suffix": ""
+        },
+        {
+          "first": "Blaise",
+          "middle": [],
+          "last": "Aguera Y Arcas",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Artificial intelligence and statistics"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "{FLAME}: Taming backdoors in federated learning",
+      "authors": [
+        {
+          "first": "Thien",
+          "middle": [],
+          "last": "Duc Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Rieger",
+          "suffix": ""
+        },
+        {
+          "first": "Roberta",
+          "middle": [
+            "De"
+          ],
+          "last": "Viti",
+          "suffix": ""
+        },
+        {
+          "first": "Huili",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Björn",
+          "suffix": ""
+        },
+        {
+          "first": "Hossein",
+          "middle": [],
+          "last": "Brandenburg",
+          "suffix": ""
+        },
+        {
+          "first": "Helen",
+          "middle": [],
+          "last": "Yalame",
+          "suffix": ""
+        },
+        {
+          "first": "Hossein",
+          "middle": [],
+          "last": "Möllering",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Fereidooni",
+          "suffix": ""
+        },
+        {
+          "first": "Markus",
+          "middle": [],
+          "last": "Marchal",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Miettinen",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "31st USENIX Security Symposium (USENIX Security 22)"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Defending against backdoors in federated learning with robust learning rate",
+      "authors": [
+        {
+          "first": "Mustafa",
+          "middle": [],
+          "last": "Safa",
+          "suffix": ""
+        },
+        {
+          "first": "Ozdayi",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Murat",
+          "middle": [],
+          "last": "Kantarcioglu",
+          "suffix": ""
+        },
+        {
+          "first": "Yulia",
+          "middle": [
+            "R"
+          ],
+          "last": "Gel",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Sageflow: Robust federated learning against both stragglers and adversaries",
+      "authors": [
+        {
+          "first": "Jungwuk",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Dong-Jun",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Minseok",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        },
+        {
+          "first": "Jaekyun",
+          "middle": [],
+          "last": "Moon",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "On estimation of a probability density function and mode",
+      "authors": [
+        {
+          "first": "Emanuel",
+          "middle": [],
+          "last": "Parzen",
+          "suffix": ""
+        }
+      ],
+      "year": 1962,
+      "venue": "The annals of mathematical statistics"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Robust aggregation for federated learning",
+      "authors": [
+        {
+          "first": "Krishna",
+          "middle": [],
+          "last": "Pillutla",
+          "suffix": ""
+        },
+        {
+          "first": "Zaid",
+          "middle": [],
+          "last": "Sham M Kakade",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Harchaoui",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE Transactions on Signal Processing"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Gad-ebm: Graph anomaly detection using energy-based models",
+      "authors": [
+        {
+          "first": "Amit",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        },
+        {
+          "first": "Juan",
+          "middle": [],
+          "last": "Shu",
+          "suffix": ""
+        },
+        {
+          "first": "Olivier",
+          "middle": [],
+          "last": "Elshocht",
+          "suffix": ""
+        },
+        {
+          "first": "Jeroen",
+          "middle": [],
+          "last": "Smeets",
+          "suffix": ""
+        },
+        {
+          "first": "Ruqi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Pan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "NeurIPS 2023 Workshop: New Frontiers in Graph Learning"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Pitfalls of graph neural network evaluation",
+      "authors": [
+        {
+          "first": "Oleksandr",
+          "middle": [],
+          "last": "Shchur",
+          "suffix": ""
+        },
+        {
+          "first": "Maximilian",
+          "middle": [],
+          "last": "Mumme",
+          "suffix": ""
+        },
+        {
+          "first": "Aleksandar",
+          "middle": [],
+          "last": "Bojchevski",
+          "suffix": ""
+        },
+        {
+          "first": "Stephan",
+          "middle": [],
+          "last": "Günnemann",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Relational Representation Learning Workshop"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Manipulating the byzantine: Optimizing model poisoning attacks and defenses for federated learning",
+      "authors": [
+        {
+          "first": "Virat",
+          "middle": [],
+          "last": "Shejwalkar",
+          "suffix": ""
+        },
+        {
+          "first": "Amir",
+          "middle": [],
+          "last": "Houmansadr",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "NDSS"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Convolutional wasserstein distances: Efficient optimal transportation on geometric domains",
+      "authors": [
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Solomon",
+          "suffix": ""
+        },
+        {
+          "first": "Fernando",
+          "middle": [
+            "De"
+          ],
+          "last": "Goes",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Peyré",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Cuturi",
+          "suffix": ""
+        },
+        {
+          "first": "Adrian",
+          "middle": [],
+          "last": "Butscher",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Leonidas",
+          "middle": [],
+          "last": "Guibas",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "ACM Transactions on Graphics (ToG)"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "How to train your energy-based models",
+      "authors": [
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Diederik",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Adversarial attacks on graph neural networks via node injections: A hierarchical reinforcement learning approach",
+      "authors": [
+        {
+          "first": "Yiwei",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Suhang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xianfeng",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Tsung-Yu",
+          "middle": [],
+          "last": "Hsieh",
+          "suffix": ""
+        },
+        {
+          "first": "Vasant",
+          "middle": [],
+          "last": "Honavar",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the Web Conference 2020"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Graph attention networks",
+      "authors": [
+        {
+          "first": "Petar",
+          "middle": [],
+          "last": "Veličković",
+          "suffix": ""
+        },
+        {
+          "first": "Guillem",
+          "middle": [],
+          "last": "Cucurull",
+          "suffix": ""
+        },
+        {
+          "first": "Arantxa",
+          "middle": [],
+          "last": "Casanova",
+          "suffix": ""
+        },
+        {
+          "first": "Adriana",
+          "middle": [],
+          "last": "Romero",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Lio",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Federated graph learning under domain shift with generalizable prototypes",
+      "authors": [
+        {
+          "first": "Guancheng",
+          "middle": [],
+          "last": "Wan",
+          "suffix": ""
+        },
+        {
+          "first": "Wenke",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Mang",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Federatedscope-gnn: Towards a unified, comprehensive and efficient package for federated graph learning",
+      "authors": [
+        {
+          "first": "Zhen",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Weirui",
+          "middle": [],
+          "last": "Kuang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuexiang",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Liuyi",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Yaliang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Bolin",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Jingren",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Collective dynamics of 'small-world'networks",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Duncan",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [
+            "H"
+          ],
+          "last": "Watts",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Strogatz",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": "nature"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Energy-based out-of-distribution detection for graph neural networks",
+      "authors": [
+        {
+          "first": "Qitian",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yiting",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Chenxiao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Junchi",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF65",
+      "title": "A comprehensive survey on graph neural networks",
+      "authors": [
+        {
+          "first": "Zonghan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Shirui",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "Fengwen",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Guodong",
+          "middle": [],
+          "last": "Long",
+          "suffix": ""
+        },
+        {
+          "first": "Chengqi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE transactions on neural networks and learning systems"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Graph backdoor",
+      "authors": [
+        {
+          "first": "Zhaohan",
+          "middle": [],
+          "last": "Xi",
+          "suffix": ""
+        },
+        {
+          "first": "Ren",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "Shouling",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "30th USENIX Security Symposium (USENIX Security 21)"
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Energy-based test sample adaptation for domain generalization",
+      "authors": [
+        {
+          "first": "Zehao",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Xiantong",
+          "middle": [],
+          "last": "Zhen",
+          "suffix": ""
+        },
+        {
+          "first": "Shengcai",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "M"
+          ],
+          "last": "Cees",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Snoek",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Explainability-based backdoor attacks against graph neural networks",
+      "authors": [
+        {
+          "first": "Jing",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Minhui",
+          "middle": [],
+          "last": "Xue",
+          "suffix": ""
+        },
+        {
+          "first": "Stjepan",
+          "middle": [],
+          "last": "Picek",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 3rd ACM workshop on wireless security and machine learning"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Federated machine learning: Concept and applications",
+      "authors": [
+        {
+          "first": "Qiang",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Tianjian",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yongxin",
+          "middle": [],
+          "last": "Tong",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ACM Transactions on Intelligent Systems and Technology (TIST)"
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Federated machine learning: Concept and applications",
+      "authors": [
+        {
+          "first": "Qiang",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Tianjian",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yongxin",
+          "middle": [],
+          "last": "Tong",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ACM Transactions on Intelligent Systems and Technology (TIST)"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "Distributed backdoor attacks on federated graph learning and certified defenses",
+      "authors": [
+        {
+          "first": "Yuxin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Qiang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jinyuan",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Binghui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF72",
+      "title": "Revisiting semi-supervised learning with graph embeddings",
+      "authors": [
+        {
+          "first": "Zhilin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "Ruslan",
+          "middle": [],
+          "last": "Salakhudinov",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF73",
+      "title": "Revisiting semi-supervised learning with graph embeddings",
+      "authors": [
+        {
+          "first": "Zhilin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "Ruslan",
+          "middle": [],
+          "last": "Salakhudinov",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF74",
+      "title": "Heterogeneous federated learning: State-of-the-art and research challenges",
+      "authors": [
+        {
+          "first": "Mang",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Xiuwen",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Dacheng",
+          "middle": [],
+          "last": "Pong C Yuen",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Tao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CSUR"
+    },
+    {
+      "id": "BIBREF75",
+      "title": "Byzantine-robust distributed learning: Towards optimal statistical rates",
+      "authors": [
+        {
+          "first": "Dong",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Yudong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Ramchandran",
+          "middle": [],
+          "last": "Kannan",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Bartlett",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF77",
+      "title": "Byzantine-robust distributed learning: Towards optimal statistical rates",
+      "authors": [
+        {
+          "first": "Dong",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Yudong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Ramchandran",
+          "middle": [],
+          "last": "Kannan",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Bartlett",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF79",
+      "title": "Dynamic spiking graph neural networks",
+      "authors": [
+        {
+          "first": "Nan",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Mengzhu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenghan",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Giulia",
+          "middle": [],
+          "last": "De Masi",
+          "suffix": ""
+        },
+        {
+          "first": "Huan",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF80",
+      "title": "G ˆ2 uardfl: Safeguarding federated learning against backdoor attacks through attributed client graph clustering",
+      "authors": [
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Chuan",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Meng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyu",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Ming",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Xiang",
+          "suffix": ""
+        },
+        {
+          "first": "Shouling",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Xinwang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF81",
+      "title": "Tea: Test-time energy adaptation",
+      "authors": [
+        {
+          "first": "Yige",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Bingbing",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Fei",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Huawei",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF82",
+      "title": "A survey on federated learning",
+      "authors": [
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Hang",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Weihong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Knowledge-Based Systems"
+    },
+    {
+      "id": "BIBREF83",
+      "title": "Subgraph federated learning with missing neighbor generation",
+      "authors": [
+        {
+          "first": "Ke",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Carl",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoxiao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Lichao",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Siu",
+          "middle": [],
+          "last": "Ming",
+          "suffix": ""
+        },
+        {
+          "first": "Yiu",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF84",
+      "title": "Backdoor attacks to graph neural networks",
+      "authors": [
+        {
+          "first": "Zaixi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jinyuan",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Binghui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Zhenqiang",
+          "suffix": ""
+        },
+        {
+          "first": "Gong",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 26th ACM Symposium on Access Control Models and Technologies"
+    },
+    {
+      "id": "BIBREF85",
+      "title": "Motif-backdoor: Rethinking the backdoor attack on graph neural networks via motifs",
+      "authors": [
+        {
+          "first": "Haibin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Haiyang",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Jinyin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Haonan",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Guohan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE Transactions on Computational Social Systems"
+    }
+  ]
+}

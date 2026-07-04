@@ -1,0 +1,1644 @@
+{
+  "paper_id": "llm_reproducibility",
+  "title": "Understanding and Mitigating Numerical Sources of Nondeterminism in LLM Inference",
+  "authors": [
+    {
+      "first": "Jiayi",
+      "middle": [],
+      "last": "Yuan",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Rice University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Hao",
+      "middle": [],
+      "last": "Li",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Minnesota Twin Cities",
+        "location": {}
+      }
+    },
+    {
+      "first": "Xinheng",
+      "middle": [],
+      "last": "Ding",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Minnesota Twin Cities",
+        "location": {}
+      }
+    },
+    {
+      "first": "Wenya",
+      "middle": [],
+      "last": "Xie",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Minnesota Twin Cities",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yu-Jhe",
+      "middle": [],
+      "last": "Li",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Adobe Inc",
+        "location": {}
+      }
+    },
+    {
+      "first": "Wentian",
+      "middle": [],
+      "last": "Zhao",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Adobe Inc",
+        "location": {}
+      }
+    },
+    {
+      "first": "Kun",
+      "middle": [],
+      "last": "Wan",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Adobe Inc",
+        "location": {}
+      }
+    },
+    {
+      "first": "Jing",
+      "middle": [],
+      "last": "Shi",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Adobe Inc",
+        "location": {}
+      }
+    },
+    {
+      "first": "Xia",
+      "middle": [],
+      "last": "Hu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Rice University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Zirui",
+      "middle": [],
+      "last": "Liu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Minnesota Twin Cities",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Large Language Models (LLMs) are now integral across various domains and have demonstrated impressive performance. Progress, however, rests on the premise that benchmark scores are both accurate and reproducible. We demonstrate that the reproducibility of LLM performance is fragile: changing system configuration, such as evaluation batch size, GPU count, and GPU version, can introduce significant differences in the generated responses. This issue is especially pronounced in reasoning models, where minor rounding differences in early tokens can cascade into divergent chains of thought, ultimately affecting accuracy. For instance, under bfloat16 precision with greedy decoding, a reasoning model like DeepSeek-R1-Distill-Qwen-7B can exhibit up to 9% variation in accuracy and 9,000 tokens difference in response length due to differences in GPU count, type, and evaluation batch size. We trace the root cause of this variability to the non-associative nature of floating-point arithmetic under limited numerical precision. This work presents the first systematic investigation into how numerical precision affects reproducibility in LLM inference. Through carefully controlled experiments across various hardware, software, and precision settings, we quantify when and how model outputs diverge. Our analysis reveals that floating-point precision-while critical for reproducibility-is often neglected in evaluation practices. Inspired by this, we develop a lightweight inference pipeline, dubbed LayerCast, that stores weights in 16-bit precision but performs all computations in FP32, balancing memory efficiency with numerical stability. Code is available at https://github.com/nanomaoli/llm_reproducibility.",
+  "body": {
+    "3._Theory_assumptions_and_proofs": "Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof?\nAnswer: [NA] Justification: Does not include theoretical results.\nGuidelines:\n• The answer NA means that the paper does not include theoretical results.\n• All the theorems, formulas, and proofs in the paper should be numbered and crossreferenced.\n• All assumptions should be clearly stated or referenced in the statement of any theorems.\n• The proofs can either appear in the main paper or the supplemental material, but if they appear in the supplemental material, the authors are encouraged to provide a short proof sketch to provide intuition.\n• Inversely, any informal proof provided in the core of the paper should be complemented by formal proofs provided in appendix or supplemental material.\n• Theorems and Lemmas that the proof relies upon should be properly referenced.",
+    "2._Limitations": "Question: Does the paper discuss the limitations of the work performed by the authors?\nAnswer: [Yes] Justification: In Appendix A Guidelines:\n• The answer NA means that the paper has no limitation while the answer No means that the paper has limitations, but those are not discussed in the paper.\n• The authors are encouraged to create a separate \"Limitations\" section in their paper.\n• The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be.\n• The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated.\n• The authors should reflect on the factors that influence the performance of the approach.\nFor example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon.\n• The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size.\n• If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness.\n• While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren't acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an important role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations.",
+    "1_Introduction": {
+      "1._Claims": "Question: Do the main claims made in the abstract and introduction accurately reflect the paper's contributions and scope?\nAnswer: [Yes] Justification: The claims are supported by Section 4 and 5\nGuidelines:\n• The answer NA means that the abstract and introduction do not include the claims made in the paper.\n• The abstract and/or introduction should clearly state the claims made, including the contributions made in the paper and important assumptions and limitations. A No or NA answer to this question will not be perceived well by the reviewers.\n• The claims made should match theoretical and experimental results, and reflect how much the results can be expected to generalize to other settings.\n• It is fine to include aspirational goals as motivation as long as it is clear that these goals are not attained by the paper.",
+      "_text": "Large Language Models (LLMs) are increasingly being deployed in everyday scenarios, powering applications from chatbots [2] to automated coding tools [25] and personalized healthcare agents [6] . As their impact grows, rigorous benchmarking and evaluation become critical to measure real progress and ensure reliability, safety, and fairness [7, 37] . There are two commonly used evaluation strategies. The first one is to use greedy decoding by setting the temperature to zero, which produces deterministic outputs, and reports the result from a single run. The second uses random sampling with a non-zero temperature and reports performance using the Pass@K metric [8] , i.e., the probability that at least one of K independent solution attempts will succeed.\nIn this paper, we highlight a commonly overlooked factor in both evaluation settings: numerical precision. First, for the greedy decoding setting, this factor undermines the assumption of determin-\n0.1 0.2 0.3 0.4 0.5 0.6"
+    },
+    "2.1_Current_Practices_on_LLM_Reproducibility": "There are two widely adopted evaluation strategies. The first one is greedy decoding, where temperature is set to zero and model always select the token with highest probability. The second strategy employs random sampling with a non-zero temperature, and evaluates performance using the Pass@K metric [8] . Below, we introduce the commonly adopted experimental setting for the reproducibility.\nGreedy decoding is a deterministic text generation strategy where the model always selects the token with the highest probability at each step. In theory, this approach should produce identical outputs given the same input and model parameters. However, in this paper, we show that even greedy decoding can yield different results across runs due to numerical precision issues.\nRandom sampling selects output tokens based on the model's probability distribution with a nonzero temperature to introduce randomness. The most commonly used evaluation metric is the mean accuracy across multiple independent trials, which is equivalent to Pass@1 [8] .",
+    "2.2_Numerical_Precision,_Rounding_Errors,_and_GPU_Kernels": "Numerical precision is critical for reproducibility [26] . Higher precision numbers have less rounding error, which can reduce variability in results. Examples include using FP32 for certain parts of computation-like softmax or attention scores-even if the model weights are in 16-bit precision. This practice can mitigate run-to-run differences, but it doesn't provide theoretical guarantees since floating-point arithmetic cannot represent all real numbers exactly. Even with the same precision, different hardware implementations or computation orders can lead to slightly different results. In this paper, we primarily focus on the importance of numerical precision and provide a detailed analysis of its impact on LLM inference reproducibility.\nFigure 2 shows the format of BF16, FP16 and FP32. Table 1 illustrates the rounding error that occurs when the same true value is represented in three different numeric formats. As expected, lower precision formats like FP16 and BF16 introduce larger rounding errors compared to FP32.\nMoreover, a key aspect of floating-point arithmetic that contributes to nondeterminism is its nonassociativity. This means that the order in which numbers are added can affect the final result due to accumulated rounding errors. Table 2 provides illustrative examples of how the order of summation can lead to different results in FP32 and BF16. As the examples demonstrate, although rounding follows deterministic rules, non-associativity introduces nondeterminism, which is further amplified by the larger rounding error of BF16. This becomes particularly relevant in the parallel computations performed in GPUs during LLM inference.\nIn the context of LLMs, even small numerical variations in the logit values can affect the final token selection when the top probabilities are close. Floating-point arithmetic in GPUs exhibits non-associativity, meaning (a + b) + c ̸ = a + (b + c) due to finite precision and rounding errors. This property directly impacts the computation of attention scores and logits in the transformer architecture, where parallel operations across multiple threads can yield different results based on execution order. Formally, for a reduction operation ⊕ over a set of values {v 1 , v 2 , ..., v n } (such as summing attention scores or computing softmax denominators), the result depends on the specific ordering of operations:\nn i=1 v i = v π(1) ⊕ v π(2) ⊕ ... ⊕ v π(n) ,\nwhere π is a permutation of indices {1, 2, ..., n} determined by thread scheduling.\nGPU Kernels add numbers in different orders when changing system configuration. In serving systems, several factors can change the order in which floating-point operations are executed, including: (1) continuous batching [36] , which dynamically modifies the set of requests within a batch; (2) different operator implementations, such as Split-K versus Non-Split-K MatMul [23] ; (3) operator hyperparameters, like the block size in MatMul or FlashAttention; (4) collective operations in parallel settings, such as AllReduce; and (5) parallelization strategies, such as tensor parallelism (TP), which distribute computation across multiple GPUs. Together, all these factors can affect the determinism of LLM inference. To address this issue, Batch-invariant operations [14] , including batch-invariant FlexAttention, RMSNorm, and MatMul kernels, are introduced. These kernels guarantee that inference results remain deterministic regardless of batch size variations. Specifically, this approach achieves determinism by parallelizing computation along the batch dimension, thereby decoupling batch size from the final outputs of individual requests. However, as the name \"batchinvariant\" suggests, the technique is currently limited to handling variations related only to the batch dimension, making it robust to continuous batching and other batch-size-related changes, but not to other forms of nondeterminism like changing the TP sizes or GPU types.",
+    "3.1_Experiment_Setup": "We conduct experiments on four recent LLMs, including two reasoning models: DeepSeek-R1-Distill-Qwen-7B, DeepSeek-R1-Distill-Llama-8B and two non-reasoning models: Qwen2.5-7B-Instruct and Llama-3.1-8B-Instruct [13, 34, 22] , across five commonly used LLM evaluation benchmarks: AIME'24, MATH500, LiveCodeBench-Easy, LiveCodeBench-Medium, and LiveCodeBench-Hard [1, 15, 18] . To verify the generalizability of our findings, we also conduct additional experiments on a larger model (Qwen3-32B) and a diverse reasoning benchmark (GPQA Diamond) covering graduatelevel science questions, with results provided in the Appendix. For reasoning models, we set the maximum output token length to 32,768 and for non-reasoning models, we set it to 2,048. We primarily use vLLM [20] as the inference backend; to verify that our findings are not backendspecific, we also conduct verification experiments using HuggingFace Transformers (see Appendix for details). In the random sampling experiments, we set temperature to 0.7 and top-p to 0.95. Our Evaluation implementation and prompt setting is adapted from SkyThought-evals [29] , more details can be found in Appendix C.\nFor each model-task pair, we evaluate under 12 different runtime configurations, representing all combinations of 2 GPU types (NVIDIA L40S and A100), 2 GPU counts (2 and 4), and 3 batch sizes (8, 16, and 32), i.e., 2 × 2 × 3 = 12 different configurations, to simulate the diversity of deployment environments encountered in real-world evaluations. Unlike decoding parameters or random seeds, these hardware-related factors are often beyond users' control and can vary significantly due to resource availability, yet they are often overlooked in current LLM evaluation methods.\nTo comprehensively quantify output instability and better analyze the impact of numerical precision on inference variability, we evaluate the reproducibility under both greedy decoding and random sampling settings. Specifically, for greedy decoding, we analyze:\n• Std@Acc (Standard deviation of accuracy): For each numerical precision, we evaluate accuracy under the 12 different runtime configurations and compute their sample standard deviations, which serve as indicators of the stability of LLM inference outputs during greedy inference.\n• Avg_Std@Output_Length (Average standard deviation of output length): We measure the length of output tokens, compute the sample standard deviation per example across 12 runtime configurations, and report the mean of standard deviations over the entire dataset. This provides an alternative perspective on the stability of LLM inference outputs during greedy inference.\n• Div_Index (Divergence index): For the same question, ixf two or more responses produce identical token sequences up to a certain position, but generate different tokens after that position, we define the index of that position as the divergence index. A higher Div_Index indicates greater consistency across responses under different runtime configurations.\n• Avg_Std@top1_prob (Average standard deviation of top-1 token prediction probability): Before divergence, all responses across different runtime settings produce identical top-1 tokens at every position. However, due to floating-point computation errors, the predicted probabilities of these tokens may vary across settings. To quantify this, we compute the standard deviation of the predicted probability for the top-1 token at each position across settings, then average over all positions from 0 to Div_Index and over all examples in a dataset. We define this metric as the Average Standard Deviation of Top-1 Token Prediction Probability, which serves as an indicator of the magnitude of numerical variation introduced by floating-point errors.\nFor random sampling, we analyze:\n• Pass@1: For each numerical precision, we evaluate performance by running the model multiple times and computing the average accuracy accuracy (commonly referred to as Pass@1). Specifically, we use both 16 and 64 independent runs to compute mean accuracy for AIME'24, and 4 independent runs for MATH500. To assess the stability of random sampling-based decoding, we also report the standard deviation of Pass@1 across 6 runtime configurations, varying GPU count (2 vs. 4) and numerical precision (BF16, FP16, FP32).",
+    "3.2_Greedy_Decoding_̸_=_Deterministic_Output": "Contrary to common belief, our experiments reveal that greedy decoding does not guarantee deterministic outputs across different hardware and system configurations. However, using Beyond accuracy variance, our results in Table 4 reveal that BF16 precision also causes response lengths to vary significantly across different settings. This raises significant concerns for recent work in efficient reasoning and long-to-short research [27] , which needs to report response length metrics. Specifically, changing the system configuration can lead to a difference of up to 9,000 tokens in response length. This variability undermines the effectiveness of many existing efficient reasoning approaches. However, our findings show that using FP16 helps reduce output length variance to some extent, while FP32 offers the most consistent and reliable control over this variability. Thus, we suggest if using greedy decoding, please use FP32 precision to improve the reproducibility of the efficient reasoning research.\nThe performance gap clearly indicates that across different runs, the model generates different tokens. To investigate why this happens, we compared outputs from different runs. Since we are using greedy decoding, the top-1 probability token differs between runs at the point of divergence. Figure 3 shows an example of token logits when two runs diverge, illustrating how numerical precision errors can flip the order of the top-1 and top-2 token probabilities. Figure 3 also shows the histogram of probability differences between top-1 and top-2 tokens under FP32 precision. We observe that for reasoning models, the token probability differences between the top two competing tokens are often minimal.\nTo further understand how this observation interacts with the numerical errors, Figure 4 further illustrates the average standard deviation of the probability of prediction of the top-1 token (Avg_Std@Top1_Prob) at different numerical precision levels. BF16 shows significantly higher variance in top-1 token probabilities compared to FP16 and FP32. This increased variance arises because BF16's limited mantissa bits (7 bits compared to FP16's 10 bits) introduce larger errors in probability computations, increasing the likelihood of token flips when these fluctuations overlap with the small gap between top-1 and top-2 candidate tokens. In contrast, FP32's higher precision (23 mantissa bits) makes runtime variations nearly negligible. Together, these results demonstrate that token selection during greedy decoding is highly sensitive to even small numerical variations because of the minimal probability differences between competing tokens.\nAnswer 1 Answer 2 Token Prob. Token Prob. know 49.75% have 46.65% have 43.91% know 46.64% need 3.18% need 3.39% 'm 2.47% 'm 2.63% 've 0.49% 've 0.52% ... ... ... ... 0.00 0.01 0.02 0.03 Top1-Top2 Token Probability Gap AIME24 MATH500 LCB-Easy LCB-Medium LCB-Hard 0 10 20 30 40 50 60 Avg_Std@top1_prob (×10 4 ) BF16 DeepSeek-R1-Distill-Qwen-7B FP16 DeepSeek-R1-Distill-Qwen-7B FP32 DeepSeek-R1-Distill-Qwen-7B BF16 DeepSeek-R1-Distill-Llama-8B FP16 DeepSeek-R1-Distill-Llama-8B FP32 DeepSeek-R1-Distill-Llama-8B BF16 Qwen2.5-7B-Instruct FP16 Qwen2.5-7B-Instruct FP32 Qwen2.5-7B-Instruct BF16 Llama-3.1-8B-Instruct FP16 Llama-3.1-8B-Instruct FP32 Llama-3.1-8B-Instruct 0.00 0.25 0.50 0.75 1.00 0.0 0.5 1.0 0.00 0.25 0.50 0.75 1.00 0.0 0.5 1.0 0.00 0.25 0.50 0.75 1.00 0.0 0.5 1.0 0.00 0.25 0.50 0.75 1.00 0.0 0.5 1.0 0.00 0.25 0.50 0.75 1.00 0.0 0.5 1.0 0 1 FP32 0 1 FP32 0 1 FP32 0 1 FP32 0 1 FP32 Figure 4: Avg_Std@top1_prob across 12 different settings for 4 models and 5 tasks, under BF16, FP16 and FP32. FP16 shows significantly lower variance compared to BF16. FP32 yields near-zero variance, demonstrating strong robustness to floating-point rounding errors. 10 0 10 1 10 2 10 3 10 4 Div_Index (log scale) 0 10 20 30 40 50 Frequency BF16: 96.6% FP16: 73.0% FP32: 2.2% Figure 5: Distribution of Div_Index for DeepSeek-R1-Distill-Qwen-7B on MATH500 under BF16, FP16, and FP32. Higher numerical precisions lead to fewer divergent examples and a shift of divergence point to later token positions.\nThe impact of numerical precision on output stability is further evidenced by divergence patterns in greedy decoding. Figure 5 shows the distribution of divergence points (Div_Index) across precision formats for DeepSeek-R1-Distill-Qwen-7B on MATH500. As precision increases from BF16 to FP32, we observe both fewer divergent examples overall and a significant shift in when divergence occurs. With FP32, almost all examples produce identical outputs across configurations, resulting in only 2.2% of the samples diverging. In contrast, with BF16, divergence frequently occurs early in generation despite the deterministic setting, with over 90% of examples showing divergence. When divergence happens in higher precision formats, it typically occurs much later in the sequence, limiting its impact on the final output and answer accuracy.\nThese results conclusively demonstrate that numerical precision is a critical factor in achieving truly deterministic outputs with greedy decoding, with higher precision formats providing substantially better reproducibility.",
+    "3.3_Random_Sampling_Has_Reproducibility_Issue,_Too": "One might argue that while greedy decoding is vulnerable to token-level instability from numerical precision, random sampling might be less sensitive due to its intrinsic stochasticity. However, our experiments reveal that numerical precision significantly affects the stability and reproducibility of sampling-based evaluations as well. When using random sampling with temperature T > 0, researchers typically report the mean accuracy averaged over multiple runs (commonly referred to as Pass@1). We conduct Pass@1 evaluations across two benchmarks-AIME'24 and MATH500-using 16 and 64 independent sampling runs for AIME'24 and 4 runs for MATH500. Here we emphasize that in Table 5 , the reported standard deviation is calculated based on Pass@1 performance across 6 system configurations per model (batch sizes and GPU counts), not across repeated runs of the same configuration. Thus, the reported variance largely reflects the impact from limited numerical precision, not the inherent variance of models. As shown in Table 5 , we observe a clear trend: numerical precision introduces an additional source of variance beyond the intended randomness, and lower-precision formats such as BF16 tend to produce higher output variance. See Appendix G for the complete Pass@1 results that support these variance statistics.",
+    "3.4_Ablation:_How_Runtime_Configurations_Affect_Reproducibility": "After establishing that numerical precision plays a crucial role in LLM reproducibility, we now investigate how specific runtime configurations-batch size, number of GPUs, and GPU type-affect output stability across different precision formats. We conduct experiments of greedy decoding setting on DeepSeek-R1-Distill-Qwen-7B, as shown in Figure 6.\nOur analysis of runtime configurations reveals three key factors affecting token probability variations.\nFirst, in Figure 6 (a), configurations with 4 GPUs tend to exhibit higher probability variation than those with 2 GPUs across 3 tested batch sizes (particularly in BF16 precision), potentially due to increased parallel computation introducing more varied floating-point operation orderings and consequently different rounding errors. Second, Figure 6 (b) suggests that smaller batch sizes counter-intuitively produce higher variance in token probabilities because they may require more sequential processing steps that accumulate rounding errors, while larger batches benefit from parallel computation within optimized CUDA kernels that limit error accumulation. Third, GPU architecture matters: Figure 6 (c) shows A100s generally exhibit slightly higher probability variance than L40S under identical configurations, likely due to differences in hardware-level floating-point implementations and memory hierarchies. All these effects are most pronounced under BF16 precision with its limited mantissa bits making it especially susceptible to rounding effects. For more results of runtime configurations and tested tasks, please refer to the Appendix F.\nIn summary, our experiments reveal three critical insights about numerical precision and reproducibility in LLM inference. First, the fundamental cause of nondeterministic outputs is the small gap between competing logits, which makes token selection vulnerable to minute numerical fluctuations. Second, precision format critically impacts stability, with FP32 providing near-perfect determinism, FP16 offering moderate stability, and BF16 exhibiting significant variance despite being commonly used. Third, specific runtime configurations-particularly GPU count, batch size, and GPU architecture-further affect reproducibility, with these effects most pronounced in lower precision formats. These findings highlight the urgent need for standardized evaluation practices that account for numerical precision effects, especially as LLMs continue to be deployed in increasingly critical applications where reproducibility is essential.",
+    "4_Near-Perfect_Deterministic_Reproduction:_LayerCast": {
+      "4._Experimental_result_reproducibility": "Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)? Answer: [Yes] Justification: In Section 4 Guidelines:\n• The answer NA means that the paper does not include experiments.\n• If the paper includes experiments, a No answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not.\n• If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable.\n• Depending on the contribution, reproducibility can be accomplished in various ways.\nFor example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed.\n• While NeurIPS does not require releasing code, the conference does require all submissions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm. (b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset). (d) We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility.\nIn the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results. 5. Open access to data and code Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results, as described in supplemental material? Answer: [No] Justification: Not released Guidelines:\n• The answer NA means that paper does not include experiments requiring code.\n• Please see the NeurIPS code and data submission guidelines (https://nips.cc/ public/guides/CodeSubmissionPolicy) for more details.\n• While we encourage the release of code and data, we understand that this might not be possible, so \"No\" is an acceptable answer. Papers cannot be rejected simply for not including code, unless this is central to the contribution (e.g., for a new open-source benchmark).\n• The instructions should contain the exact command and environment needed to run to reproduce the results. See the NeurIPS code and data submission guidelines (https: //nips.cc/public/guides/CodeSubmissionPolicy) for more details.\n• The authors should provide instructions on data access and preparation, including how to access the raw data, preprocessed data, intermediate data, and generated data, etc.\n• The authors should provide scripts to reproduce all experimental results for the new proposed method and baselines. If only a subset of experiments are reproducible, they should state which ones are omitted from the script and why.\n• At submission time, to preserve anonymity, the authors should release anonymized versions (if applicable).\n• Providing as much information as possible in supplemental material (appended to the paper) is recommended, but including URLs to data and code is permitted. 6.",
+      "_text": "Given our findings on when and why reproducibility breaks, we now propose directions to improve reproducibility in LLM inference. The basic solution is using FP32 precision, as we've shown in previous sections. However, this approach incurs significant costs: it doubles the memory usage and inference time compared to BF16, making it impractical for many production environments.\nWe propose a more efficient solution: LayerCast, a hybrid precision approach that balances computational stability with memory efficiency. LayerCast works by: (1) Loading the model parameters initially in FP32 precision; (2) Explicitly casting all linear layer weights and biases to BF16 for storage before inference; and (3) As inference runs, upcasting each weight back to FP32 just-in-time for matrix multiplication, one at a time.\nAs illustrated in Figure 7 , this approach ensures all computations occur in full FP32 precision while storing weights in memory-efficient 16-bit formats. Thus, this model benefits from FP32's stability during computation, while the memory footprint remains closer to that of 16-bit models. This provides determinism comparable to full FP32 inference but with substantially reduced memory requirements, particularly beneficial for the KV cache in long-context scenarios. Our experimental results strongly support this approach. When examining the standard deviation of accuracy across runs, Layer Cast achieves stability nearly identical to FP32, while BF16 shows much higher variability. As shown in Figure 8 , the divergence index measurements further confirm that LayerCast produces consistent outputs across different batch sizes and GPU configurations, with divergence rates below 3.4%. From resource perspective, LayerCast offers substantial benefits over full FP32: memory usage is reduced by 34% (particularly important for KV cache in long-context scenarios). These improvements make LayerCast a practical solution for applications requiring both deterministic outputs and reasonable performance. For full result, please refer to Appendix H."
+    },
+    "5_Related_Works": "Since the era of traditional deep learning, the reproducibility of models [28, 39, 33] have remained complex and challenging problems that have yet to be fully resolved. As large language models (LLMs) have risen to prominence, numerous empirical studies [21, 35, 3, 11, 19, 32, 24, 38] have shown that nondeterministic behavior during LLM inference is widely observed. Existing study [5] have found a clear negative correlation between output length and inference consistency: As the length of generated text increases, output variation during inference also rises, which explains the phenomenon that reasoning models tend to exhibit greater inference uncertainty.\nMultiple factors can affect the reproducibility of LLM inference results, including but not limited to prompt formatting, decoding parameters (such as temperature and top-p thresholds), random seed settings, and hardware and software configurations [17, 10, 9] . Existing studies [24, 11, 3, 21, 4] have systematically analyzed the impact of decoding parameters (e.g., temperature, top-p) on the stability of LLM inference outputs. Hochlehnert et al. [16] points out that many reported improvements in LLM performance are, in fact, partially attributable to unfair comparisons and unreported sources of variance in the evaluation process. In practical applications, using FP32 (single-precision floating point) inference [30, 31] is often empirically believed to enhance the robustness of numerical computations. Feng et al. [12] investigates the impact of numerical precision on the mathematical reasoning ability of LLMs. However, there is currently a lack of systematic and quantitative studies specifically analyzing the effects of different numerical formats (e.g., FP32, FP16, BF16) on the reproducibility of LLM inference.",
+    "6_Conclusion": "In this paper, we conducted a comprehensive investigation into the reproducibility challenges in LLM inference caused by numerical precision issues. Our experiments across multiple models, tasks, and hardware configurations revealed that even under supposedly deterministic greedy decoding, outputs can vary significantly due to floating-point arithmetic non-associativity. We demonstrated that precision format critically impacts stability, with FP32 providing near-perfect determinism while BF16-despite being widely used-exhibits substantial variance. To address these challenges without incurring the full overhead of FP32, we proposed LayerCast, a practical solution that achieves FP32-level determinism while maintaining reasonable memory efficiency. Our findings highlight the importance of standardizing evaluation practices to account for numerical precision effects, especially as LLMs are increasingly deployed in critical applications where reproducibility is essential."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Aime 2024 dataset",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Gpt-4 technical report",
+      "authors": [
+        {
+          "first": "Josh",
+          "middle": [],
+          "last": "Achiam",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Adler",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Lama",
+          "middle": [],
+          "last": "Ahmad",
+          "suffix": ""
+        },
+        {
+          "first": "Ilge",
+          "middle": [],
+          "last": "Akkaya",
+          "suffix": ""
+        },
+        {
+          "first": "Florencia",
+          "middle": [],
+          "last": "Leoni Aleman",
+          "suffix": ""
+        },
+        {
+          "first": "Diogo",
+          "middle": [],
+          "last": "Almeida",
+          "suffix": ""
+        },
+        {
+          "first": "Janko",
+          "middle": [],
+          "last": "Altenschmidt",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Altman",
+          "suffix": ""
+        },
+        {
+          "first": "Shyamal",
+          "middle": [],
+          "last": "Anadkat",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Optimizing large language model hyperparameters for code generation",
+      "authors": [
+        {
+          "first": "Chetan",
+          "middle": [],
+          "last": "Arora",
+          "suffix": ""
+        },
+        {
+          "first": "Ahnaf",
+          "middle": [],
+          "last": "Ibn Sayeed",
+          "suffix": ""
+        },
+        {
+          "first": "Sherlock",
+          "middle": [],
+          "last": "Licorish",
+          "suffix": ""
+        },
+        {
+          "first": "Fanyu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Treude",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Non-determinism of \"deterministic\" llm settings",
+      "authors": [
+        {
+          "first": "Berk",
+          "middle": [],
+          "last": "Atil",
+          "suffix": ""
+        },
+        {
+          "first": "Sarp",
+          "middle": [],
+          "last": "Aykent",
+          "suffix": ""
+        },
+        {
+          "first": "Alexa",
+          "middle": [],
+          "last": "Chittams",
+          "suffix": ""
+        },
+        {
+          "first": "Lisheng",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Rebecca",
+          "middle": [
+            "J"
+          ],
+          "last": "Passonneau",
+          "suffix": ""
+        },
+        {
+          "first": "Evan",
+          "middle": [],
+          "last": "Radcliffe",
+          "suffix": ""
+        },
+        {
+          "first": "Guru",
+          "middle": [],
+          "last": "Rajan Rajagopal",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Sloan",
+          "suffix": ""
+        },
+        {
+          "first": "Tomasz",
+          "middle": [],
+          "last": "Tudrej",
+          "suffix": ""
+        },
+        {
+          "first": "Ferhan",
+          "middle": [],
+          "last": "Ture",
+          "suffix": ""
+        },
+        {
+          "first": "Zhe",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Lixinyu",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Breck",
+          "middle": [],
+          "last": "Baldwin",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Llm stability: A detailed analysis with some surprises",
+      "authors": [
+        {
+          "first": "Berk",
+          "middle": [],
+          "last": "Atil",
+          "suffix": ""
+        },
+        {
+          "first": "Alexa",
+          "middle": [],
+          "last": "Chittams",
+          "suffix": ""
+        },
+        {
+          "first": "Liseng",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Ferhan",
+          "middle": [],
+          "last": "Ture",
+          "suffix": ""
+        },
+        {
+          "first": "Lixinyu",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Breck",
+          "middle": [],
+          "last": "Baldwin",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Evaluating the feasibility of chatgpt in healthcare: an analysis of multiple clinical and research scenarios",
+      "authors": [
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Cascella",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Montomoli",
+          "suffix": ""
+        },
+        {
+          "first": "Valentina",
+          "middle": [],
+          "last": "Bellini",
+          "suffix": ""
+        },
+        {
+          "first": "Elena",
+          "middle": [],
+          "last": "Bignami",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Journal of medical systems"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "A survey on evaluation of large language models",
+      "authors": [
+        {
+          "first": "Yupeng",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jindong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Linyi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Kaijie",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoyuan",
+          "middle": [],
+          "last": "Yi",
+          "suffix": ""
+        },
+        {
+          "first": "Cunxiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yidong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "ACM transactions on intelligent systems and technology"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Evaluating large language models trained on code",
+      "authors": [
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jerry",
+          "middle": [],
+          "last": "Tworek",
+          "suffix": ""
+        },
+        {
+          "first": "Heewoo",
+          "middle": [],
+          "last": "Jun",
+          "suffix": ""
+        },
+        {
+          "first": "Qiming",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Henrique",
+          "middle": [],
+          "last": "Ponde De Oliveira Pinto",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "Harri",
+          "middle": [],
+          "last": "Edwards",
+          "suffix": ""
+        },
+        {
+          "first": "Yuri",
+          "middle": [],
+          "last": "Burda",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Joseph",
+          "suffix": ""
+        },
+        {
+          "first": "Greg",
+          "middle": [],
+          "last": "Brockman",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Reproducibility",
+      "authors": [],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Reproducibility",
+      "authors": [],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Studying how configurations impact code generation in llms: the case of chatgpt",
+      "authors": [
+        {
+          "first": "Benedetta",
+          "middle": [],
+          "last": "Donato",
+          "suffix": ""
+        },
+        {
+          "first": "Leonardo",
+          "middle": [],
+          "last": "Mariani",
+          "suffix": ""
+        },
+        {
+          "first": "Daniela",
+          "middle": [],
+          "last": "Micucci",
+          "suffix": ""
+        },
+        {
+          "first": "Oliviero",
+          "middle": [],
+          "last": "Riganelli",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "How numerical precision affects mathematical reasoning capabilities of llms",
+      "authors": [
+        {
+          "first": "Guhao",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuntian",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyue",
+          "middle": [],
+          "last": "Ai",
+          "suffix": ""
+        },
+        {
+          "first": "Shengjie",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Jiacheng",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Di",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenguo",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Liwei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning",
+      "authors": [
+        {
+          "first": "Dejian",
+          "middle": [],
+          "last": "Daya Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Haowei",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Junxiao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ruoyu",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Runxin",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Qihao",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Shirong",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Peiyi",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Xiao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Defeating nondeterminism in llm inference",
+      "authors": [
+        {
+          "first": "Horace",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Thinking",
+          "middle": [],
+          "last": "Machines",
+          "suffix": ""
+        },
+        {
+          "first": "Lab",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Thinking Machines Lab: Connectionism"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Measuring mathematical problem solving with the math dataset",
+      "authors": [
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "Collin",
+          "middle": [],
+          "last": "Burns",
+          "suffix": ""
+        },
+        {
+          "first": "Saurav",
+          "middle": [],
+          "last": "Kadavath",
+          "suffix": ""
+        },
+        {
+          "first": "Akul",
+          "middle": [],
+          "last": "Arora",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Basart",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "A sober look at progress in language model reasoning: Pitfalls and paths to reproducibility",
+      "authors": [
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Hochlehnert",
+          "suffix": ""
+        },
+        {
+          "first": "Hardik",
+          "middle": [],
+          "last": "Bhatnagar",
+          "suffix": ""
+        },
+        {
+          "first": "Vishaal",
+          "middle": [],
+          "last": "Udandarao",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Albanie",
+          "suffix": ""
+        },
+        {
+          "first": "Ameya",
+          "middle": [],
+          "last": "Prabhu",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Bethge",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Solving reproducibility challenges in deep learning and llms: Our journey",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ingonyama",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Livecodebench: Holistic and contamination free evaluation of large language models for code",
+      "authors": [
+        {
+          "first": "Naman",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "King",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Wen-Ding",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Fanjia",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Tianjun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sida",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Armando",
+          "middle": [],
+          "last": "Solar-Lezama",
+          "suffix": ""
+        },
+        {
+          "first": "Koushik",
+          "middle": [],
+          "last": "Sen",
+          "suffix": ""
+        },
+        {
+          "first": "Ion",
+          "middle": [],
+          "last": "Stoica",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Measuring determinism in large language models for software code review",
+      "authors": [
+        {
+          "first": "Eugene",
+          "middle": [],
+          "last": "Klishevich",
+          "suffix": ""
+        },
+        {
+          "first": "Yegor",
+          "middle": [],
+          "last": "Denisov-Blanch",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Obstbaum",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Ciobanu",
+          "suffix": ""
+        },
+        {
+          "first": "Michal",
+          "middle": [],
+          "last": "Kosinski",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Efficient memory management for large language model serving with pagedattention",
+      "authors": [
+        {
+          "first": "Woosuk",
+          "middle": [],
+          "last": "Kwon",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuohan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Siyuan",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "Lianmin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Cody",
+          "middle": [
+            "Hao"
+          ],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ion",
+          "middle": [],
+          "last": "Stoica",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 29th Symposium on Operating Systems Principles"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Is your code generated by chatgpt really correct? rigorous evaluation of large language models for code generation",
+      "authors": [
+        {
+          "first": "Jiawei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chunqiu",
+          "middle": [],
+          "last": "Steven Xia",
+          "suffix": ""
+        },
+        {
+          "first": "Yuyao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Lingming",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Introducing llama 3.1: Our most capable models to date",
+      "authors": [
+        {
+          "first": "Meta",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Efficient gemm in CUTLASS",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "An empirical study of the non-determinism of chatgpt in code generation",
+      "authors": [
+        {
+          "first": "Shuyin",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jie",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Meng",
+          "middle": [],
+          "last": "Harman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "ACM Transactions on Software Engineering and Methodology"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Code llama: Open foundation models for code",
+      "authors": [
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Baptiste Roziere",
+          "suffix": ""
+        },
+        {
+          "first": "Fabian",
+          "middle": [],
+          "last": "Gehring",
+          "suffix": ""
+        },
+        {
+          "first": "Sten",
+          "middle": [],
+          "last": "Gloeckle",
+          "suffix": ""
+        },
+        {
+          "first": "Itai",
+          "middle": [],
+          "last": "Sootla",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gat",
+          "suffix": ""
+        },
+        {
+          "first": "Ellen",
+          "middle": [],
+          "last": "Xiaoqing",
+          "suffix": ""
+        },
+        {
+          "first": "Yossi",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Jingyu",
+          "middle": [],
+          "last": "Adi",
+          "suffix": ""
+        },
+        {
+          "first": "Romain",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Tal",
+          "middle": [],
+          "last": "Sauvestre",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Remez",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Impacts of floating-point non-associativity on reproducibility for hpc and deep learning applications",
+      "authors": [
+        {
+          "first": "Sanjif",
+          "middle": [],
+          "last": "Shanmugavelu",
+          "suffix": ""
+        },
+        {
+          "first": "Mathieu",
+          "middle": [],
+          "last": "Taillefumier",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Culver",
+          "suffix": ""
+        },
+        {
+          "first": "Oscar",
+          "middle": [],
+          "last": "Hernandez",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Coletti",
+          "suffix": ""
+        },
+        {
+          "first": "Ada",
+          "middle": [],
+          "last": "Sedova",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Stop overthinking: A survey on efficient reasoning for large language models",
+      "authors": [
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Sui",
+          "suffix": ""
+        },
+        {
+          "first": "Yu-Neng",
+          "middle": [],
+          "last": "Chuang",
+          "suffix": ""
+        },
+        {
+          "first": "Guanchu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiamu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiayi",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Hongyi",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "Shaochen",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Hanjie",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xia",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Nondeterminism and instability in neural network optimization",
+      "authors": [
+        {
+          "first": "Cecilia",
+          "middle": [],
+          "last": "Summers",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Michael J Dinneen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Sky-t1: Train your own o1 preview model within",
+      "authors": [],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Why are the vllm and hugging face transformers inference results inconsistent",
+      "authors": [],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Different logprobs for qwn2-vl when running on transformers and on vllm",
+      "authors": [],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Assessing consistency and reproducibility in the outputs of large language models: Evidence across diverse finance and accounting tasks",
+      "authors": [
+        {
+          "first": "Julian",
+          "middle": [],
+          "last": "Junyan",
+          "suffix": ""
+        },
+        {
+          "first": "Wang",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Xiaoqi",
+          "suffix": ""
+        },
+        {
+          "first": "Wang",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Checkpointing and deterministic training for deep learning",
+      "authors": [
+        {
+          "first": "Xiangzhe",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Hongyu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Guanhong",
+          "middle": [],
+          "last": "Tao",
+          "suffix": ""
+        },
+        {
+          "first": "Xuan",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the 1st International Conference on AI Engineering: Software Engineering for AI"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Qwen2. 5 technical report",
+      "authors": [
+        {
+          "first": "An",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Baosong",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Beichen",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Binyuan",
+          "middle": [],
+          "last": "Hui",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Bowen",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Chengyuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Dayiheng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Fei",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Haoran",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Benchmarking large language model volatility",
+      "authors": [
+        {
+          "first": "Boyang",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Orca: A distributed serving system for {Transformer-Based} generative models",
+      "authors": [
+        {
+          "first": "Gyeong-In",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Joo",
+          "middle": [],
+          "last": "Seong Jeong",
+          "suffix": ""
+        },
+        {
+          "first": "Geon-Woo",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Soojeong",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Byung-Gon",
+          "middle": [],
+          "last": "Chun",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "16th USENIX Symposium on Operating Systems Design and Implementation (OSDI 22)"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "The science of evaluating foundation models",
+      "authors": [
+        {
+          "first": "Jiayi",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Jiamu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "Xia",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "An analystinspector framework for evaluating reproducibility of llms in data science",
+      "authors": [
+        {
+          "first": "Qiuhai",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Claire",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyue",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhan",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Qunhua",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Randomness in neural network training: Characterizing the impact of tooling",
+      "authors": [
+        {
+          "first": "Donglin",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Xingyao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuaiwen",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Sara",
+          "middle": [],
+          "last": "Hooker",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of Machine Learning and Systems"
+    }
+  ]
+}

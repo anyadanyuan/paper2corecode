@@ -1,0 +1,5043 @@
+{
+  "paper_id": "genlm-control",
+  "title": "SYNTACTIC AND SEMANTIC CONTROL OF LARGE LANGUAGE MODELS VIA SEQUENTIAL MONTE CARLO",
+  "authors": [
+    {
+      "first": "João",
+      "middle": [],
+      "last": "Loula",
+      "affiliation": {}
+    },
+    {
+      "first": "Benjamin",
+      "middle": [],
+      "last": "Lebrun",
+      "affiliation": {}
+    },
+    {
+      "first": "Li",
+      "middle": [],
+      "last": "Du",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Johns Hopkins",
+        "location": {}
+      }
+    },
+    {
+      "first": "Ben",
+      "middle": [],
+      "last": "Lipkin",
+      "affiliation": {}
+    },
+    {
+      "first": "Clemente",
+      "middle": [],
+      "last": "Pasti",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zürich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Gabriel",
+      "middle": [],
+      "last": "Grand",
+      "affiliation": {}
+    },
+    {
+      "first": "Tianyu",
+      "middle": [],
+      "last": "Liu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zürich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yahya",
+      "middle": [],
+      "last": "Emara",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zürich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Marjorie",
+      "middle": [],
+      "last": "Freedman",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ISI",
+        "location": {}
+      }
+    },
+    {
+      "first": "Jason",
+      "middle": [],
+      "last": "Eisner",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Johns Hopkins",
+        "location": {}
+      }
+    },
+    {
+      "first": "Ryan",
+      "middle": [],
+      "last": "Cotterell",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zürich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Vikash",
+      "middle": [],
+      "last": "Mansinghka",
+      "affiliation": {}
+    },
+    {
+      "first": "Alexander",
+      "middle": [
+        "K"
+      ],
+      "last": "Lew",
+      "affiliation": {}
+    },
+    {
+      "first": "Tim",
+      "middle": [],
+      "last": "Vieira",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zürich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Timothy",
+      "middle": [
+        "J"
+      ],
+      "last": "O'donnell",
+      "affiliation": {}
+    },
+    {
+      "first": "",
+      "middle": [],
+      "last": "Mcgill",
+      "affiliation": {}
+    },
+    {
+      "first": "Canada",
+      "middle": [],
+      "last": "Cifar",
+      "affiliation": {}
+    },
+    {
+      "first": "A",
+      "middle": [
+        "I"
+      ],
+      "last": "Chair",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "A wide range of LM applications require generating text that conforms to syntactic or semantic constraints. Imposing such constraints can be naturally framed as probabilistic conditioning, but exact generation from the resulting distribution-which can differ substantially from the LM's base distribution-is generally intractable. In this work, we develop an architecture for controlled LM generation based on sequential Monte Carlo (SMC). Our SMC framework allows us to flexibly incorporate domain-and problem-specific constraints at inference time, and efficiently reallocate computational resources in light of new information during the course of generation. By comparing to a number of alternatives and ablations on four challenging domains-Python code generation for data science, text-to-SQL, goal inference, and molecule synthesis-we demonstrate that, with little overhead, our approach allows small open-source language models to outperform models over 8× larger, as well as closed-source, fine-tuned ones. In support of the probabilistic perspective, we show that these performance improvements are driven by better approximation to the posterior distribution. Our system builds on the framework of Lew et al. (2023) and integrates with its language model probabilistic programming language, giving users a simple, programmable way to apply SMC to a broad variety of controlled generation problems.\nhttps://github.com/probcomp/genlm-control",
+  "body": {
+    "1_INTRODUCTION": "The goal of controlled generation from language models (LMs) is to produce text guided by a set of syntactic or semantic constraints. One prominent example is semantic parsing, or code generation, which involves producing text in a programming (or other formal) language, typically from a natural language prompt. We may wish to use diverse signals to guide code generation, for example:\n• Checking (partial) code statically (type-checking, linting, partial evaluation); • Running (partial) code on a test case and checking if it raises an error or returns the wrong answer; • Simulating environments (e.g., in robotics or chemistry) and assigning a score to the resulting state; • Rolling out possible completions of partial code and computing their max, min, or average score;\n• Asking another language model to critique the code generated so far.\nSuch signals vary along several important dimensions: some are cheap to compute (linting), others are more costly (simulations); some can be evaluated incrementally with each sampled token (language model critique), others provide sparser guidance (running code); some enforce binary hard constraints (type-checking), others yield soft continuous scores (scoring).\nOne way to represent such signals uniformly is as potential functions ϕ(x) assigning non-negative scores to sequences of tokens x. Given a set Φ of such potentials, we will write Φ(x) = ϕ∈Φ ϕ(x). We frame the problem of controlled generation probabilistically: We wish to sample from the global product of experts distribution on complete sequences x:\nEQUATION\nwhere p is a distribution over complete token sequences defined by an autoregressive LM, and Z is a normalizing constant. The distribution g can be interpreted as a posterior with p as the prior and Φ as the likelihood function. Importantly, even when both sampling from p and evaluating Φ(x) are efficient, sampling exactly from g is generally intractable (Rosenfeld et al., 2001) .\nTwo popular sampling-based approaches that avoid the intractability of g are locally constrained decoding and sample reranking (see Appendix F for a detailed review of related work, including other approaches such as MCMC). Locally constrained decoding uses per-token logit biasing or masking to incorporate signals at each step, for example to ensure that the complete sequence will fall in a specified regular or context-free language (e.g., Shin et al., 2021; Scholak et al., 2021; Poesia et al., 2022; Willard & Louf, 2023; Moskal et al., 2024; Ugare et al., 2024) . Sample-rerank-based approaches first generate complete sequences and then rerank or reweight these based on the specified set of signals. Examples of this approach include best-of-n reweighting with a reward model (Nakano et al., 2021; Krishna et al., 2022; Zhou et al., 2023; Gui et al., 2024; Mudgal et al., 2024; Ichihara et al., 2025) or filtering samples with a verifier (Olausson et al., 2023; Chen et al., 2024; Lightman et al., 2024; Xin et al., 2024) . Each approach suffers from significant weaknesses. Locally constrained decoding requires the guiding signals Φ to be cheap enough to evaluate very frequently (for instance on the full token vocabulary at every step of generation). Moreover, it often introduces greedy approximations that badly distort the distribution (relative to g, Lew et al., 2023; Park et al., 2025) . Sample-rerank does not impose constraints Φ until full sequences have been sampled and, thus, cannot make use of information available incrementally during generation; this can significantly increase the number of samples needed to find high probability, constraint-satisfying sequences.\nSequential Monte Carlo (SMC) has been proposed as an effective approach to approximate inference for such intractable distributions in other difficult language modeling problems, such as infilling, prompt engineering, and prompt intersection as well as for more traditional tasks in natural language processing (Börschinger & Johnson, 2011; Dubbin & Blunsom, 2012; Buys & Blunsom, 2015; Lin & Eisner, 2018; Lew et al., 2023; Zhao et al., 2024) . In this paper, we use SMC to tackle a number of challenging semantic parsing problems, guiding generation with incremental static and dynamic analyses. When these signals are efficient enough to be used incrementally, our approach incorporates them into proposal distributions, gaining the benefits of locally constrained decoding; more costly potentials-as often used in sample-rerank approaches-are incorporated as twist functions that reweight partial sequences to favor promising paths (Naesseth et al., 2019) . Our approach emphasizes programmable potentials and proposals that can easily be specialized for specific tasks or problems (e.g., by integrating libraries for molecular structure or robotic planning, see §3.1). We contrast this with the use of learned proposals or twist functions (Lawson et al., 2022; Zhao et al., 2024) , which requires costly, problem-specific fine-tuning.\nOur paper makes the following contributions:\n• SMC for constrained semantic parsing. We develop an architecture specializing SMC for code generation under diverse syntactic and semantic constraints ( §2). Unlike many previous frameworks for constrained decoding, our algorithm can integrate constraints that cannot be incrementally evaluated over the entire token vocabulary, as well as constraints that can only be evaluated at irregular intervals during generation. The framework emphasizes programmable inference (Mansinghka et al., 2018) , allowing users to deploy proposals and potentials that exploit the structure of application domains. Our system also fully integrates with the language model probabilistic programming framework of Lew et al. (2023) .\n• Empirical evaluation of performance in diverse domains. We apply our approach-and six alternatives-to four challenging problem domains: Python code generation for data science, text-to-SQL, goal inference, and molecule synthesis ( §3.1). We find that, with little overhead, our approach significantly improves performance across domains, allowing small open-source language models to outperform models over 8× larger, as well as closed-source fine-tuned models.\nWe additionally find that, with 5-10× fewer particles, SMC outperforms approaches that only incorporate constraints at the end of generation ( §3.2).\n• Empirical evaluation of algorithm components. We run ablation experiments and find that improved performance can be attributed to three algorithmic components: weight correction, which mitigates the greediness of locally constrained decoding; expensive potentials, which incorporate useful signals that several baseline methods cannot integrate; and adaptive resampling, which adaptively refocuses computation on partial sequences that look more promising.\n• Empirical validation of the probabilistic perspective. We derive estimators of the KL divergence from each method's output distribution to the global product of experts (Appendix D). We find that the best-performing methods (i) have outputs that are closer in KL divergence to the global product of experts within each problem instance, and (ii) assign probabilities that are more correlated with downstream performance across problem instances ( §3.3).",
+    "2_MONTE_CARLO_INFERENCE_FOR_CONSTRAINED_SEMANTIC_PARSING": "Notation. We use x to refer to a sequence of tokens, with x i being the i th token in the sequence. Let\nx <t def = x 1 ••• x t-1 .\nLet ε denote the empty sequence. We use juxtaposition (e.g., x y) to denote sequence concatenation. Let A be a vocabulary of tokens, and let A * denote the set of all finite sequences of tokens in A. We refer to the set A * as the set of partial sequences. We use EOS / ∈ A to denote a special token marking the end of sequences not included in A. We define A EOS def = A ∪ {EOS} and the set of complete sequences\nA * EOS def = {x EOS | x ∈ A * }.\nLanguage models. A language model p is a probability distribution over complete sequences (i.e., x∈A * EOS p(x) = 1). We assume that p provides a conditional distribution p(x ′ | x) over its next token x ′ ∈ A EOS given any sequence x ∈ A * ; the probability of any complete sequence factors as\nEQUATION\nWe find it convenient to extend the definition of p(x) from Eq. ( 2) to partial sequences x ∈ A * ; note, however, that p(x) is a prefix probability,foot_0 so p is not a probability distribution over partial sequences.\nWith this extended definition, we have p(x ′ | x) = p(x x ′ ) p(x) provided p(x) > 0. Potential functions. We consider a set Φ of domain-or task-specific potential functions that encode relevant constraints or preferences as nonnegative scores. Each potential function ϕ ∈ Φ has the type ϕ : (A * ∪ A * EOS) → R ≥0 , meaning that it assigns a non-negative real ϕ(x) when evaluated on some sequence x, freely using any structure in the sequence so far regardless of whether x is a partial or complete sequence. For technical reasons, we assume that all potentials satisfy ϕ(x) = 0 =⇒ ϕ(x y) = 0, for all x and y such that x y ∈ A * EOS.\nTarget distribution. We formalize the goal of controlled generation as sampling sequences x ∈ A * EOS from the target distribution given by the global product of experts between p and Φ:\nEQUATION\nFor intuition, if Φ(x) ∈ {0, 1} for all x in A * EOS, the global product of experts can be understood as the rejection sampling distribution that arises by repeatedly generating x ∼ p, and rejecting if Φ(x) = 0. The normalizing constant Z is the rate at which samples are accepted. Thus, the expected runtime of rejection sampling is 1/Z per accepted sample, making it expensive if Z is small. Our work aims to accurately approximate the global product of experts with much less computation.",
+    "3_EXPERIMENTS": {
+      "3.1_DOMAINS": "We study the performance of our proposed sampling methods on four challenging semantic parsing domains, summarized in Table 1 ; see Appendix E for further details.\n• Goal inference (Planetarium). Task: Formally specify an agent's goal in the STRIPS subset of the PDDL planning language, based on a natural-language description of the goal and PDDL code detailing the agent's initial conditions and plan for achieving it. Data: Blocksworld tasks with up to 10 objects from the Planetarium benchmark (Zuo et al., 2024) . Metric: Accuracy with respect to ground-truth PDDL goal. Base LM: Llama 3.1 8B. Grammar: STRIPS syntax for goals within Planetarium Blocksworld's domain definition. Expensive potential: Run a simulation with a ground-truth plan and check whether the resulting state conforms to the predicted (partial) goal.\n• Python for data science (DS-1000). Task: Generate Python code that uses standard data science libraries (NumPy, PyTorch, Pandas, etc.) to solve a task specified in natural language and via (executable) test cases. Data: DS-1000 benchmark (Lai et al., 2023) . Metric: Accuracy of the generated program with respect to the provided test cases. Base LM: Llama 3 70B. Grammar:\nWe use a trivial potential Φ eff (x) = 1, as we find that the unconstrained LM reliably generates grammatical Python (that may nonetheless induce runtime errors). Expensive potential: Given a partial program x, Φ exp truncates x to the longest prefix of the sequence that consists of only valid Python statements (discarding any incomplete material at the end), and executes the resulting (partial) program on the provided test case, checking for runtime errors.\n• Text-to-SQL (Spider). Task: Generate SQL queries from a natural language question and a database schema. Data: Spider development split (Yu et al., 2018) . Metric: Execution accuracy (whether the generated SQL query, when run against a test database, produces the same results Check whether column names in the generated (partial) query actually belong to the queried tables, modulo aliasing. (The grammar ensures only that the column names exist in some table.) • Molecular synthesis (GDB-17). Task: Generate drug-like molecules in the SMILES format (Weininger, 1988) . Data: Few-shot prompts constructed by repeatedly choosing 20 random examples from the GDB-17 dataset (Ruddigkeit et al., 2012) . Metric: Quantitative Estimate of Drug-likeness (QED; Bickerton et al., 2012) , a standard molecular fitness function. Base LM: Llama 3.1 8B. Grammar: SMILES syntax for molecules. Expensive potential: A SMILES prefix validator implemented in the Python partialsmiles library (O'Boyle, 2024).",
+      "3.2_EVALUATION_OF_DOWNSTREAM_PERFORMANCE": "We begin by investigating whether our approach leads to significant performance gains. Table 2 reports posterior-weighted accuracy for our approach and ablations of its components: grammar constraints, weight corrections, expensive potentials, and resampling. We first summarize the observed effects of each component in our approach:\nGrammar constraints. In line with previous literature (e.g., Shin et al., 2021; Scholak et al., 2021; Poesia et al., 2022; Wang et al., 2024) , we find that the addition of a grammar constraint via Φ eff improves downstream accuracy relative to the base LM across all domains in which it is used, even without the use of weight corrections.\nExpensive potentials. Furthermore, we observe that integrating expensive potentials Φ exp improves accuracy in models. Even without any weight corrections, the improvement in the goal inference, data science, and molecular synthesis domains is large; in the text-to-SQL domain, it is smaller but statistically significant (paired permutation test, p < 0.01). This suggests that making use of information that cannot be efficiently encoded in logit masks can greatly improve performance.",
+      "3.3_VALIDATION_OF_THE_PROBABILISTIC_PERSPECTIVE": "The best-performing methods from the previous section were designed to approximate the global product of experts distribution. In this section, we investigate how closely each of these methods approximates this global distribution and whether the downstream performance results from the previous section are driven by the quality of the probabilistic inference. In particular, we find:\nWithin each problem instance, the best-performing methods have outputs that are closer in KL divergence to the global product of experts. We consider the distribution over sequences q r alg (x) defined by each algorithm (see Appendix D for details and derivations). For each q r alg , we estimate a tractable correlate of the KL between the algorithm and the global product of experts: log Z -KL(q r alg ∥ g). We refer to this quantity as the approximation quality. Since the term log Z is algorithm-independent, we can directly compare the estimated approximation quality across algorithms to determine which ones have lower KL divergence relative to the global product of experts. However, because log Z is instance-specific, these comparisons can only be made at the instance level. Accordingly, for each domain, we select the instance with the median unique accuracy Figure 4 : Distributional properties of compounds generated by different methods. Middle: Distribution of drug-likeness as measured by QED score (Bickerton et al., 2012) . Right: Means for other properties of interest such as diversity and de novo similarity (details in Appendix E.2).\nas a representative example. Fig. 3 visualizes estimated approximation quality on these examples across all methods, which include Φ exp . Estimates were computed across 100 runs of each algorithm.\nIn all domains, sampling from the local product of experts without weight correction leads to significantly lower approximation quality relative to the methods that approximate the global product.\nThe addition of resampling steps also significantly improves approximation quality in the data science and goal inference domains, but does not significantly change quality in the molecular synthesis and text-to-SQL domains. These trends in approximation quality are consistent with those observed in our evaluation of downstream accuracy: for example, we find that text-to-SQL is the domain in which weight corrections led to the most significant improvement in approximations of the global posterior, as well as the domain in which weight corrections most improve downstream performance. This suggests that the probabilistic formulation of the problem leads to practical gains in performance. Furthermore, these benefits can extend beyond our main performance metric; for instance, resampling during molecular generation yields simultaneous improvements along a number of additional dimensions of interest, including de-novo similarity and diversity (Fig. 4 ).\nAcross problem instances, the best-performing methods assign probabilities that are more correlated with downstream performance In each of our experiments, we group output particles by semantic equivalence, and estimate the probability of each equivalence class under the method's approximation to the global product of experts, by summing the normalized weights of the members of each equivalence class (this is similar to the postprocessing performed in Shi et al., 2022) . We then measure the correlation between the estimated probability of a result and its score on the task-specific metric. Table 3 shows sequential Monte Carlo overall exhibits high correlation between (approximate) posterior probabilities and downstream performance, and that the differences in correlation between methods closely track the differences in performance in §3.2. In the goal inference, molecular synthesis, and data science domains, where expensive potentials and resampling greatly increase performance, we find that the same features also result in higher correlation between result probability and performance, whereas in text-to-SQL, where the performance gains are slimmer, we find that all methods correlate and score equally well. Together, these results validate the probabilistic approach, suggesting that the global posterior captures semantically meaningful uncertainty.",
+      "_text": "We compare seven approaches to constrained generation:\n1. Language model (Base LM). This method simply samples from the base language model p (see §3.1 for details on the language models used). 2. Language model with grammar constraint (Locally constrained decoding). This is the approach used by much prior work (Footnote 3). In each of our domains, we formulate a context-free grammar (CFG) encoding a notion of syntactic well-formedness appropriate for the domain (see §3.1). We let Φ eff encode the binary function that determines whether its input is a prefix of some valid sequence in the grammar's language. This baseline directly samples from ℓ eff , i.e., it uses per-token logit masking to greedily enforce the CFG constraint. 3. Language model with grammar constraint and weight correction (Grammar-only IS). This method generates particles from ℓ eff , then computes importance weights to correct toward the global product of p and Φ eff . These weights mitigate some of the greediness of local-product-of-experts sampling, but do not yet integrate any potentials beyond Φ eff . 4. Language model with grammar constraint, weight correction, and resampling (Grammar-only SMC). This method is a straightforward application of Lew et al. (2023) to locally constrained decoding and is similar to Park et al. (2025) , which also attempts to correct for the greediness of locally constrained decoding. As in the previous method, it targets the global product of p and Φ eff but uses resampling to reallocate computation to promising particles. 5. Language model with grammar constraint and expensive potential (Sample-Rerank). Sample-Rerank is a common family of approaches for incorporating an external signal into an LM's generations post-hoc, for instance by choosing the best-of-n particles via a reward model (Nakano et al., 2021; Krishna et al., 2022; Zhou et al., 2023; Gui et al., 2024; Mudgal et al., 2024; Ichihara 7 In practice, we only resample if the effective sample size (Olausson et al., 2023; Chen et al., 2024; Lightman et al., 2024; Xin et al., 2024) . In each domain, we formulate an additional potential Φ exp that encodes task-specific signals of sequence quality (see §3.1). This baseline generates grammar-constrained sequences from the local product of experts, then reweights each sequence x by Φ exp (x). 6. Language model with grammar constraint, weight correction, and expensive potential (Full IS).\nN def = ( N i=1 w (i) ) 2 N i=1 (w (i) ) 2 is under a threshold (e.g., N 3 ).\nThis is the full importance sampling method described in §2, with Φ = Φ eff ∪ Φ exp . Unlike in the previous method, the importance weights here include correction terms that mitigate the greediness of local sampling, targeting the global product g. We include this method primarily as an ablation of our next method (SMC), modified not to include incremental resampling. 7. Language model with grammar constraint, weight correction, expensive potential, and resampling (Full SMC). This method includes all of the algorithmic contributions of our approach. It is the full sequential Monte Carlo algorithm, with Φ = Φ eff ∪ Φ exp . It targets the same global posterior g as the previous method but uses resampling to reallocate computation to promising particles.\nWe report results using N = 10 particles; see Appendix A.2 and Fig. 2 for downstream accuracy results for a varying number of particles. We ran experiments on GCP instances with 1 A100 GPU and 12 vCPUs (our CFG parser is implemented for CPU and is parallelized across particles), with the exception of the Data Science domain, for which we used 4 H100 GPUs and 64 vCPUs."
+    }
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Do as I can, not as I say: Grounding language in robotic affordances",
+      "authors": [
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Michael Ahn",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [],
+          "last": "Brohan",
+          "suffix": ""
+        },
+        {
+          "first": "Yevgen",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Omar",
+          "middle": [],
+          "last": "Chebotar",
+          "suffix": ""
+        },
+        {
+          "first": "Byron",
+          "middle": [],
+          "last": "Cortes",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "David",
+          "suffix": ""
+        },
+        {
+          "first": "Chuyuan",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "Keerthana",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Karol",
+          "middle": [],
+          "last": "Gopalakrishnan",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Hausman",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Herzog",
+          "suffix": ""
+        },
+        {
+          "first": "Jasmine",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Julian",
+          "middle": [],
+          "last": "Hsu",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Ibarz",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Ichter",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Irpan",
+          "suffix": ""
+        },
+        {
+          "first": "Rosario",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "Kyle",
+          "middle": [],
+          "last": "Jauregui Ruano",
+          "suffix": ""
+        },
+        {
+          "first": "Sally",
+          "middle": [],
+          "last": "Jeffrey",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Jesmonth",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Nikhil",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Joshi",
+          "suffix": ""
+        },
+        {
+          "first": "Dmitry",
+          "middle": [],
+          "last": "Julian",
+          "suffix": ""
+        },
+        {
+          "first": "Yuheng",
+          "middle": [],
+          "last": "Kalashnikov",
+          "suffix": ""
+        },
+        {
+          "first": "Kuang-Huei",
+          "middle": [],
+          "last": "Kuang",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Yao",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "Linda",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Carolina",
+          "middle": [],
+          "last": "Luu",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Parada",
+          "suffix": ""
+        },
+        {
+          "first": "Jornell",
+          "middle": [],
+          "last": "Pastor",
+          "suffix": ""
+        },
+        {
+          "first": "Kanishka",
+          "middle": [],
+          "last": "Quiambao",
+          "suffix": ""
+        },
+        {
+          "first": "Jarek",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "Diego",
+          "middle": [],
+          "last": "Rettinghouse",
+          "suffix": ""
+        },
+        {
+          "first": "Pierre",
+          "middle": [],
+          "last": "Reyes",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Sermanet",
+          "suffix": ""
+        },
+        {
+          "first": "Clayton",
+          "middle": [],
+          "last": "Sievers",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Vincent",
+          "middle": [],
+          "last": "Toshev",
+          "suffix": ""
+        },
+        {
+          "first": "Fei",
+          "middle": [],
+          "last": "Vanhoucke",
+          "suffix": ""
+        },
+        {
+          "first": "Ted",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Sichun",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Mengyuan",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Variational best-of-N alignment",
+      "authors": [
+        {
+          "first": "Afra",
+          "middle": [],
+          "last": "Amini",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Vieira",
+          "suffix": ""
+        },
+        {
+          "first": "Elliott",
+          "middle": [],
+          "last": "Ash",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Cotterell",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Proceedings of International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "The pseudo-marginal approach for efficient monte carlo computations",
+      "authors": [
+        {
+          "first": "Christophe",
+          "middle": [],
+          "last": "Andrieu",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Gareth",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Roberts",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "Statistics Theory"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Constitutional AI: Harmlessness from AI feedback",
+      "authors": [
+        {
+          "first": "Yuntao",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Saurav",
+          "middle": [],
+          "last": "Kadavath",
+          "suffix": ""
+        },
+        {
+          "first": "Sandipan",
+          "middle": [],
+          "last": "Kundu",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Jackson",
+          "middle": [],
+          "last": "Kernion",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Goldie",
+          "suffix": ""
+        },
+        {
+          "first": "Azalia",
+          "middle": [],
+          "last": "Mirhoseini",
+          "suffix": ""
+        },
+        {
+          "first": "Cameron",
+          "middle": [],
+          "last": "Mckinnon",
+          "suffix": ""
+        },
+        {
+          "first": "Carol",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Catherine",
+          "middle": [],
+          "last": "Olsson",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Olah",
+          "suffix": ""
+        },
+        {
+          "first": "Danny",
+          "middle": [],
+          "last": "Hernandez",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Drain",
+          "suffix": ""
+        },
+        {
+          "first": "Deep",
+          "middle": [],
+          "last": "Ganguli",
+          "suffix": ""
+        },
+        {
+          "first": "Dustin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Eli",
+          "middle": [],
+          "last": "Tran-Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "Ethan",
+          "middle": [],
+          "last": "Perez",
+          "suffix": ""
+        },
+        {
+          "first": "Jamie",
+          "middle": [],
+          "last": "Kerr",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [],
+          "last": "Mueller",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Ladish",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [],
+          "last": "Landau",
+          "suffix": ""
+        },
+        {
+          "first": "Kamile",
+          "middle": [],
+          "last": "Kamal Ndousse",
+          "suffix": ""
+        },
+        {
+          "first": "Liane",
+          "middle": [],
+          "last": "Lukosuite",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Lovitt",
+          "suffix": ""
+        },
+        {
+          "first": "Nelson",
+          "middle": [],
+          "last": "Sellitto",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Elhage",
+          "suffix": ""
+        },
+        {
+          "first": "Noemi",
+          "middle": [],
+          "last": "Schiefer",
+          "suffix": ""
+        },
+        {
+          "first": "Nova",
+          "middle": [],
+          "last": "Mercado",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Dassarma",
+          "suffix": ""
+        },
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Lasenby",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Larson",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Ringer",
+          "suffix": ""
+        },
+        {
+          "first": "Shauna",
+          "middle": [],
+          "last": "Johnston",
+          "suffix": ""
+        },
+        {
+          "first": "Sheer",
+          "middle": [
+            "El"
+          ],
+          "last": "Kravec",
+          "suffix": ""
+        },
+        {
+          "first": "Stanislav",
+          "middle": [],
+          "last": "Showk",
+          "suffix": ""
+        },
+        {
+          "first": "Tamera",
+          "middle": [],
+          "last": "Fort",
+          "suffix": ""
+        },
+        {
+          "first": "Timothy",
+          "middle": [],
+          "last": "Lanham",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Telleen-Lawton",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Conerly",
+          "suffix": ""
+        },
+        {
+          "first": "Tristan",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [
+            "R"
+          ],
+          "last": "Hume",
+          "suffix": ""
+        },
+        {
+          "first": "Zac",
+          "middle": [],
+          "last": "Bowman",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Hatfield-Dodds",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Joseph",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Mccandlish",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kaplan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Constructing a BPE tokenization DFA",
+      "authors": [
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Berglund",
+          "suffix": ""
+        },
+        {
+          "first": "Willeke",
+          "middle": [],
+          "last": "Martens",
+          "suffix": ""
+        },
+        {
+          "first": "Brink",
+          "middle": [],
+          "last": "Van Der Merwe",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Implementation and Application of Automata"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Quantifying the chemical beauty of drugs",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [
+            "Richard"
+          ],
+          "last": "Bickerton",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Gaia",
+          "suffix": ""
+        },
+        {
+          "first": "Jérémy",
+          "middle": [],
+          "last": "Paolini",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Besnard",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "L"
+          ],
+          "last": "Sorel Muresan",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hopkins",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Nature Chemistry"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "A particle filter algorithm for Bayesian wordsegmentation",
+      "authors": [
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Börschinger",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Johnson",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Proceedings of the Australasian Language Technology Association Workshop"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "A Bayesian model for generative transition-based dependency parsing",
+      "authors": [
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Buys",
+          "suffix": ""
+        },
+        {
+          "first": "Phil",
+          "middle": [],
+          "last": "Blunsom",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Proceedings of the International Conference on Dependency Linguistics"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "You should evaluate your language model on marginal likelihood over tokenisations",
+      "authors": [
+        {
+          "first": "Kris",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Laura",
+          "middle": [],
+          "last": "Rimell",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "The sample size required in importance sampling",
+      "authors": [
+        {
+          "first": "Sourav",
+          "middle": [],
+          "last": "Chatterjee",
+          "suffix": ""
+        },
+        {
+          "first": "Persi",
+          "middle": [],
+          "last": "Diaconis",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "The Annals of Applied Probability"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Are more LLM calls all you need? towards the scaling properties of compound AI systems",
+      "authors": [
+        {
+          "first": "Lingjiao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [
+            "Quincy"
+          ],
+          "last": "Davis",
+          "suffix": ""
+        },
+        {
+          "first": "Boris",
+          "middle": [],
+          "last": "Hanin",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Bailis",
+          "suffix": ""
+        },
+        {
+          "first": "Ion",
+          "middle": [],
+          "last": "Stoica",
+          "suffix": ""
+        },
+        {
+          "first": "Matei",
+          "middle": [
+            "A"
+          ],
+          "last": "Zaharia",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [
+            "Y"
+          ],
+          "last": "Zou",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems 2024, NeurIPS 2024"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Linearly controlled language generation with performative guarantees",
+      "authors": [
+        {
+          "first": "Emily",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Baroni",
+          "suffix": ""
+        },
+        {
+          "first": "Carmen",
+          "middle": [
+            "Amo"
+          ],
+          "last": "Alonso",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "NeurIPS Workshop on Foundation Model Interventions"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Should you marginalize over possible tokenizations",
+      "authors": [
+        {
+          "first": "Nadezhda",
+          "middle": [],
+          "last": "Chirkova",
+          "suffix": ""
+        },
+        {
+          "first": "Germán",
+          "middle": [],
+          "last": "Kruszewski",
+          "suffix": ""
+        },
+        {
+          "first": "Jos",
+          "middle": [],
+          "last": "Rozen",
+          "suffix": ""
+        },
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Dymetman",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "An Introduction to Sequential Monte Carlo",
+      "authors": [
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Chopin",
+          "suffix": ""
+        },
+        {
+          "first": "Omiros",
+          "middle": [],
+          "last": "Papaspiliopoulos",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Plug and play language models: A simple approach to controlled text generation",
+      "authors": [
+        {
+          "first": "Sumanth",
+          "middle": [],
+          "last": "Dathathri",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [],
+          "last": "Madotto",
+          "suffix": ""
+        },
+        {
+          "first": "Janice",
+          "middle": [],
+          "last": "Lan",
+          "suffix": ""
+        },
+        {
+          "first": "Jane",
+          "middle": [],
+          "last": "Hung",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Frank",
+          "suffix": ""
+        },
+        {
+          "first": "Piero",
+          "middle": [],
+          "last": "Molino",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Yosinski",
+          "suffix": ""
+        },
+        {
+          "first": "Rosanne",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "A general-purpose algorithm for constrained sequential inference",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Deutsch",
+          "suffix": ""
+        },
+        {
+          "first": "Shyam",
+          "middle": [],
+          "last": "Upadhyay",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Roth",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the Conference on Computational Natural Language Learning"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Principled gradient-based MCMC for conditional sampling of text",
+      "authors": [
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Afra",
+          "middle": [],
+          "last": "Amini",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Torroba Hennigen",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyan",
+          "middle": [],
+          "last": "Velocity Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Holden",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Eisner",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Cotterell",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Unsupervised part of speech inference with particle filters",
+      "authors": [
+        {
+          "first": "Gregory",
+          "middle": [],
+          "last": "Dubbin",
+          "suffix": ""
+        },
+        {
+          "first": "Phil",
+          "middle": [],
+          "last": "Blunsom",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Proceedings of the NAACL HLT Workshop on Induction of Linguistic Structure"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "An Efficient Context-Free Parsing Algorithm",
+      "authors": [
+        {
+          "first": "Jay",
+          "middle": [],
+          "last": "Earley",
+          "suffix": ""
+        }
+      ],
+      "year": 1968,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "STRIPS: A new approach to the application of theorem proving to problem solving",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Richard",
+          "suffix": ""
+        },
+        {
+          "first": "Nils",
+          "middle": [
+            "J"
+          ],
+          "last": "Fikes",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nilsson",
+          "suffix": ""
+        }
+      ],
+      "year": 1971,
+      "venue": "Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Language models can learn complex molecular distributions",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Flam-Shepherd",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Alán",
+          "middle": [],
+          "last": "Aspuru-Guzik",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Nature Communications"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Grammar-constrained decoding for structured NLP tasks without finetuning",
+      "authors": [
+        {
+          "first": "Saibo",
+          "middle": [],
+          "last": "Geng",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Josifoski",
+          "suffix": ""
+        },
+        {
+          "first": "Maxime",
+          "middle": [],
+          "last": "Peyrard",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "West",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "PDDL-the planning domain definition language",
+      "authors": [
+        {
+          "first": "Malik",
+          "middle": [],
+          "last": "Ghallab",
+          "suffix": ""
+        },
+        {
+          "first": "Adele",
+          "middle": [],
+          "last": "Howe",
+          "suffix": ""
+        },
+        {
+          "first": "Craig",
+          "middle": [],
+          "last": "Knoblock",
+          "suffix": ""
+        },
+        {
+          "first": "Drew",
+          "middle": [],
+          "last": "Mcdermott",
+          "suffix": ""
+        },
+        {
+          "first": "Ashwin",
+          "middle": [],
+          "last": "Ram",
+          "suffix": ""
+        },
+        {
+          "first": "Manuela",
+          "middle": [],
+          "last": "Veloso",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Weld",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Wilkins",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Semiring parsing",
+      "authors": [
+        {
+          "first": "Joshua",
+          "middle": [],
+          "last": "Goodman",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": "Computational Linguistics"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Leveraging pre-trained large language models to construct and utilize world models for model-based task planning",
+      "authors": [
+        {
+          "first": "Lin",
+          "middle": [],
+          "last": "Guan",
+          "suffix": ""
+        },
+        {
+          "first": "Karthik",
+          "middle": [],
+          "last": "Valmeekam",
+          "suffix": ""
+        },
+        {
+          "first": "Sarath",
+          "middle": [],
+          "last": "Sreedharan",
+          "suffix": ""
+        },
+        {
+          "first": "Subbarao",
+          "middle": [],
+          "last": "Kambhampati",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Bonbon alignment for large language models and the sweetness of best-of-n sampling",
+      "authors": [
+        {
+          "first": "Lin",
+          "middle": [],
+          "last": "Gui",
+          "suffix": ""
+        },
+        {
+          "first": "Cristina",
+          "middle": [],
+          "last": "Garbacea",
+          "suffix": ""
+        },
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Veitch",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems 38: Annual Conference on Neural Information Processing Systems 2024, NeurIPS 2024"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "The fast downward planning system",
+      "authors": [
+        {
+          "first": "Malte",
+          "middle": [],
+          "last": "Helmert",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Journal of Artificial Intelligence Research"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "A high-level programming language for generative protein design",
+      "authors": [
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Hie",
+          "suffix": ""
+        },
+        {
+          "first": "Salvatore",
+          "middle": [],
+          "last": "Candido",
+          "suffix": ""
+        },
+        {
+          "first": "Zeming",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Ori",
+          "middle": [],
+          "last": "Kabeli",
+          "suffix": ""
+        },
+        {
+          "first": "Roshan",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "Nikita",
+          "middle": [],
+          "last": "Smetanin",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Sercu",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Rives",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "bioRxiv"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Introduction to Automata Theory, Languages and Computation",
+      "authors": [
+        {
+          "first": "John",
+          "middle": [
+            "E"
+          ],
+          "last": "Hopcroft",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [
+            "D"
+          ],
+          "last": "Ullman",
+          "suffix": ""
+        }
+      ],
+      "year": 1979,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "A generalization of sampling without replacement from a finite universe",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Daniel",
+          "suffix": ""
+        },
+        {
+          "first": "Donovan",
+          "middle": [
+            "J"
+          ],
+          "last": "Horvitz",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Thompson",
+          "suffix": ""
+        }
+      ],
+      "year": 1952,
+      "venue": "Journal of the American Statistical Association"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "VAL: Automatic plan validation, continuous effects and mixed initiative planning using PDDL",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Howey",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Long",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Fox",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": "IEEE International Conference on Tools with Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Grounded decoding: Guiding text generation with grounded models for embodied agents",
+      "authors": [
+        {
+          "first": "Wenlong",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Fei",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "Dhruv",
+          "middle": [],
+          "last": "Shah",
+          "suffix": ""
+        },
+        {
+          "first": "Danny",
+          "middle": [],
+          "last": "Driess",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Yao",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Pete",
+          "middle": [],
+          "last": "Florence",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Mordatch",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "Karol",
+          "middle": [],
+          "last": "Hausman",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Ichter",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Evaluation of best-of-n sampling strategies for language model alignment",
+      "authors": [
+        {
+          "first": "Yuki",
+          "middle": [],
+          "last": "Ichihara",
+          "suffix": ""
+        },
+        {
+          "first": "Yuu",
+          "middle": [],
+          "last": "Jinnai",
+          "suffix": ""
+        },
+        {
+          "first": "Tetsuro",
+          "middle": [],
+          "last": "Morimura",
+          "suffix": ""
+        },
+        {
+          "first": "Kenshi",
+          "middle": [],
+          "last": "Abe",
+          "suffix": ""
+        },
+        {
+          "first": "Kaito",
+          "middle": [],
+          "last": "Ariu",
+          "suffix": ""
+        },
+        {
+          "first": "Mitsuki",
+          "middle": [],
+          "last": "Sakamoto",
+          "suffix": ""
+        },
+        {
+          "first": "Eiji",
+          "middle": [],
+          "last": "Uchibe",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Transactions on Machine Learning Research"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Automata-based constraints for language model decoding",
+      "authors": [
+        {
+          "first": "Terry",
+          "middle": [],
+          "last": "Koo",
+          "suffix": ""
+        },
+        {
+          "first": "Frederick",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Luheng",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Conference on Language Modeling"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "RL with KL penalties is better viewed as Bayesian inference",
+      "authors": [
+        {
+          "first": "Tomasz",
+          "middle": [],
+          "last": "Korbak",
+          "suffix": ""
+        },
+        {
+          "first": "Ethan",
+          "middle": [],
+          "last": "Perez",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Buckley",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Findings of the Association for Computational Linguistics: EMNLP 2022"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Rankgen: Improving text generation with large ranking models",
+      "authors": [
+        {
+          "first": "Kalpesh",
+          "middle": [],
+          "last": "Krishna",
+          "suffix": ""
+        },
+        {
+          "first": "Yapei",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Wieting",
+          "suffix": ""
+        },
+        {
+          "first": "Mohit",
+          "middle": [],
+          "last": "Iyyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing, EMNLP 2022"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Validating large language models with RELM",
+      "authors": [
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Kuchnik",
+          "suffix": ""
+        },
+        {
+          "first": "Virginia",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Amvrosiadis",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of Machine Learning and Systems"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Controlled text generation as continuous optimization with multiple constraints",
+      "authors": [
+        {
+          "first": "Sachin",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Malmi",
+          "suffix": ""
+        },
+        {
+          "first": "Aliaksei",
+          "middle": [],
+          "last": "Severyn",
+          "suffix": ""
+        },
+        {
+          "first": "Yulia",
+          "middle": [],
+          "last": "Tsvetkov",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Gradient-based constrained sampling from language models",
+      "authors": [
+        {
+          "first": "Sachin",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Biswajit",
+          "middle": [],
+          "last": "Paria",
+          "suffix": ""
+        },
+        {
+          "first": "Yulia",
+          "middle": [],
+          "last": "Tsvetkov",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "DS-1000: A natural and reliable benchmark for data science code generation",
+      "authors": [
+        {
+          "first": "Yuhang",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "Chengxi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yiming",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ruiqi",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        },
+        {
+          "first": "Wen-Tau",
+          "middle": [],
+          "last": "Yih",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Fried",
+          "suffix": ""
+        },
+        {
+          "first": "Sida",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning. Proceedings of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "RDKit: Open-source cheminformatics software",
+      "authors": [
+        {
+          "first": "Greg",
+          "middle": [],
+          "last": "Landrum",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Sixo: Smoothing inference with twisted objectives",
+      "authors": [
+        {
+          "first": "Dieterich",
+          "middle": [],
+          "last": "Lawson",
+          "suffix": ""
+        },
+        {
+          "first": "Allan",
+          "middle": [],
+          "last": "Raventós",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Warrington",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Linderman",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Recursive Monte Carlo and variational inference with auxiliary variables",
+      "authors": [
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Alexander K Lew",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Cusumano-Towner",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Vikash",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mansinghka",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Uncertainty in Artificial Intelligence. Proceedings of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Sequential Monte Carlo steering of large language models using probabilistic programs",
+      "authors": [
+        {
+          "first": "Tan",
+          "middle": [],
+          "last": "Alexander K Lew",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Zhi-Xuan",
+          "suffix": ""
+        },
+        {
+          "first": "Vikash",
+          "middle": [],
+          "last": "Grand",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mansinghka",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICML Workshop: Sampling and Optimization in Discrete Space"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Let's verify step by step",
+      "authors": [
+        {
+          "first": "Vineet",
+          "middle": [],
+          "last": "Hunter Lightman",
+          "suffix": ""
+        },
+        {
+          "first": "Yuri",
+          "middle": [],
+          "last": "Kosaraju",
+          "suffix": ""
+        },
+        {
+          "first": "Harrison",
+          "middle": [],
+          "last": "Burda",
+          "suffix": ""
+        },
+        {
+          "first": "Bowen",
+          "middle": [],
+          "last": "Edwards",
+          "suffix": ""
+        },
+        {
+          "first": "Teddy",
+          "middle": [],
+          "last": "Baker",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Leike",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        },
+        {
+          "first": "Karl",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Cobbe",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "The Twelfth International Conference on Learning Representations, ICLR 2024"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Neural particle smoothing for sampling from conditional sequence models",
+      "authors": [
+        {
+          "first": "Chu-Cheng",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Eisner",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "LLM+P: Empowering large language models with optimal planning proficiency",
+      "authors": [
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuqian",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Qiang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Shiqi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Joydeep",
+          "middle": [],
+          "last": "Biswas",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Neurologic A* esque decoding: Constrained text generation with lookahead heuristics",
+      "authors": [
+        {
+          "first": "Ximing",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Sean",
+          "middle": [],
+          "last": "Welleck",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "West",
+          "suffix": ""
+        },
+        {
+          "first": "Liwei",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Jungo",
+          "middle": [],
+          "last": "Kasai",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Khashabi",
+          "suffix": ""
+        },
+        {
+          "first": "Le",
+          "middle": [],
+          "last": "Ronan",
+          "suffix": ""
+        },
+        {
+          "first": "Lianhui",
+          "middle": [],
+          "last": "Bras",
+          "suffix": ""
+        },
+        {
+          "first": "Youngjae",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Rowan",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zellers",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Automatic alignment of sequential Monte Carlo inference in higher-order probabilistic programs",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Daniel Lundén",
+          "suffix": ""
+        },
+        {
+          "first": "Fredrik",
+          "middle": [],
+          "last": "Broman",
+          "suffix": ""
+        },
+        {
+          "first": "Lawrence",
+          "middle": [
+            "M"
+          ],
+          "last": "Ronquist",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Murray",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Probabilistic programming with programmable inference",
+      "authors": [
+        {
+          "first": "Ulrich",
+          "middle": [],
+          "last": "Vikash K Mansinghka",
+          "suffix": ""
+        },
+        {
+          "first": "Shivam",
+          "middle": [],
+          "last": "Schaechtle",
+          "suffix": ""
+        },
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Handa",
+          "suffix": ""
+        },
+        {
+          "first": "Yutian",
+          "middle": [],
+          "last": "Radul",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Rinard",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 39th ACM SIGPLAN Conference on Programming Language Design and Implementation"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "If beam search is the answer, what was the question",
+      "authors": [
+        {
+          "first": "Clara",
+          "middle": [],
+          "last": "Meister",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Vieira",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Cotterell",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF51",
+      "title": "CGMH: Constrained sentence generation by metropolis-hastings sampling",
+      "authors": [
+        {
+          "first": "Ning",
+          "middle": [],
+          "last": "Miao",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Lili",
+          "middle": [],
+          "last": "Mou",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Do you have the right scissors? tailoring pretrained language models via Monte-Carlo methods",
+      "authors": [
+        {
+          "first": "Ning",
+          "middle": [],
+          "last": "Miao",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxuan",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "AI Controller Interface",
+      "authors": [
+        {
+          "first": "Michal",
+          "middle": [],
+          "last": "Moskal",
+          "suffix": ""
+        },
+        {
+          "first": "Madan",
+          "middle": [],
+          "last": "Musuvathi",
+          "suffix": ""
+        },
+        {
+          "first": "Emre",
+          "middle": [],
+          "last": "Kıcıman",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Controlled decoding from language models",
+      "authors": [
+        {
+          "first": "Sidharth",
+          "middle": [],
+          "last": "Mudgal",
+          "suffix": ""
+        },
+        {
+          "first": "Jong",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Harish",
+          "middle": [],
+          "last": "Ganapathy",
+          "suffix": ""
+        },
+        {
+          "first": "Yaguang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yanping",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhifeng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Heng-Tze",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Collins",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Strohman",
+          "suffix": ""
+        },
+        {
+          "first": "Jilin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Beutel",
+          "suffix": ""
+        },
+        {
+          "first": "Ahmad",
+          "middle": [],
+          "last": "Beirami",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Forty-first International Conference on Machine Learning, ICML 2024"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Elements of sequential monte carlo",
+      "authors": [
+        {
+          "first": "Christian",
+          "middle": [
+            "A"
+          ],
+          "last": "Naesseth",
+          "suffix": ""
+        },
+        {
+          "first": "Fredrik",
+          "middle": [],
+          "last": "Lindsten",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [
+            "B"
+          ],
+          "last": "Schön",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Found. Trends Mach. Learn"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "WebGPT: Browser-assisted question-answering with human feedback",
+      "authors": [
+        {
+          "first": "Reiichiro",
+          "middle": [],
+          "last": "Nakano",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Hilton",
+          "suffix": ""
+        },
+        {
+          "first": "Suchir",
+          "middle": [],
+          "last": "Balaji",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Christina",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Hesse",
+          "suffix": ""
+        },
+        {
+          "first": "Shantanu",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Vineet",
+          "middle": [],
+          "last": "Kosaraju",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Saunders",
+          "suffix": ""
+        },
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Karl",
+          "middle": [],
+          "last": "Cobbe",
+          "suffix": ""
+        },
+        {
+          "first": "Tyna",
+          "middle": [],
+          "last": "Eloundou",
+          "suffix": ""
+        },
+        {
+          "first": "Gretchen",
+          "middle": [],
+          "last": "Krueger",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Button",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Knight",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Chess",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF57",
+      "title": "A fast algorithm for computing prefix probabilities",
+      "authors": [
+        {
+          "first": "Franz",
+          "middle": [],
+          "last": "Nowak",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Cotterell",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "partialsmiles: A validating SMILES parser, with support for incomplete SMILES",
+      "authors": [
+        {
+          "first": "O'",
+          "middle": [],
+          "last": "Noel",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Boyle",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "LINC: A neurosymbolic approach for logical reasoning by combining language models with first-order logic provers",
+      "authors": [
+        {
+          "first": "Theo",
+          "middle": [],
+          "last": "Olausson",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Lipkin",
+          "suffix": ""
+        },
+        {
+          "first": "Cedegao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Armando",
+          "middle": [],
+          "last": "Solar-Lezama",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [],
+          "last": "Tenenbaum",
+          "suffix": ""
+        },
+        {
+          "first": "Roger",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "When machine learning meets molecular synthesis",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [
+            "A"
+          ],
+          "last": "João",
+          "suffix": ""
+        },
+        {
+          "first": "Johanna",
+          "middle": [],
+          "last": "Oliveira",
+          "suffix": ""
+        },
+        {
+          "first": "Shuo-Qing",
+          "middle": [],
+          "last": "Frey",
+          "suffix": ""
+        },
+        {
+          "first": "Li-Cheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Shu-Wen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Lutz",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ackermann",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Trends in Chemistry"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Efficient semiringweighted Earley parsing",
+      "authors": [
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Opedal",
+          "suffix": ""
+        },
+        {
+          "first": "Ran",
+          "middle": [],
+          "last": "Zmigrod",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Vieira",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Cotterell",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Eisner",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Training language models to follow instructions with human feedback",
+      "authors": [
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Diogo",
+          "middle": [],
+          "last": "Almeida",
+          "suffix": ""
+        },
+        {
+          "first": "Carroll",
+          "middle": [
+            "L"
+          ],
+          "last": "Wainwright",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Chong",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Katarina",
+          "middle": [],
+          "last": "Slama",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Ray",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Hilton",
+          "suffix": ""
+        },
+        {
+          "first": "Fraser",
+          "middle": [],
+          "last": "Kelton",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Miller",
+          "suffix": ""
+        },
+        {
+          "first": "Maddie",
+          "middle": [],
+          "last": "Simens",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Welinder",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Christiano",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Leike",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Lowe",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Grammar-aligned decoding",
+      "authors": [
+        {
+          "first": "Kanghee",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Jiayu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Taylor",
+          "middle": [],
+          "last": "Berg-Kirkpatrick",
+          "suffix": ""
+        },
+        {
+          "first": "Nadia",
+          "middle": [],
+          "last": "Polikarpova",
+          "suffix": ""
+        },
+        {
+          "first": "Loris D'",
+          "middle": [],
+          "last": "Antoni",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "A plug-andplay method for controlled text generation",
+      "authors": [
+        {
+          "first": "Damian",
+          "middle": [],
+          "last": "Pascual",
+          "suffix": ""
+        },
+        {
+          "first": "Beni",
+          "middle": [],
+          "last": "Egressy",
+          "suffix": ""
+        },
+        {
+          "first": "Clara",
+          "middle": [],
+          "last": "Meister",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Cotterell",
+          "suffix": ""
+        },
+        {
+          "first": "Roger",
+          "middle": [],
+          "last": "Wattenhofer",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Findings of the Association for Computational Linguistics: EMNLP 2021"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Synchromesh: Reliable code generation from pre-trained language models",
+      "authors": [
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Poesia",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Polozov",
+          "suffix": ""
+        },
+        {
+          "first": "Vu",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Tiwari",
+          "suffix": ""
+        },
+        {
+          "first": "Gustavo",
+          "middle": [],
+          "last": "Soares",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Meek",
+          "suffix": ""
+        },
+        {
+          "first": "Sumit",
+          "middle": [],
+          "last": "Gulwani",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "A probabilistic inference approach to inference-time scaling of LLMs using particle-based Monte Carlo methods",
+      "authors": [
+        {
+          "first": "Isha",
+          "middle": [],
+          "last": "Puri",
+          "suffix": ""
+        },
+        {
+          "first": "Shivchander",
+          "middle": [],
+          "last": "Sudalairaj",
+          "suffix": ""
+        },
+        {
+          "first": "Guangxuan",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Akash",
+          "middle": [],
+          "last": "Srivastava",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Cold decoding: Energy-based constrained text generation with langevin dynamics",
+      "authors": [
+        {
+          "first": "Lianhui",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Sean",
+          "middle": [],
+          "last": "Welleck",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Khashabi",
+          "suffix": ""
+        },
+        {
+          "first": "Yejin",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Whole-sentence exponential language models: A vehicle for linguistic-statistical integration",
+      "authors": [
+        {
+          "first": "Ronald",
+          "middle": [],
+          "last": "Rosenfeld",
+          "suffix": ""
+        },
+        {
+          "first": "Stanley",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaojin",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "Computer Speech & Language"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "BenchCLAMP: A benchmark for evaluating language models on syntactic and semantic parsing",
+      "authors": [
+        {
+          "first": "Subhro",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Thomson",
+          "suffix": ""
+        },
+        {
+          "first": "Tongfei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Pauls",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Eisner",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Van Durme",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Enumeration of 166 billion organic small molecules in the chemical universe database GDB-17",
+      "authors": [
+        {
+          "first": "Lars",
+          "middle": [],
+          "last": "Ruddigkeit",
+          "suffix": ""
+        },
+        {
+          "first": "Ruud",
+          "middle": [],
+          "last": "Van Deursen",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "Jean-Louis",
+          "middle": [],
+          "last": "Blum",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Reymond",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Journal of Chemical Information and Modeling"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "PICARD: Parsing incrementally for constrained auto-regressive decoding from language models",
+      "authors": [
+        {
+          "first": "Torsten",
+          "middle": [],
+          "last": "Scholak",
+          "suffix": ""
+        },
+        {
+          "first": "Nathan",
+          "middle": [],
+          "last": "Schucher",
+          "suffix": ""
+        },
+        {
+          "first": "Dzmitry",
+          "middle": [],
+          "last": "Bahdanau",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF72",
+      "title": "Natural language to code translation with execution",
+      "authors": [
+        {
+          "first": "Freda",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Fried",
+          "suffix": ""
+        },
+        {
+          "first": "Marjan",
+          "middle": [],
+          "last": "Ghazvininejad",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        },
+        {
+          "first": "Sida I",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF73",
+      "title": "Few-shot semantic parsing with language models trained on code",
+      "authors": [
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Van Durme",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies"
+    },
+    {
+      "id": "BIBREF74",
+      "title": "Constrained language models yield few-shot semantic parsers",
+      "authors": [
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Thomson",
+          "suffix": ""
+        },
+        {
+          "first": "Charles",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Subhro",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        },
+        {
+          "first": "Emmanouil",
+          "middle": [],
+          "last": "Antonios Platanios",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Pauls",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Klein",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Eisner",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Van Durme",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF75",
+      "title": "PDDL planning with pretrained large language models",
+      "authors": [
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Silver",
+          "suffix": ""
+        },
+        {
+          "first": "Varun",
+          "middle": [],
+          "last": "Hariprasad",
+          "suffix": ""
+        },
+        {
+          "first": "Reece",
+          "middle": [
+            "S"
+          ],
+          "last": "Shuttleworth",
+          "suffix": ""
+        },
+        {
+          "first": "Nishanth",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Tomás",
+          "middle": [],
+          "last": "Lozano-Pérez",
+          "suffix": ""
+        },
+        {
+          "first": "Leslie",
+          "middle": [],
+          "last": "Pack",
+          "suffix": ""
+        },
+        {
+          "first": "Kaelbling",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Foundation Models for Decision Making Workshop"
+    },
+    {
+      "id": "BIBREF76",
+      "title": "Learning to summarize with human feedback",
+      "authors": [
+        {
+          "first": "Nisan",
+          "middle": [],
+          "last": "Stiennon",
+          "suffix": ""
+        },
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Ziegler",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Lowe",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Voss",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [
+            "F"
+          ],
+          "last": "Christiano",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF77",
+      "title": "An efficient probabilistic context-free parsing algorithm that computes prefix probabilities",
+      "authors": [
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Stolcke",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "Computational Linguistics"
+    },
+    {
+      "id": "BIBREF78",
+      "title": "Preference fine-tuning of LLMs should leverage suboptimal, on-policy data",
+      "authors": [
+        {
+          "first": "Fahim",
+          "middle": [],
+          "last": "Tajwar",
+          "suffix": ""
+        },
+        {
+          "first": "Anikait",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "Archit",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "Rafael",
+          "middle": [],
+          "last": "Rafailov",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Schneider",
+          "suffix": ""
+        },
+        {
+          "first": "Tengyang",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF79",
+      "title": "Let me speak freely? A study on the impact of format restrictions on performance of large language models",
+      "authors": [
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Zhi",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng-Kuang",
+          "middle": [],
+          "last": "Tam",
+          "suffix": ""
+        },
+        {
+          "first": "Yi-Lin",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Chieh-Yen",
+          "middle": [],
+          "last": "Tsai",
+          "suffix": ""
+        },
+        {
+          "first": "Hung-Yi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Yun-Nung",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF80",
+      "title": "SynCode: Improving LLM code generation with grammar augmentation",
+      "authors": [
+        {
+          "first": "Shubham",
+          "middle": [],
+          "last": "Ugare",
+          "suffix": ""
+        },
+        {
+          "first": "Tarun",
+          "middle": [],
+          "last": "Suresh",
+          "suffix": ""
+        },
+        {
+          "first": "Hangoo",
+          "middle": [],
+          "last": "Kang",
+          "suffix": ""
+        },
+        {
+          "first": "Sasa",
+          "middle": [],
+          "last": "Misailovic",
+          "suffix": ""
+        },
+        {
+          "first": "Gagandeep",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF81",
+      "title": "From language models over tokens to language models over characters",
+      "authors": [
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Vieira",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Lebrun",
+          "suffix": ""
+        },
+        {
+          "first": "Mario",
+          "middle": [],
+          "last": "Giulianelli",
+          "suffix": ""
+        },
+        {
+          "first": "Juan",
+          "middle": [
+            "Luis"
+          ],
+          "last": "Gastaldi",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Dusell",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Terilla",
+          "suffix": ""
+        },
+        {
+          "first": "J O'",
+          "middle": [],
+          "last": "Timothy",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Donnell",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Cotterell",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF82",
+      "title": "Grammar prompting for domain-specific language generation with large language models",
+      "authors": [
+        {
+          "first": "Bailin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xuezhi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Rif",
+          "middle": [
+            "A"
+          ],
+          "last": "Saurous",
+          "suffix": ""
+        },
+        {
+          "first": "Yoon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF83",
+      "title": "SMILES, a chemical language and information system",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Weininger",
+          "suffix": ""
+        }
+      ],
+      "year": 1988,
+      "venue": "Journal of Chemical Information and Computer Sciences"
+    },
+    {
+      "id": "BIBREF84",
+      "title": "Efficient guided generation for large language models",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Brandon",
+          "suffix": ""
+        },
+        {
+          "first": "Rémi",
+          "middle": [],
+          "last": "Willard",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Louf",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF85",
+      "title": "Learning adaptive planning representations with natural language guidance",
+      "authors": [
+        {
+          "first": "Lionel",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        },
+        {
+          "first": "Jiayuan",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Pratyusha",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "Zachary",
+          "middle": [
+            "S"
+          ],
+          "last": "Siegel",
+          "suffix": ""
+        },
+        {
+          "first": "Jiahai",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Noa",
+          "middle": [],
+          "last": "Korneev",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [
+            "B"
+          ],
+          "last": "Tenenbaum",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Andreas",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF86",
+      "title": "Translating natural language to planning goals with large-language models",
+      "authors": [
+        {
+          "first": "Yaqi",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Tongyao",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Jinbin",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Ze",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Harold",
+          "middle": [],
+          "last": "Soh",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF87",
+      "title": "Deepseek-prover: Advancing theorem proving in llms through large-scale synthetic data",
+      "authors": [
+        {
+          "first": "Huajian",
+          "middle": [],
+          "last": "Xin",
+          "suffix": ""
+        },
+        {
+          "first": "Daya",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Zhihong",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhizhou",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Qihao",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chong",
+          "middle": [],
+          "last": "Ruan",
+          "suffix": ""
+        },
+        {
+          "first": "Wenda",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaodan",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF88",
+      "title": "Iterative preference learning from human feedback: Bridging theory and practice for RLHF under KL-constraint",
+      "authors": [
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Hanze",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Chenlu",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Ziqi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Heng",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Nan",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF89",
+      "title": "FUDGE: Controlled text generation with future discriminators",
+      "authors": [
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Klein",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies"
+    },
+    {
+      "id": "BIBREF90",
+      "title": "A log-linear model for unsupervised text normalization",
+      "authors": [
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Eisenstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Proceedings of the Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF91",
+      "title": "The neuro-symbolic inverse planning engine (NIPE): Modeling probabilistic social inferences from linguistic inputs",
+      "authors": [
+        {
+          "first": "Lance",
+          "middle": [],
+          "last": "Ying",
+          "suffix": ""
+        },
+        {
+          "first": "Katherine",
+          "middle": [
+            "M"
+          ],
+          "last": "Collins",
+          "suffix": ""
+        },
+        {
+          "first": "Megan",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Cedegao",
+          "middle": [
+            "E"
+          ],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Tan",
+          "middle": [],
+          "last": "Zhi-Xuan",
+          "suffix": ""
+        },
+        {
+          "first": "Adrian",
+          "middle": [],
+          "last": "Weller",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [
+            "B"
+          ],
+          "last": "Tenenbaum",
+          "suffix": ""
+        },
+        {
+          "first": "Lionel",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Workshop on Theory of Mind in Communicating Agents"
+    },
+    {
+      "id": "BIBREF92",
+      "title": "Spider: A large-scale human-labeled dataset for complex and cross-domain semantic parsing and text-to-SQL task",
+      "authors": [
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Michihiro",
+          "middle": [],
+          "last": "Yasunaga",
+          "suffix": ""
+        },
+        {
+          "first": "Dongxu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zifan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Irene",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Qingning",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Shanelle",
+          "middle": [],
+          "last": "Roman",
+          "suffix": ""
+        },
+        {
+          "first": "Zilin",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Dragomir",
+          "middle": [],
+          "last": "Radev",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF93",
+      "title": "Tractable control for autoregressive language generation",
+      "authors": [
+        {
+          "first": "Honghua",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Meihua",
+          "middle": [],
+          "last": "Dang",
+          "suffix": ""
+        },
+        {
+          "first": "Nanyun",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Guy",
+          "middle": [],
+          "last": "Van Den Broeck",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning. Proceedings of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF94",
+      "title": "Language generation via combinatorial constraint satisfaction: A tree search enhanced Monte-Carlo approach",
+      "authors": [
+        {
+          "first": "Maosen",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Nan",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yexiang",
+          "middle": [],
+          "last": "Xue",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Findings of the Association for Computational Linguistics: EMNLP 2020"
+    },
+    {
+      "id": "BIBREF95",
+      "title": "Planning with large language models for code generation",
+      "authors": [
+        {
+          "first": "Shun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenfang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yikang",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Mingyu",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [
+            "B"
+          ],
+          "last": "Tenenbaum",
+          "suffix": ""
+        },
+        {
+          "first": "Chuang",
+          "middle": [],
+          "last": "Gan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF96",
+      "title": "PROC2PDDL: Open-domain planning representations from texts",
+      "authors": [
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaoyi",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Ziyu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuling",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Callison-Burch",
+          "suffix": ""
+        },
+        {
+          "first": "Niket",
+          "middle": [],
+          "last": "Tandon",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the Workshop on Natural Language Reasoning and Structured Explanations"
+    },
+    {
+      "id": "BIBREF97",
+      "title": "Probabilistic inference in language models via twisted sequential Monte Carlo",
+      "authors": [
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Rob",
+          "middle": [],
+          "last": "Brekelmans",
+          "suffix": ""
+        },
+        {
+          "first": "Alireza",
+          "middle": [],
+          "last": "Makhzani",
+          "suffix": ""
+        },
+        {
+          "first": "Roger",
+          "middle": [],
+          "last": "Baker",
+          "suffix": ""
+        },
+        {
+          "first": "Grosse",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF98",
+      "title": "SGLang: Efficient execution of structured language model programs",
+      "authors": [
+        {
+          "first": "Lianmin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Liangsheng",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiqiang",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Chuyue",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Cody",
+          "middle": [],
+          "last": "Hao Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Shiyi",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Christos",
+          "middle": [],
+          "last": "Kozyrakis",
+          "suffix": ""
+        },
+        {
+          "first": "Ion",
+          "middle": [],
+          "last": "Stoica",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [
+            "E"
+          ],
+          "last": "Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "Clark",
+          "middle": [],
+          "last": "Barrett",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF99",
+      "title": "Secrets of RLHF in large language models part I: PPO",
+      "authors": [
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Shihan",
+          "middle": [],
+          "last": "Dou",
+          "suffix": ""
+        },
+        {
+          "first": "Songyang",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan",
+          "middle": [],
+          "last": "Hua",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Binghai",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Senjie",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Qin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhao",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Limao",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiheng",
+          "middle": [],
+          "last": "Xi",
+          "suffix": ""
+        },
+        {
+          "first": "Nuo",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Wenbin",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "Minghao",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhangyue",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Rongxiang",
+          "middle": [],
+          "last": "Weng",
+          "suffix": ""
+        },
+        {
+          "first": "Wensen",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Haoran",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Tianxiang",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Hang",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Gui",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xipeng",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        },
+        {
+          "first": "Xuanjing",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF100",
+      "title": "Pragmatic instruction following and goal assistance via cooperative language-guided inverse planning",
+      "authors": [
+        {
+          "first": "Tan",
+          "middle": [],
+          "last": "Zhi-Xuan",
+          "suffix": ""
+        },
+        {
+          "first": "Lance",
+          "middle": [],
+          "last": "Ying",
+          "suffix": ""
+        },
+        {
+          "first": "Vikash",
+          "middle": [],
+          "last": "Mansinghka",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [
+            "B"
+          ],
+          "last": "Tenenbaum",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the International Conference on Autonomous Agents and Multiagent Systems"
+    },
+    {
+      "id": "BIBREF101",
+      "title": "Large language models are human-level prompt engineers",
+      "authors": [
+        {
+          "first": "Yongchao",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Andrei",
+          "middle": [
+            "Ioan"
+          ],
+          "last": "Muresanu",
+          "suffix": ""
+        },
+        {
+          "first": "Ziwen",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Keiran",
+          "middle": [],
+          "last": "Paster",
+          "suffix": ""
+        },
+        {
+          "first": "Silviu",
+          "middle": [],
+          "last": "Pitis",
+          "suffix": ""
+        },
+        {
+          "first": "Harris",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "Jimmy",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations, ICLR 2023"
+    },
+    {
+      "id": "BIBREF102",
+      "title": "Principled reinforcement learning with human feedback from pairwise or K-wise comparisons",
+      "authors": [
+        {
+          "first": "Banghua",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Jordan",
+          "suffix": ""
+        },
+        {
+          "first": "Jiantao",
+          "middle": [],
+          "last": "Jiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF103",
+      "title": "Fine-tuning language models from human preferences",
+      "authors": [
+        {
+          "first": "Nisan",
+          "middle": [],
+          "last": "Daniel M Ziegler",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Stiennon",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [
+            "B"
+          ],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Christiano",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Irving",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF104",
+      "title": "Planetarium: A rigorous benchmark for translating text to structured planning languages",
+      "authors": [
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Zuo",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [
+            "Piedrahita"
+          ],
+          "last": "Velez",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaochen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [
+            "H"
+          ],
+          "last": "Michael L Littman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bach",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    }
+  ]
+}

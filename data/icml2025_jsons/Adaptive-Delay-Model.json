@@ -1,0 +1,1417 @@
+{
+  "paper_id": "Adaptive-Delay-Model",
+  "title": "Learning Time-Varying Multi-Region Brain Communications via Scalable Markovian Gaussian Processes",
+  "authors": [
+    {
+      "first": "Weihan",
+      "middle": [],
+      "last": "Li",
+      "affiliation": {}
+    },
+    {
+      "first": "Yule",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {}
+    },
+    {
+      "first": "Chengrui",
+      "middle": [],
+      "last": "Li",
+      "affiliation": {}
+    },
+    {
+      "first": "Anqi",
+      "middle": [],
+      "last": "Wu",
+      "affiliation": {}
+    },
+    {
+      "first": "Visrl",
+      "middle": [],
+      "last": "Vispm",
+      "affiliation": {}
+    },
+    {
+      "first": "Visrl",
+      "middle": [],
+      "last": "Visam",
+      "affiliation": {}
+    },
+    {
+      "first": "Visal",
+      "middle": [],
+      "last": "Vispm",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "Understanding and constructing brain communications that capture dynamic communications across multiple regions is fundamental to modern system neuroscience, yet current methods struggle to find time-varying region-level communications or scale to large neural datasets with long recording durations. We present a novel framework using Markovian Gaussian Processes to learn brain communications with timevarying temporal delays from multi-region neural recordings, named Adaptive Delay Model (ADM). Our method combines Gaussian Processes with State Space Models and employs parallel scan inference algorithms, enabling efficient scaling to large datasets while identifying concurrent communication patterns that evolve over time. This time-varying approach captures how brain region interactions shift dynamically during cognitive processes. Validated on synthetic and multi-region neural recordings datasets, our approach discovers both the directionality and temporal dynamics of neural communication. This work advances our understanding of distributed neural computation and provides a scalable tool for analyzing dynamic brain networks. Code is available at https://github.com/ BRAINML-GT/",
+  "body": {
+    "4.1._Synthetic_Data": "In this section, we simulate a common phenomenon in neuroscience where brain region communications are dynamic (Parra & Tobar, 2017) . Our goal is to evaluate our model's ability to recover time-varying temporal delays and latent variables.\nExperimental setup. We generate 120 independent trials for two brain regions (N = 2) with an order of P = 5 and T = 200 time bins. Each region contains 50 neurons, with m a = 2 groups of across-region communications and m w = 1 group of within-region variables. For across-region communications, the first group represents forward communication, characterized by a larger positive delay of 5 bins and a smaller positive delay of 1 bin during time bins 30 to 70. The second group represents feedback communication, with a larger negative delay of -5 bins and a smaller negative delay of -1 bin during time bins 130 to 170. For across-region and within-region dynamics, the length scales are set to l = 5 and l = 2.5, respectively.\nNote that large delays in this context are intended to represent slow communication in the brain, whereas an extremely large delay would imply an absence of communication between regions. A small delay indicates fast communication. Therefore, our data simulation is designed to reflect a scenario where region A initially has minimal effective communication with region B (delay of 5), then suddenly transmits a signal (delay of 1), followed by another period of ineffective communication (delay of 5). A delay of -5 represents communication in the opposite direction. During fitting, we set m a = 2, m w = 1, and P = 5.\nResults. Figure 1(A ) presents the estimated and truth across-region communications, temporal delays, and ground truth over T bins for P = 5. For the estimated delay, the shaded area represents the variance across five different runs.\nOur model effectively captures time-varying communications for both latent dynamics and delay. See Appendix E for within-region neural activities. Finally, Appendix G presents a more complex case with five-region synthetic dataset and evaluates the model's performance as a function of the number of regions, latent variables, and data length.",
+    "4.2._Two_Brain_Regions": "In this section, we investigate the interactions between the mouse's primary visual area (V1) and secondary visual cortex (V2) in response to a 6Hz drifting grating. Additionally, we compare our model's performance and inference time with MRM-GP and DLAG.\nExperimental setup. We use smoothed multi-region spike trains from session 106r001p26 with an orientation of 0 • . This dataset consists of 400 trials, each containing 64 time bins (20 ms per bin), with 72 V1 neurons and 22 V2 neurons. The monkey begins receiving the visual stimulus (drifting gratings) at the first time bin, and the stimulus persists throughout all 64 time bins. The number of across-region and within-region latent dynamics follows previous works (Gokcen et al., 2022; Li et al., 2024b) , where m a = 2 and m w = 2. The order P = 4 is selected based on performance evaluation on the validation dataset.\nResults. Figure 2(A) shows the estimated across-region communications and time-varying delays from the test dataset (ten trials shown; within-region dynamics are provided in Appendix E). The first group of communications shows a shift from slower feedback (with larger absolute delays) to faster feedback (with smaller absolute delays) starting around 200 ms after stimulus onset. In contrast, the second group exhibits a periodic pattern driven by the external drifting grating stimulus, along with a change in communication direction immediately following stimulus onset. The time-varying delays suggest the following interpretation: shortly after stimulus presentation, V2 generates a strong feedback signal from V2 to V1, potentially reflecting the emergence of surprise or prediction error (Rao & Ballard, 1999) . As time progresses, both regions transition into more synchronized oscillations. Our findings on V1-V2 interactions are similar to previous studies (Gokcen et al., 2022; Li et al., 2024b; Gokcen et al., 2024a) . ",
+    "3._Inference": "Now, having established the connection between the m-th group of across-region communications and within-region neural activity to the Markovian GP (or SSM), as described in Eq. 12, the next step is to efficiently learn the latent variables and model parameters.\nOur model, ADM, formulated as an SSM, offers a significant advantage: it can learn the parameters using either a sequential estimation method with complexity O(T ) or a parallel computation method with complexity O(log T ). On modern hardware, the parallel approach is consistently faster due to its efficient utilization of computational resources.\nParameter Settings The model parameters, denoted as Θ, include the kernel parameters θ k ij,t and l k from each latent dimension k, which define the transition matrix Ât and the process noise covariance matrix Qt for each across-or within-region latent group. Additionally, the Factor Analysis (FA) parameters include the projection matrix C, the bias term d, and the diagonal matrix V. The model also has a hyperparameter P , representing the order of the autoregressive process. To better understand the effect of different P values, we generate samples from our model for various P values, as shown in Appendix C.",
+    "2._Method": "We begin by demonstrating how a Gaussian Process (GP) with a Factor Analysis (FA) model can be used to capture static brain communication across regions (Section 2.1). Next, we establish a universal connection between a GP and a State Space Model (SSM), referred to as the Markovian Gaussian Process (Section 2.2). Finally, we illustrate how time-varying brain communication can be modeled (Section 2.3).",
+    "2.2._Connect_Gaussian_Process_with_State_Space_Model": "We develop a novel universal connection between arbitrary temporally stationary GPs and SSMs, enabling us to efficiently model both across-and within-region dynamics.",
+    "4._Experiment": "Datasets. We evaluate our model on three datasets.\n• Synthetic Data: We generate synthetic data that incorporate both across-region communications and within-region neural activities, along with time-varying temporal delays, to simulate dynamic brain communications characterized by both fast and slow features.\n• Two Brain Regions (Semedo et al., 2019; Zandvakili & Kohn, 2019) : Simultaneous spike train recordings from a monkey's primary visual area (V1) and secondary visual cortex (V2), with a 6Hz drifting grating as the external stimulus.\n• Five Brain Regions (Siegle et al., 2021) : Simultaneous spike train recordings from a mouse's primary visual cortex (VISp), rostrolateral area (VISrl), anterolateral area (VISal), posteromedial area (VISpm), and anteromedial area (VISam), with a 4Hz drifting grating as the external stimulus.\nBaselines. We compare our model with three methods:\n• DLAG (Gokcen et al., 2022) : A Gaussian Process Factor Analysis model with a MOSE kernel, designed for neural recordings from two brain regions. It can be used to learn both across-region and within-region latent communications.\n• mDLAG (Gokcen et al., 2024a) : An extension of DLAG that supports more than two brain regions with a different inference approach. Unlike DLAG, it assumes all latent variables correspond to across-region communications and does not explicitly model within-region dynamics.\n• MRM-GP (Li et al., 2024b) : An approximation of a Gaussian Process with a Cross-Spectral Mixture (CSM) kernel (Ulrich et al., 2015) , formulated as an SSM with O(T ) complexity. It is designed to learn frequency-based communications between two brain regions and can capture both across-region and within-region latent dynamics.\nEvaluation. We evaluate our model and baseline models by randomly splitting the data into training, validation, and testing sets with a ratio of 0.8, 0.1, and 0.1, respectively. Since all models assume a linear/Gaussian relationship between the latent variables and observed data, we assess their performance by computing the observation test log-likelihood: LL(x test , y test ), where x test represents the inferred test latent variables, and y test denotes the test neural recordings. To mitigate randomness, we report the average test log-likelihood over five different random seeds.",
+    "2.3._Time-Varying_Brain_Communications": "Since the SSM in Eq. 10 follows a discrete structure, we can extend it to incorporate time-varying transition and process noise matrices as follows:\nEQUATION\nThis formulation introduces a time-varying MOSE kernel, where the temporal delay parameter θ ij,t evolves over time.\nIn other words, at each time step t, we construct a Markovian GP (or SSM) as described in Eq. 10, conditioned on the MOSE kernel specific to that time t. Additionally, the length scale parameter l is held constant over time, which limits the flexibility of each Ât . By sharing l across time points, we constrain the temporal evolution of the delay parameters, promoting smoother dynamics and reducing the risk of misattributing variability in the messages to fluctuations in delays.\nThis approach enables the model to learn time-varying temporal delays, effectively capturing the dynamics of multiregion brain communications. Compared to modeling timevarying phase delays using hidden discrete states (Li et al., 2024b) , our method is more flexible, as it does not assume that each group of across-region communications, x a m , undergoes simultaneous delay changes during state transitions.\nImportantly, this computation can be efficiently performed in vectorized form across all T time steps, ensuring minimal impact on overall computational efficiency. In the FA model, the projection matrix C ∈ R D×M N , the bias term d ∈ R D×1 , and the observation Gaussian noise ϵ ∈ R D×1 remain time-invariant.",
+    "4.3._Five_Brain_Regions": "In this section, we scale up our model to a larger neural recording spanning five regions with increased time resolution. Our objective is to investigate across-region communications and identify the time-varying meso-scale brain network, defined as the dynamic network spanning sAppendixub-brain regions, e.g., regions in visual cortex.\nExperimental setup. We use smoothed multi-region spike train data from the Visual Coding -Neuropixels project by the Allen Institute (Siegle et al., 2021) , specifically from session 750749662. This dataset includes spike trains recorded from VISp, VISrl, VISal, VISpm, and VISam-sub-areas of the mouse visual cortex. It consists of 120 trials, T = 200 time bins (each 10 ms), and a total of 202 neurons, with external visual stimuli comprising 4 Hz drifting gratings. Following the approach in (Gokcen et al., 2022) , we first apply Factor Analysis to estimate the total number of across-region and within-region latent dynamics, determining M = 4 (see Appendix F for details). We then conduct a grid search with 5-fold cross-validation to refine the number of across-region and within-region latent dynamics and the model order P .\nResults. Figure 3(A ) presents the ten estimated pairwise temporal delays from one group of across-region communications. See Appendix E for the estimated latent dynamics. Our results reveal consistent forward communication from VISp to downstream visual areas, such as VISrl, VISal, and VISpm, aligning with the known anatomical hierarchy of the mouse visual cortex (Siegle et al., 2021) . Additionally, these forward communications exhibit time-varying dynamics. For instance, communication between VISp and VISrl transitions from slow to fast, indicating an enhanced interaction that gradually becomes more synchronous following the initial surprise response to the visual stimulus onset. In contrast, the communication between VISp and VISal shifts from fast to slow, suggesting inhibition induced by the external stimulus. Furthermore, our findings indicate that all communications involving VISam are feedback signals. This is expected, as VISam is positioned at the end of the anatomical hierarchy of the mouse visual system, consistent with the anatomical hierarchy scores reported in (Siegle et al., 2021) . VISrl meso-scale brain network when t=3 meso-scale brain network when t=50 20 hyperparameter combinations validation log-likelihood 1.9e6 2.1e6 highest A D M m D L A G 6e5 5e5 test log-likelihood (A) (B) (C) (D) 0 10 ms 0 25 -25 ms 0 20 ms ms ms 0 -20 0 -25 0 25 -25 0 -50 0 -20 0 -20 -40 0 -25 -50 ms ms ms ms ms 100ms estimated delay Figure 3. Evaluation of the ADM on spike trains from five visual brain regions. (A) Estimated pairwise temporal delays from one group of across-region communications, showing time-varying dynamics and alignment with the anatomical hierarchy of the mouse visual cortex. (B) Meso-scale brain networks at t = 3 and t = 50 time bins, derived from the communications in (A), illustrating changes in communication speed and direction. (C) Cross-validation results for hyperparameter selection, with ma = 3, mw = 1, and P = 5 achieving the highest validation log-likelihood. (D) Test log-likelihood comparison between ADM and mDLAG, demonstrating ADM's superior fit due to its ability to model time-varying communications.\ncommunications. The length of each edge is determined by the estimated delays, reflecting the speed of communication. The figure presents two meso-scale brain networks at t = 3 and t = 50 time bins. The primary differences between these networks include changes in the speed of certain forward communications and a direction change in the communication direction between VISrl and VISal, suggesting the emergence of stimulus presentation. Figure 3(D) compares the test log-likelihood, summed over trials and time bins, between our model (ADM) and mD-LAG with m a = 3 latent communication channels, where mDLAG is an extension of DLAG that supports more than two brain regions using variational inference. The results indicate that ADM provides a better fit to the data, attributed to its ability to model time-varying communications. We do not compare MRM-GP and DLAG since they are limited to two brain regions. Additionally, we skip a time cost comparison with mDLAG because it is implemented only in MATLAB, which is significantly slower than our GPU-optimized implementation.",
+    "1._Introduction": "Modern system neuroscience faces a significant challenge in discovering communication patterns that capture dynamic interactions across multiple regions. Understanding these time-varying communications has become increasingly critical with the advent of advanced recording technologies that enable simultaneous measurement of neural activity across numerous brain areas with unprecedented temporal and spatial resolution (Steinmetz et al., 2021; Siegle et al., 2021; Li et al., 2024a; Nejatbakhsh et al., 2024) . These large-scale neural recordings necessitate computational methods capable of uncovering and characterizing the dynamic nature of neural communication within the brain.\nLatent representations offer a promising approach to building time-varying multi-region communications (Wang et al., 2023; 2024; Zhang et al., 2024) . In the brain, communication patterns between brain regions manifest at varying temporal scales: some regions exhibit fast, synchronous interactions with short delays, indicative of strong functional coupling, while others display slower interactions with longer delays, reflecting more indirect relationships. Such communications provide a framework for understanding how these diverse communication patterns evolve over time, capturing both feedforward and feedback pathways that may shift during different cognitive states (Lillicrap et al., 2020; Liu et al., 2025) . Current computational approaches for modeling multiregion communications can be broadly categorized into nondelay models and delay models. Non-delay models, such as mp-srSLDS (Glaser et al., 2020) and MR-SDS (Karniol-Tambour et al.) , do not explicitly incorporate temporal delays when capturing latent dynamics across regions. As a result, they can only learn the directional information of communications. Delay models, including DLAG (Gokcen et al., 2022) , m-DLAG (Gokcen et al., 2024a) , their approximated versions (Gokcen et al., 2024b) , and MRM-GP (Li et al., 2024b) , introduce mechanisms to learn temporal delays between pairs of communications. Learning delays provides not only directional information but also insights into relative communication speeds, which can help assess the strength of functional coupling between brain regions.\nAlthough these methods have shown potential in capturing inter-region brain communications, delay models, such as DLAG and its variants, do not account for the dynamic nature of multi-region communication. They fail to model time-varying temporal dependencies and communication patterns, which are crucial for understanding neural processing. Non-delay models, such as MR-SDS and mp-srSLDS, introduce dynamic message flow among regions but don't model delays between communications and assume a single communication subspace, meaning they cannot capture concurrent communications over different subspaces.\nMRM-GP is a specific case that integrates a Gaussian Process (GP) with a State Space Model (SSM), making it a delay model with discrete changing of phase delays. MRM-GP has two key limitations: (1) it only supports kernels that are separable across spatial and temporal domains, restricting its applicability in the frequency domain by learning phase delays, whereas temporal delays are more generalizable for neuroscience applications; (2) it assumes that the delays across all communication subspaces across regions change synchronously with hidden state transition. However, this assumption does not reflect the true brain mechanism, where different communication pathways between regions can operate asynchronously.\nIn terms of computational efficiency, DLAG and mDLAG, which are GP-based methods, incur an O(T 3 ) computational cost, where T is the number of time samples, making them challenging to scale. Approximated GP and SSM-based methods, such as MRM-GP, MR-SDS, and mp-srSLDS, reduce the cost to O(T ). However, they rely on sequential inference, which remains inefficient for large neural datasets with long recording durations. Moreover, the reliance on discrete hidden states, e.g., MRM-GP, introduces inefficiencies during inference.\nTo address these limitations, we propose the Adaptive Delay Model (ADM). It falls within the family of Markovian Gaussian process-based delay models (Li et al., 2024b ), but incorporates a continuous time-varying temporal delay. Thus unlike static communication models commonly used in neuroscience, ADM can accommodate communication patterns with varying temporal characteristics, offering a more flexible and biologically relevant framework.\nMarkovian Gaussian Process (Markovian GP) models integrate the expressive power of GPs with the computational efficiency of SSMs, facilitating scalable analysis of largescale neural recordings while discovering multiple evolving communication patterns. However, existing Markovian GP approaches either rely on single-output kernels or require multi-output kernels to be separable across spatial and temporal domains (Solin et al., 2016; Loper et al., 2021; Dowling et al., 2021; 2023; Li et al., 2024b) . In this paper, we introduce a novel, universal connection between arbitrary temporally stationary GPs and SSMs, making the framework highly flexible and broadly applicable to various neuroscience problems.\nAdditionally, we apply an advanced inference method for Markovian GP, leveraging parallel scan algorithms (Blelloch, 1990; Särkkä & García-Fernández, 2020) to signif-icantly accelerate computation and reducing complexity to O(log T ). This approach enables efficient analysis of long-duration recordings while capturing dynamic communication patterns.\nWe validate our model using neural recordings from multiple regions of the brain during visual processing tasks (Semedo et al., 2019; Siegle et al., 2021) . Our results demonstrate the method's capability to uncover how information flow patterns dynamically change across multi-region networks, offering new insights into the temporal organization of largescale neural circuits and advancing our understanding of distributed neural computation.\nIn summary, the key contributions of our work are:\n• We establish a universal connection between arbitrary temporally stationary GPs and SSMs, which has broader implications for other domains where computational efficiency is a priority.\n• Our model discovers time-varying multi-region communications from latent representations of neural recordings without introducing additional discrete hidden states in the SSM.\n• We propose a scalable method for analyzing multi-region communications in large-scale neural data with O(log T ) complexity.",
+    "2.1._Gaussian_Process_Factor_Analysis_for_Brain_Communications": "The Gaussian Process Factor Analysis (GPFA) for modeling brain communication employs the multi-output Squared Exponential (MOSE) kernel (Gokcen et al., 2022) :\nEQUATION\n)\nwhere i, j represent two brain regions, τ = t -t ′ is the time difference, θ ij is the temporal delay between regions i and j, and l is the length scale shared across all regions. This MOSE kernel allows the identification of temporal delays that characterize communication dynamics across regions.\nOur goal is to learn M N latent variables, x ∈ R M N ×T , from neural recordings y ∈ R D×T across N regions. Each region is associated with M latent variables.\nA typical assumption for x is to decompose it into two components: across-region variables and within-region variables (Gokcen et al., 2022; Li et al., 2024b) . The across-region variables, x a ∈ R maN ×T , capture shared neural activity that reflects communication between brain regions. These variables exhibit the similar dynamics across regions, differing only in temporal delays. The within-region variables, x w ∈ R mwN ×T , represent neural activity unique to individual regions and are independent of other regions. Together, these components form the latent representation of neural recordings, x = [x a , x w ], where m a + m w = M . The relationship between y and x is then modeled using a Factor Analysis (FA) model:\nEQUATION\nwhere C ∈ R D×M N is a block-diagonal matrix C = diag{C 1 , . . . , C N }, with each C i representing the mapping from region i's latent variable to its neural recordings. Additionally, d ∈ R D×1 is a bias term, and ϵ ∼ N (0, V) represents Gaussian noise with diagonal covariance V ∈ R D×D .\nThe across-region variables x a are designed to capture communication patterns among regions. For the m-th group of across-region variables, x a m ∈ R N ×T , the activity from each region exhibits spatial correlations with the N -1 other regions. These variables are modeled as a Gaussian Process (GP) with the MOSE kernel, which captures the temporal delay characteristics of across-region communication.\nOn the other hand, the m-th group of within-region variables x w m ∈ R N ×T , representing region-specific activity, is modeled independently across regions using a single-output Squared Exponential (SE) kernel:\nEQUATION\nAdditionally, independence is assumed across different groups of both the across-region and within-region variables, with each group m governed by distinct kernel parameters.\nBy explicitly separating the across-region and within-region latent variables, this framework offers a clear representation of across-region communication and region-specific dynamics, enabling a more interpretable analysis of multi-region neural recordings."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "A probabilistic framework for task-aligned intra-and inter-area neural manifold estimation",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Balzani",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "P"
+          ],
+          "last": "Noel",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Herrero-Vidal",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "E"
+          ],
+          "last": "Angelaki",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Savin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Prefix sums and their applications",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [
+            "E"
+          ],
+          "last": "Blelloch",
+          "suffix": ""
+        }
+      ],
+      "year": 1990,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Learning stable linear dynamical systems",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Boots",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Your contrastive learning problem is secretly a distribution alignment problem",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "C.-H",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Dyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "ern kernel",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Dowling",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sokół",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [
+            "M"
+          ],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hida",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Linear time gps for inferring latent trajectories from neural spike trains",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Dowling",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [
+            "M"
+          ],
+          "last": "Park",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Recurrent switching dynamical systems models for multiple interacting neural populations",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Glaser",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Whiteway",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "P"
+          ],
+          "last": "Cunningham",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Paninski",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Linderman",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Disentangling the flow of signals between populations of neurons",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Gokcen",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "I"
+          ],
+          "last": "Jasper",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "D"
+          ],
+          "last": "Semedo",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zandvakili",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kohn",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "K"
+          ],
+          "last": "Machens",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "M"
+          ],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Nature Computational Science"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Uncovering motifs of concurrent signaling across multiple neuronal populations",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Gokcen",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Jasper",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kohn",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "K"
+          ],
+          "last": "Machens",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "M"
+          ],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Fast multi-group gaussian process factor models",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Gokcen",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "I"
+          ],
+          "last": "Jasper",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kohn",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "K"
+          ],
+          "last": "Machens",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "M"
+          ],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Kalman filtering: Theory and Practice with MATLAB",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [
+            "S"
+          ],
+          "last": "Grewal",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "P"
+          ],
+          "last": "Andrews",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Modeling state-dependent communication between brain regions with switching nonlinear dynamical systems",
+      "authors": [
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Karniol-Tambour",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "M"
+          ],
+          "last": "Zoltowski",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "M"
+          ],
+          "last": "Diamanti",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Pinto",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "D"
+          ],
+          "last": "Brody",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "W"
+          ],
+          "last": "Tank",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "W"
+          ],
+          "last": "Pillow",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "A differentiable partially observable generalized linear model with forward-backward message passing",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Multi-region markovian gaussian process: An efficient method to discover directional communications across multiple brain regions",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Forty-first International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Backpropagation and the brain",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [
+            "P"
+          ],
+          "last": "Lillicrap",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Santoro",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Marris",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "J"
+          ],
+          "last": "Akerman",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature Reviews Neuroscience"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Phase synchrony between prefrontal noradrenergic and cholinergic signals indexes inhibitory control",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [
+            "A"
+          ],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Nong",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sajda",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "bioRxiv"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "A general linear-time inference method for gaussian processes on one dimension",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Loper",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Blei",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "P"
+          ],
+          "last": "Cunningham",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Paninski",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Comparing noisy neural population dynamics using optimal transport distances",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Nejatbakhsh",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Geadah",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "H"
+          ],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Lipshutz",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Estimation of parameters and eigenmodes of multivariate autoregressive models",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Neumaier",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Schneider",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "ACM Transactions on Mathematical Software (TOMS)"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "State-free inference of state-space models: The transfer function approach",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "N"
+          ],
+          "last": "Parnichkun",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Massaroli",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Moro",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "T"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Hasani",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lechner",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "An",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Ré",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Asama",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Spectral mixture kernels for multioutput gaussian processes",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Parra",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Tobar",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Predictive coding in the visual cortex: a functional interpretation of some extra-classical receptive-field effects",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "P"
+          ],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "H"
+          ],
+          "last": "Ballard",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": "Nature neuroscience"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Preserved neural dynamics across animals performing similar behaviour",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Safaie",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "C"
+          ],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "E"
+          ],
+          "last": "Miller",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "T"
+          ],
+          "last": "Dudman",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "G"
+          ],
+          "last": "Perich",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "A"
+          ],
+          "last": "Gallego",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Temporal parallelization of bayesian smoothers",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Särkkä",
+          "suffix": ""
+        },
+        {
+          "first": "Á",
+          "middle": [
+            "F"
+          ],
+          "last": "García-Fernández",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE Transactions on Automatic Control"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Cortical areas interact through a communication subspace",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "D"
+          ],
+          "last": "Semedo",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zandvakili",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "K"
+          ],
+          "last": "Machens",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "Y"
+          ],
+          "last": "Byron",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kohn",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Neuron"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Survey of spiking in the mouse visual system reveals functional hierarchy",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "H"
+          ],
+          "last": "Siegle",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Durand",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gale",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Bennett",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Graddis",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Heller",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "K"
+          ],
+          "last": "Ramirez",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "A"
+          ],
+          "last": "Luviano",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Stochastic differential equation methods for spatio-temporal gaussian process regression",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Solin",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Neuropixels 2.0: A miniaturized high-density probe for stable, long-term brain recordings",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Steinmetz",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Aydin",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lebedeva",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Okun",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Pachitariu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Bauza",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Beau",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bhagat",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Böhm",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Broux",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Science"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Gp kernels for cross-spectrum analysis",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [
+            "R"
+          ],
+          "last": "Ulrich",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "E"
+          ],
+          "last": "Carlson",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Dzirasa",
+          "suffix": ""
+        },
+        {
+          "first": "Carin",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Extraction and recovery of spatio-temporal structure in latent dynamics alignment with diffusion models",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Exploring behaviorrelevant and disentangled neural dynamics with generative diffusion models",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Generalized shape metrics on neural representations",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "H"
+          ],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Kunz",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kornblith",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Linderman",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Gaussian process kernels for pattern discovery and extrapolation",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Wilson",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Paired v1-v2 neuronal spiking responses in anesthetized macaque monkey",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zandvakili",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kohn",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Towards a\" universal translator\" for neural dynamics at single-cell, single-spike resolution",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Jiménez-Benetó",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Azabou",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Richards",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Tung",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Winter",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Dyer",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Paninski",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "State-space deep gaussian processes with applications",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    }
+  ]
+}

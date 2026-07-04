@@ -1,0 +1,3951 @@
+{
+  "paper_id": "BAU",
+  "title": "Generalizable Person Re-identification via Balancing Alignment and Uniformity",
+  "authors": [
+    {
+      "first": "Yoonki",
+      "middle": [],
+      "last": "Cho",
+      "affiliation": {}
+    },
+    {
+      "first": "Jaeyoon",
+      "middle": [
+        "Kim"
+      ],
+      "last": "Woo",
+      "affiliation": {}
+    },
+    {
+      "first": "Jae",
+      "middle": [],
+      "last": "Kim",
+      "affiliation": {}
+    },
+    {
+      "first": "Junsik",
+      "middle": [],
+      "last": "Jung",
+      "affiliation": {}
+    },
+    {
+      "first": "Sung-Eui",
+      "middle": [],
+      "last": "Yoon",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "Domain generalizable person re-identification (DG re-ID) aims to learn discriminative representations that are robust to distributional shifts. While data augmentation is a straightforward solution to improve generalization, certain augmentations exhibit a polarized effect in this task, enhancing in-distribution performance while deteriorating out-of-distribution performance. In this paper, we investigate this phenomenon and reveal that it leads to sparse representation spaces with reduced uniformity. To address this issue, we propose a novel framework, Balancing Alignment and Uniformity (BAU), which effectively mitigates this effect by maintaining a balance between alignment and uniformity. Specifically, BAU incorporates alignment and uniformity losses applied to both original and augmented images and integrates a weighting strategy to assess the reliability of augmented samples, further improving the alignment loss. Additionally, we introduce a domain-specific uniformity loss that promotes uniformity within each source domain, thereby enhancing the learning of domain-invariant features. Extensive experimental results demonstrate that BAU effectively exploits the advantages of data augmentation, which previous studies could not fully utilize, and achieves state-of-the-art performance without requiring complex training procedures.",
+  "body": {
+    "1_Introduction": "Person re-identification (re-ID) aims to match a person with the same identity as a given query across disjoint camera views and different timestamps [88, 96] . Thanks to the discriminative features learned from deep neural networks, significant achievements have been made in this task [1, 44, 45, 72, 73, 78] . However, these learned feature spaces rely on the assumption of independent and identically distributed (i.i.d.) training and testing data, which leads to substantial performance degradation in unseen domains with distributional shifts. To address this issue, domain generalizable person re-ID (DG re-ID) has emerged, focusing on learning representations that are robust to domain shifts [71] .\nExisting DG re-ID methods often leverage advanced network architectures, such as feature normalization modules [34-36, 53, 107] , domain-specific designs [12, 86, 90] , and the integration of transformers [51, 60] . Alternatively, some approaches employ domain adversarial training [6, 20, 91] or meta-learning strategies [10, 40, 71, 94] to learn domain-invariant representations across source domains. Although these studies have shown promising results, they often involve complex training procedures that require significant engineering effort or are prone to training instability [3, 62, 66] .\nOn the other hand, data augmentation is a straightforward solution to enhance generalization capability by simulating diverse data variations during training. Due to its simplicity and effectiveness, numerous efforts have been made to adopt this approach for various DG tasks [69, 75, 93, 99, 104, 105] . However, in the context of DG re-ID, some data augmentations have been observed to exhibit a polarized effect -improving performance in the source domain while potentially degrading it in the target domain. A notable example is Random Erasing [101] , a technique widely used in person re-ID, which has been shown to deteriorate cross-domain re-ID performance [34, 56, 94] . Despite this observation, the underlying causes and potential solutions for this phenomenon remain underexplored.\nIn this paper, we first investigate the polarized effect of data augmentations in DG re-ID. Recent studies have shown that alignment and uniformity in the representation space are closely related to feature generalizability [21, 49, 57, 65, 80, 81] . Building upon this, we reveal that data augmentations can induce sparse representation spaces with less uniformity, which may be detrimental to the open-set nature of the re-ID task, where learning diverse visual information is crucial for generalization [7, 12, 58, 87] . Based on our analysis, we propose a simple yet effective framework, Balancing Alignment and Uniformity (BAU), which alleviates the polarized effect of data augmentations by maintaining a balance between alignment and uniformity. Specifically, it regularizes the representation space by applying alignment and uniformity losses to both original and augmented images. Additionally, we introduce a weighting strategy that considers the reliability of augmented samples to improve the alignment loss. We further propose a domain-specific uniformity loss to promote uniformity within each source domain, enhancing the learning of domain-invariant features. Consequently, BAU effectively exploits the advantages of data augmentation, which previous studies could not fully utilize, and achieves state-of-the-art performance on various benchmarks. In summary, our contributions are as follows:\n• We investigate the polarized effect of data augmentations in DG re-ID and reveal that they can lead to sparse representation spaces, which are detrimental to generalization.\n• We propose a novel BAU framework that mitigates the polarized effect of data augmentations by balancing alignment and uniformity in the representation space. Additionally, we introduce a domain-specific uniformity loss to enhance the learning of domain-invariant representations.\n• Through extensive experiments on various benchmarks and protocols, we demonstrate that BAU achieves state-of-the-art performance, even without complex training procedures.",
+    "2_Related_Work": "Generalizable Person Re-identification. Domain generalizable person re-identification (DG Re-ID) focuses on learning discriminative representations for person retrieval that are robust across unseen domains with distributional shifts. Significant efforts have been made in this task [2, 4, 17, 52, 60, 71, 82] due to its practicality, as it does not require additional model updates for target data, unlike domain adaptation approaches [19, 22, 23, 54, 102] . Given that learned feature statistics can be biased toward the source domain [5, 24, 47, 76] , various feature normalization methods [10, 27, 34, 35, 107] have been proposed to mitigate this domain bias. For instance, SNR [36] eliminates style bias through feature disentanglement, and GDNorm [53] refines feature statistics using a Gaussian process. To achieve domain-invariant representations, several studies [10, 61, 71, 90] leverage domain-adversarial training [20, 41] or meta-learning [18, 40] . DDAN [6] utilizes domain-wise adversarial feature learning to reduce domain discrepancies for domain invariance. M 3 L [94] employs meta-learning to simulate the train-test process of domain generalization with multi-source datasets. There have also been attempts [50, 51] that explore advanced matching strategies between query and gallery images for retrieval to improve interpretability and generalization performance. Recently, Mixture-of-Experts (MoE) based approaches [12, 33] have emerged, where multiple domain-specific experts are trained and applied to the target domain, with META [86] alleviating the model scalability issue by domain-specific batch normalization [5] . In contrast, we effectively utilize the diversity provided by data augmentations to enhance generalization without relying on advanced network architectures or encountering training instability associated with adversarial or meta-learning [3, 62, 66] .",
+    "3.1_Polarized_Effect_of_Data_Augmentation_on_In-and_Out-of-Distribution": "Data augmentations, which apply random transformations to input data, are widely used across various tasks to improve training efficiency and model robustness [15, 39, 70, 89] . In the DG re-ID task, however, certain augmentations have shown a polarized effect: they enhance retrieval performance on in-distribution data while potentially degrading it on out-of-distribution data. For instance, Random Erasing [101] , which selectively erases pixels from parts of input images, has been shown to deteriorate cross-domain re-ID performance [56] . As a result, most DG re-ID methods [10, 12, 36, 86, 94] have simply discarded this technique despite its usefulness in standard re-ID settings. Nonetheless, the underlying phenomenon of this polarized effect remains underexplored.\nTo investigate the polarized effect on re-ID performance between in-distribution (ID) and out-ofdistribution (OOD) scenarios, we conduct experimentsfoot_1 using varying augmentation probabilities (i.e., the probability of applying data augmentation to input images). For data augmentations, we employ the widely used RandAugment [11] , known for its effectiveness across various vision tasks, which randomly applies transformations sampled from a predefined set, including comprehensive geometric manipulations and color variations. Considering the fine-grained domain characteristics of person re-ID, we exclude transformations that cause severe color distortion, such as Invert and Solarize, from the predefined set, and additionally utilize Random Erasing [101] . We train models with varying augmentation probabilities using a standard training pipeline that employs cross-entropy and batch-hard triplet loss [30, 56] . Following the existing DG re-ID protocol [86] , the training set of MSMT17 (MS) [83] , CUHK03 (C3) [44] , and CUHK-SYSU (CS) [85] are used for model training as source domains, and Market-1501 (M) [95] as the target domain.\nFig. 1a compares the performance on the Market-1501 dataset of two models: one trained on the same dataset (ID) and the other trained on MS+CS+C3 (OOD). While data augmentation improves ID performance, OOD performance consistently deteriorates as the augmentation probability increases. This discrepancy highlights the polarized effect of data augmentations in the open-set nature of person re-ID. In closed-set recognition tasks, strong class invariance learned through augmentations can enhance generalization. However, in open-set retrieval tasks, where the model needs to handle unseen classes, learning diverse visual information becomes more crucial for generalization [58, 87] . Although augmentations improve model robustness within training distributions, they can also lead the model to focus on dominant visual information that is easily invariant to augmentations, as shown in Fig. 2 . Consequently, this can result in sparse representation spaces, where the model focuses on learning dominant features while neglecting subtle cues that can be generalized to other domains.\nImage p = 1.0 p = 0.0 p = 0.5 across different probabilities of data augmentations.\nTo further explore the effect of data augmentations on the representation space, we leverage the concepts of alignment and uniformity [81] , which are key properties of feature distributions on the unit hypersphere.\nAlignment is defined as the expected distance between positive pairs:\nEQUATION\n)\nwhere P pos is the distribution of positive pairs. Uniformity, on the other hand, is defined by the logarithm of average pairwise Gaussian potential:\nEQUATION\n)\nwhere P data is the distribution of given data. These two properties reflect that positive pairs are close to each other (alignment) while the overall distribution of embeddings is uniformly spread on the hypersphere (uniformity). Several studies have demonstrated that both are essential for generalization, ensuring that the representation space achieves feature discriminability while preserving maximal information from the data [21, 65, 80] .\nFig. 1b illustrates the alignment and uniformity of representations in OOD scenarios (Market-1501 for MS+CS+C3 → Market-1501) for models trained with varying augmentation probabilities. As depicted, the use of augmentations leads to more alignment, thereby enhancing intra-class invariance compared to models trained without augmentation. Conversely, in terms of uniformity, higher augmentation probabilities result in less uniform embeddings, indicating that the model fails to sufficiently preserve the diverse information from the data. However, to achieve generalizability in the open-set re-ID task, learning diverse information (i.e., more uniformity) is crucial [7, 12, 58] . Furthermore, as shown in Fig. 1c , the feature embeddings become increasingly less uniform with higher probabilities, and this becomes more evident as distributional shifts occur, as indicated by the red plot in the same figure. It suggests that simple training with data augmentations causes the model to become dominated by specific in-distribution data and fail to learn diverse visual cues, leading to degraded generalization performance with a sparse representation space with less uniformity.\nOur analysis highlights the polarized effect of data augmentations in person re-ID, showing that while they enhance in-distribution performance, they can deteriorate out-of-distribution performance by leading to a sparse representation space. Nevertheless, data augmentations remain a promising technique to improve generalization by increasing both the diversity and robustness of training data.\nIn the following subsection, we present a method to mitigate this effect by incorporating alignment and uniformity, using both original and augmented images to balance feature discriminability and generalizability.",
+    "3.2_Balancing_Alignment_and_Uniformity": "We introduce a simple yet effective framework, Balancing Alignment and Uniformity (BAU), which mitigates the polarized effect of data augmentations by maintaining a balance between alignment and uniformity. The overview is illustrated in Fig. 3 . Given an input batch, we generate augmented views of the images, x = t(x), where t ∼ T denotes augmentations sampled from the distribution T . Our model then extracts features from both the original and augmented images, denoted as f i = f θ (x i ) and fi = f θ (x i ), respectively. Since simple training with augmented images can lead to polarized effects (Sec. 3.1), we apply both alignment and uniformity losses to the features of the augmented images to achieve both feature discriminability and generalizability simultaneously. Specifically, the alignment loss enhances feature discriminability by promoting invariance to diverse augmentations, while the uniformity loss encourages generalizability by striving for a uniform distribution of features on the hypersphere, thereby preserving diverse visual information from the data. Alignment Loss. We reformulate the alignment loss to minimize the expected feature distance of positive pairs between original and augmented images, defined as:\nEQUATION\nwhere I pos = {(i, j) | y i = y j } is the index set for the positive pairs within a mini-batch, and |•| denotes the cardinality of the set. With alignment loss, the model can learn invariance to various transformations introduced by data augmentations, thereby enhancing feature discriminability. However, some augmented samples may suffer from significant corruption due to aggressive augmentations, and learning invariance with these samples can potentially degrade the training process.\nTo address this issue, we introduce a weighting strategy for the alignment loss that considers the reliability of augmented samples. Based on studies that handle noisy samples by leveraging the relationship with nearest neighbors [8, 9, 32, 84, 100] , we compute the weight as the Jaccard similarity of k-reciprocal nearest neighbors between the augmented sample and the original sample, defined by:\nEQUATION\nwhere R k (f i ) is the set of indices for k-reciprocal nearest neighbors within a mini-batch of the feature f i . Intuitively, a low weight implies that the augmented feature fi and the original feature f j are not strongly correlated, indicating that learning invariance between them can provide unreliable information to each other. We reformulate the alignment loss in Eq. ( 3) with weights w, computed as:\nEQUATION\nwhere w = w (i,j)∈Ipos wij is the normalized weight. This strategy allows the alignment loss to focus on reliable pairwise relationships between the original and augmented images without noisy samples.\nUniformity Loss. Following Wang and Isola [81] , we compute the uniformity loss to balance feature discriminability and generalizability as:\nEQUATION\n)\nwhere I data = {(i, j) | i ̸ = j} is the index set of all distinct pairs within a mini-batch. By incorporating the uniformity loss, the learned representations can be uniformly distributed on the hypersphere, maintaining the diversity of the feature space. This feature diversity is crucial for the generalization capability, as it prevents the model from overfitting to sparse dominant representations and encourages learning subtle cues that can be generalized across different domains.",
+    "4.1_Datasets_and_Evaluation_Protocols": "Table 1 : Statistics of the used datasets.",
+    "4.2_Implementation_Details": "Following previous studies [34, 50, 51, 86, 90] , we use ResNet-50 [29] pre-trained on ImageNet [13] with instance normalization layers as our backbone. All images are resized to 256 × 128. For each iteration, we sample 256 images, consisting of 64 identities with 4 instances for each identity. The total batch size during training is 512, including both original and augmented images. Random flipping, cropping, erasing [101] , RandAugment [11] , and color jitter are used for data augmentation.\nWe train the model for 60 epochs using Adam [38] with a weight decay of 5 × 10 -4 . The initial learning rate is set to 3.5 × 10 -4 and is decreased by a factor of 10 at the 30th and 50th epochs. A warmup strategy is applied during the first 10 epochs. The momentum µ is set to 0.1. We empirically set the weighting parameter λ to 1.5 and k for the weighting strategy to 10. We implement our framework in PyTorch [64] and utilize two RTX-3090 GPUs for training.",
+    "4.3_Comparison_with_State-of-the-Arts": "We compare our method with state-of-the-art DG re-ID methods on Protocol-1, with the results presented in Table 3 . We also report the results of previous studies that use DukeMTMC-reID [98] for training, denoted as D in the table, while we exclude this dataset from training since it has been 4 . The results demonstrate that our method outperforms other methods, confirming the generalization capability of BAU on large-scale datasets. Specifically, we achieve higher average mAP scores across three datasets than the previous state-of-the-art ACL [90] , with improvements of +2.7% and +3.4% on protocol-2 and protocol-3, respectively.\nIt is also noteworthy that our method achieves state-of-the-art performance without employing advanced feature normalization modules [10, 35, 36, 48, 53] or domain-specific network architectures [12, 86, 90] . Specifically, BAU is a simple yet effective framework that regularizes the representation space by ensuring alignment and uniformity between original and augmented images, without relying on domain-adversarial [6] training or meta-learning [4, 94] strategies.",
+    "4.4_Ablation_Study_and_Analysis": "To evaluate the effectiveness of each component in BAU and validate our design choices, we conduct extensive ablation studies and analyses on Protocol-3, the most scalable setting in our experiments.",
+    "5_Discussion": "Although our method has shown promising results, it still has limitations to overcome. As a straightforward approach primarily based on data augmentations for given input data, our method could face challenges under very large domain shifts. While we adopt standard image-level augmentations, we do not incorporate more advanced techniques such as adversarial data augmentations [69, 75, 99, 104] or feature-level augmentations [37, 46, 106] , both of which have shown promise for generalization. Integrating these techniques with the proposed BAU framework could potentially further enhance generalization performance and would be an interesting direction for future research.\nDespite these limitations, our work is the first to thoroughly investigate and address the polarized effect of data augmentations in DG re-ID. It demonstrates the significant potential of balancing alignment and uniformity to improve generalization in person re-identification. We believe that our findings could inspire further research aimed at advancing generalization capabilities in this field.",
+    "6_Conclusion": "In this paper, we investigated the polarized effect of data augmentations in domain generalizable person re-identification. Our findings revealed that while augmentations enhance in-distribution performance, they can also lead to sparse representation spaces and deteriorate out-of-distribution performance. To address this issue, we proposed a simple yet effective framework, Balancing Alignment and Uniformity (BAU), which regularizes the representation space by maintaining a balance between alignment and uniformity. Comprehensive experiments on various benchmarks and protocols demonstrated that BAU achieves state-of-the-art performance without requiring advanced network architectures or complex training procedures. Furthermore, our extensive ablation studies and analyses validated the effectiveness of each component in BAU, emphasizing the importance of balancing alignment and uniformity to achieve robust generalization in person re-identification."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "An improved deep learning architecture for person re-identification",
+      "authors": [
+        {
+          "first": "Ejaz",
+          "middle": [],
+          "last": "Ahmed",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [
+            "K"
+          ],
+          "last": "Marks",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Dex: Domain embedding expansion for generalized person re-identification",
+      "authors": [
+        {
+          "first": "Eugene Pw",
+          "middle": [],
+          "last": "Ang",
+          "suffix": ""
+        },
+        {
+          "first": "Lin",
+          "middle": [],
+          "last": "Shan",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [
+            "C"
+          ],
+          "last": "Kot",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "BMVC"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "How to train your maml",
+      "authors": [
+        {
+          "first": "Antreas",
+          "middle": [],
+          "last": "Antoniou",
+          "suffix": ""
+        },
+        {
+          "first": "Harri",
+          "middle": [],
+          "last": "Edwards",
+          "suffix": ""
+        },
+        {
+          "first": "Amos",
+          "middle": [],
+          "last": "Storkey",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Person30k: A dual-meta generalization network for person re-identification",
+      "authors": [
+        {
+          "first": "Yan",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Jile",
+          "middle": [],
+          "last": "Jiao",
+          "suffix": ""
+        },
+        {
+          "first": "Wang",
+          "middle": [],
+          "last": "Ce",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yihang",
+          "middle": [],
+          "last": "Lou",
+          "suffix": ""
+        },
+        {
+          "first": "Xuetao",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Ling-Yu",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Domain-specific batch normalization for unsupervised domain adaptation",
+      "authors": [
+        {
+          "first": "Woong-Gi",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Tackgeun",
+          "middle": [],
+          "last": "You",
+          "suffix": ""
+        },
+        {
+          "first": "Seonguk",
+          "middle": [],
+          "last": "Seo",
+          "suffix": ""
+        },
+        {
+          "first": "Suha",
+          "middle": [],
+          "last": "Kwak",
+          "suffix": ""
+        },
+        {
+          "first": "Bohyung",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Dual distribution alignment network for generalizable person re-identification",
+      "authors": [
+        {
+          "first": "Peixian",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Pingyang",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Jianzhuang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Mingliang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "Rongrong",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "AAAI"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Abd-net: Attentive but diverse person re-identification",
+      "authors": [
+        {
+          "first": "Tianlong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Shaojin",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Jingyi",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Ye",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Wuyang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhou",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Zhangyang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Instance-dependent label-noise learning with manifold-regularized transition matrix estimation",
+      "authors": [
+        {
+          "first": "De",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Tongliang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yixiong",
+          "middle": [],
+          "last": "Ning",
+          "suffix": ""
+        },
+        {
+          "first": "Nannan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Gang",
+          "middle": [],
+          "last": "Niu",
+          "suffix": ""
+        },
+        {
+          "first": "Xinbo",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Masashi",
+          "middle": [],
+          "last": "Sugiyama",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Part-based pseudo label refinement for unsupervised person re-identification",
+      "authors": [
+        {
+          "first": "Yoonki",
+          "middle": [],
+          "last": "Cho",
+          "suffix": ""
+        },
+        {
+          "first": "Jae",
+          "middle": [],
+          "last": "Woo",
+          "suffix": ""
+        },
+        {
+          "first": "Seunghoon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Sung-Eui",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Yoon",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Meta batch-instance normalization for generalizable person re-identification",
+      "authors": [
+        {
+          "first": "Seokeon",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        },
+        {
+          "first": "Taekyung",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Minki",
+          "middle": [],
+          "last": "Jeong",
+          "suffix": ""
+        },
+        {
+          "first": "Hyoungseob",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Changick",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Randaugment: Practical automated data augmentation with a reduced search space",
+      "authors": [
+        {
+          "first": "Barret",
+          "middle": [],
+          "last": "Ekin D Cubuk",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathon",
+          "middle": [],
+          "last": "Zoph",
+          "suffix": ""
+        },
+        {
+          "first": "Quoc V",
+          "middle": [],
+          "last": "Shlens",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "CVPR Workshops"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Generalizable person reidentification with relevance-aware mixture of experts",
+      "authors": [
+        {
+          "first": "Yongxing",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaotong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Zekun",
+          "middle": [],
+          "last": "Tong",
+          "suffix": ""
+        },
+        {
+          "first": "Ling-Yu",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Imagenet: A large-scale hierarchical image database",
+      "authors": [
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        },
+        {
+          "first": "Li-Jia",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Arcface: Additive angular margin loss for deep face recognition",
+      "authors": [
+        {
+          "first": "Jiankang",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Niannan",
+          "middle": [],
+          "last": "Xue",
+          "suffix": ""
+        },
+        {
+          "first": "Stefanos",
+          "middle": [],
+          "last": "Zafeiriou",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Improved regularization of convolutional neural networks with cutout",
+      "authors": [
+        {
+          "first": "Terrance",
+          "middle": [],
+          "last": "Devries",
+          "suffix": ""
+        },
+        {
+          "first": "Graham",
+          "middle": [
+            "W"
+          ],
+          "last": "Taylor",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "An image is worth 16x16 words: Transformers for image recognition at scale",
+      "authors": [
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "Dirk",
+          "middle": [],
+          "last": "Weissenborn",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "Mostafa",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Minderer",
+          "suffix": ""
+        },
+        {
+          "first": "Georg",
+          "middle": [],
+          "last": "Heigold",
+          "suffix": ""
+        },
+        {
+          "first": "Sylvain",
+          "middle": [],
+          "last": "Gelly",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Houlsby",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Identity-seeking self-supervised representation learning for generalizable person re-identification",
+      "authors": [
+        {
+          "first": "Zhaopeng",
+          "middle": [],
+          "last": "Dou",
+          "suffix": ""
+        },
+        {
+          "first": "Zhongdao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yali",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Shengjin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Model-agnostic meta-learning for fast adaptation of deep networks",
+      "authors": [
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Selfsimilarity grouping: A simple unsupervised cross domain adaptation approach for person re-identification",
+      "authors": [
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Yunchao",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Guanshuo",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuqian",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Honghui",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [
+            "S"
+          ],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Domain-adversarial training of neural networks",
+      "authors": [
+        {
+          "first": "Yaroslav",
+          "middle": [],
+          "last": "Ganin",
+          "suffix": ""
+        },
+        {
+          "first": "Evgeniya",
+          "middle": [],
+          "last": "Ustinova",
+          "suffix": ""
+        },
+        {
+          "first": "Hana",
+          "middle": [],
+          "last": "Ajakan",
+          "suffix": ""
+        },
+        {
+          "first": "Pascal",
+          "middle": [],
+          "last": "Germain",
+          "suffix": ""
+        },
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Larochelle",
+          "suffix": ""
+        },
+        {
+          "first": "François",
+          "middle": [],
+          "last": "Laviolette",
+          "suffix": ""
+        },
+        {
+          "first": "Mario",
+          "middle": [],
+          "last": "March",
+          "suffix": ""
+        },
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Lempitsky",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Simcse: Simple contrastive learning of sentence embeddings",
+      "authors": [
+        {
+          "first": "Tianyu",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Xingcheng",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Danqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "EMNLP"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Mutual mean-teaching: Pseudo label refinery for unsupervised domain adaptation on person re-identification",
+      "authors": [
+        {
+          "first": "Yixiao",
+          "middle": [],
+          "last": "Ge",
+          "suffix": ""
+        },
+        {
+          "first": "Dapeng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Hongsheng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Self-paced contrastive learning with hybrid memory for domain adaptive object re",
+      "authors": [
+        {
+          "first": "Yixiao",
+          "middle": [],
+          "last": "Ge",
+          "suffix": ""
+        },
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Dapeng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Imagenet-trained cnns are biased towards texture; increasing shape bias improves accuracy and robustness",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Geirhos",
+          "suffix": ""
+        },
+        {
+          "first": "Patricia",
+          "middle": [],
+          "last": "Rubisch",
+          "suffix": ""
+        },
+        {
+          "first": "Claudio",
+          "middle": [],
+          "last": "Michaelis",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Bethge",
+          "suffix": ""
+        },
+        {
+          "first": "Felix",
+          "middle": [
+            "A"
+          ],
+          "last": "Wichmann",
+          "suffix": ""
+        },
+        {
+          "first": "Wieland",
+          "middle": [],
+          "last": "Brendel",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Dissecting supervised contrastive learning",
+      "authors": [
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Graf",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Hofer",
+          "suffix": ""
+        },
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Niethammer",
+          "suffix": ""
+        },
+        {
+          "first": "Roland",
+          "middle": [],
+          "last": "Kwitt",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Viewpoint invariant pedestrian recognition with an ensemble of localized features",
+      "authors": [
+        {
+          "first": "Douglas",
+          "middle": [],
+          "last": "Gray",
+          "suffix": ""
+        },
+        {
+          "first": "Hai",
+          "middle": [],
+          "last": "Tao",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Generalizable person re-identification via self-supervised batch norm test-time adaption",
+      "authors": [
+        {
+          "first": "Ke",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Chenyang",
+          "middle": [],
+          "last": "Si",
+          "suffix": ""
+        },
+        {
+          "first": "Yan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Tieniu",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "AAAI"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Momentum contrast for unsupervised visual representation learning",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Haoqi",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxin",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Saining",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Deep residual learning for image recognition",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shaoqing",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "In defense of the triplet loss for person reidentification",
+      "authors": [
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Hermans",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "Bastian",
+          "middle": [],
+          "last": "Leibe",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Person re-identification by descriptive and discriminative classification",
+      "authors": [
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Hirzer",
+          "suffix": ""
+        },
+        {
+          "first": "Csaba",
+          "middle": [],
+          "last": "Beleznai",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "M"
+          ],
+          "last": "Roth",
+          "suffix": ""
+        },
+        {
+          "first": "Horst",
+          "middle": [],
+          "last": "Bischof",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "SCIA"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Learning with neighbor consistency for noisy labels",
+      "authors": [
+        {
+          "first": "Ahmet",
+          "middle": [],
+          "last": "Iscen",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Valmadre",
+          "suffix": ""
+        },
+        {
+          "first": "Anurag",
+          "middle": [],
+          "last": "Arnab",
+          "suffix": ""
+        },
+        {
+          "first": "Cordelia",
+          "middle": [],
+          "last": "Schmid",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Adaptive mixtures of local experts",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [
+            "A"
+          ],
+          "last": "Jacobs",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "I"
+          ],
+          "last": "Jordan",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [
+            "J"
+          ],
+          "last": "Nowlan",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 1991,
+      "venue": "Neural Computation"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Frustratingly easy person re-identification: Generalizing person re-id in practice",
+      "authors": [
+        {
+          "first": "Jieru",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Qiuqi",
+          "middle": [],
+          "last": "Ruan",
+          "suffix": ""
+        },
+        {
+          "first": "Timothy",
+          "middle": [
+            "M"
+          ],
+          "last": "Hospedales",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "BMVC"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Dynamically transformed instance normalization network for generalizable person re-identification",
+      "authors": [
+        {
+          "first": "Bingliang",
+          "middle": [],
+          "last": "Jiao",
+          "suffix": ""
+        },
+        {
+          "first": "Lingqiao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Liying",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Guosheng",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Shizhou",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yanning",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Style normalization and restitution for generalizable person re-identification",
+      "authors": [
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Cuiling",
+          "middle": [],
+          "last": "Lan",
+          "suffix": ""
+        },
+        {
+          "first": "Wenjun",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Zhibo",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Cross-class feature augmentation for class incremental learning",
+      "authors": [
+        {
+          "first": "Taehoon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Jaeyoo",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Bohyung",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "AAAI"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Adam: A method for stochastic optimization",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Diederik",
+          "suffix": ""
+        },
+        {
+          "first": "Jimmy",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Imagenet classification with deep convolutional neural networks",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Krizhevsky",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "NIPS"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Learning to generalize: Meta-learning for domain generalization",
+      "authors": [
+        {
+          "first": "Da",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yongxin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yi-Zhe",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Timothy",
+          "middle": [],
+          "last": "Hospedales",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "AAAI"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Domain generalization with adversarial feature learning",
+      "authors": [
+        {
+          "first": "Haoliang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Sinno",
+          "middle": [],
+          "last": "Jialin Pan",
+          "suffix": ""
+        },
+        {
+          "first": "Shiqi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [
+            "C"
+          ],
+          "last": "Kot",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Prototypical contrastive learning of unsupervised representations",
+      "authors": [
+        {
+          "first": "Junnan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Pan",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Caiming",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Hoi",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Locally aligned feature transforms across views",
+      "authors": [
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaogang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Deepreid: Deep filter pairing neural network for person re-identification",
+      "authors": [
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaogang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Harmonious attention network for person re-identification",
+      "authors": [
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xiatian",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Shaogang",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Uncertainty modeling for out-of-distribution generalization",
+      "authors": [
+        {
+          "first": "Xiaotong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yongxing",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Yixiao",
+          "middle": [],
+          "last": "Ge",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Shan",
+          "suffix": ""
+        },
+        {
+          "first": "Ling-Yu",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Revisiting batch normalization for practical domain adaptation",
+      "authors": [
+        {
+          "first": "Yanghao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Naiyan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jianping",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaying",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaodi",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Style-controllable generalized person reidentification",
+      "authors": [
+        {
+          "first": "Yuke",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jingkuan",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Ni",
+          "suffix": ""
+        },
+        {
+          "first": "Heng Tao",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ACM MM"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Mind the gap: Understanding the modality gap in multi-modal contrastive representation learning",
+      "authors": [
+        {
+          "first": "Yuhui",
+          "middle": [],
+          "last": "Victor Weixin Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Yongchan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Serena",
+          "middle": [],
+          "last": "Kwon",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [
+            "Y"
+          ],
+          "last": "Yeung",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Interpretable and generalizable person re-identification with query-adaptive convolution and temporal lifting",
+      "authors": [
+        {
+          "first": "Shengcai",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "Ling",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Transmatcher: Deep image matching through transformers for generalizable person re-identification",
+      "authors": [
+        {
+          "first": "Shengcai",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "Ling",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Graph sampling based deep metric learning for generalizable person re-identification",
+      "authors": [
+        {
+          "first": "Shengcai",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "Ling",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Debiased batch normalization via gaussian process for generalizable person re-identification",
+      "authors": [
+        {
+          "first": "Jiawei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhipeng",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kecheng",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng-Jun",
+          "middle": [],
+          "last": "Zha",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "AAAI"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Adaptive transfer network for cross-domain person re-identification",
+      "authors": [
+        {
+          "first": "Jiawei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng-Jun",
+          "middle": [],
+          "last": "Zha",
+          "suffix": ""
+        },
+        {
+          "first": "Di",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Richang",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Meng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Multi-camera activity correlation analysis",
+      "authors": [
+        {
+          "first": "Chen Change",
+          "middle": [],
+          "last": "Loy",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Xiang",
+          "suffix": ""
+        },
+        {
+          "first": "Shaogang",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "A strong baseline and batch normalization neck for deep person re-identification",
+      "authors": [
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Hao Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Youzhi",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Fuxu",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Xingyu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Shenqi",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "Jianyang",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "IEEE Transactions on Multimedia"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Coco-lm: Correcting and contrasting text sequences for language model pretraining",
+      "authors": [
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Chenyan",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Payal",
+          "middle": [],
+          "last": "Bajaj",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Bennett",
+          "suffix": ""
+        },
+        {
+          "first": "Jiawei",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Xia",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Diva: Diverse visual feature aggregation for deep metric learning",
+      "authors": [
+        {
+          "first": "Timo",
+          "middle": [],
+          "last": "Milbich",
+          "suffix": ""
+        },
+        {
+          "first": "Karsten",
+          "middle": [],
+          "last": "Roth",
+          "suffix": ""
+        },
+        {
+          "first": "Homanga",
+          "middle": [],
+          "last": "Bharadhwaj",
+          "suffix": ""
+        },
+        {
+          "first": "Samarth",
+          "middle": [],
+          "last": "Sinha",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Björn",
+          "middle": [],
+          "last": "Ommer",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Paul Cohen",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Learning from failure: Debiasing classifier from biased classifier",
+      "authors": [
+        {
+          "first": "Junhyun",
+          "middle": [],
+          "last": "Nam",
+          "suffix": ""
+        },
+        {
+          "first": "Hyuntak",
+          "middle": [],
+          "last": "Cha",
+          "suffix": ""
+        },
+        {
+          "first": "Sungsoo",
+          "middle": [],
+          "last": "Ahn",
+          "suffix": ""
+        },
+        {
+          "first": "Jaeho",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Jinwoo",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Part-aware transformer for generalizable person re-identification",
+      "authors": [
+        {
+          "first": "Yuke",
+          "middle": [],
+          "last": "Hao Ni",
+          "suffix": ""
+        },
+        {
+          "first": "Lianli",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Heng",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Jingkuan",
+          "middle": [],
+          "last": "Tao Shen",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Meta distribution alignment for generalizable person re-identification",
+      "authors": [
+        {
+          "first": "Jingkuan",
+          "middle": [],
+          "last": "Hao Ni",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaopeng",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Wen",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Heng Tao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "On first-order meta-learning algorithms",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nichol",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Geodesic multi-modal mixup for robust fine-tuning",
+      "authors": [
+        {
+          "first": "Changdae",
+          "middle": [],
+          "last": "Oh",
+          "suffix": ""
+        },
+        {
+          "first": "Junhyuk",
+          "middle": [],
+          "last": "So",
+          "suffix": ""
+        },
+        {
+          "first": "Hoyoon",
+          "middle": [],
+          "last": "Byun",
+          "suffix": ""
+        },
+        {
+          "first": "Yongtaek",
+          "middle": [],
+          "last": "Lim",
+          "suffix": ""
+        },
+        {
+          "first": "Minchul",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        },
+        {
+          "first": "Jong-June",
+          "middle": [],
+          "last": "Jeon",
+          "suffix": ""
+        },
+        {
+          "first": "Kyungwoo",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Pytorch: An imperative style, highperformance deep learning library",
+      "authors": [
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Paszke",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Gross",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Lerer",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "Gregory",
+          "middle": [],
+          "last": "Chanan",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Killeen",
+          "suffix": ""
+        },
+        {
+          "first": "Zeming",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Natalia",
+          "middle": [],
+          "last": "Gimelshein",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Antiga",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Alignment-uniformity aware representation learning for zero-shot video classification",
+      "authors": [
+        {
+          "first": "Kaili",
+          "middle": [],
+          "last": "Shi Pu",
+          "suffix": ""
+        },
+        {
+          "first": "Mao",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "A closer look at smoothness in domain adversarial training",
+      "authors": [
+        {
+          "first": "Harsh",
+          "middle": [],
+          "last": "Rangwani",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Sumukh",
+          "suffix": ""
+        },
+        {
+          "first": "Mayank",
+          "middle": [],
+          "last": "Aithal",
+          "suffix": ""
+        },
+        {
+          "first": "Arihant",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "Venkatesh",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Babu Radhakrishnan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Mobilenetv2: Inverted residuals and linear bottlenecks",
+      "authors": [
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Sandler",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Howard",
+          "suffix": ""
+        },
+        {
+          "first": "Menglong",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Andrey",
+          "middle": [],
+          "last": "Zhmoginov",
+          "suffix": ""
+        },
+        {
+          "first": "Liang-Chieh",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Grad-cam: Visual explanations from deep networks via gradient-based localization",
+      "authors": [
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Ramprasaath R Selvaraju",
+          "suffix": ""
+        },
+        {
+          "first": "Abhishek",
+          "middle": [],
+          "last": "Cogswell",
+          "suffix": ""
+        },
+        {
+          "first": "Ramakrishna",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "Devi",
+          "middle": [],
+          "last": "Vedantam",
+          "suffix": ""
+        },
+        {
+          "first": "Dhruv",
+          "middle": [],
+          "last": "Parikh",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Generalizing across domains via cross-gradient training",
+      "authors": [
+        {
+          "first": "Shiv",
+          "middle": [],
+          "last": "Shankar",
+          "suffix": ""
+        },
+        {
+          "first": "Vihari",
+          "middle": [],
+          "last": "Piratla",
+          "suffix": ""
+        },
+        {
+          "first": "Soumen",
+          "middle": [],
+          "last": "Chakrabarti",
+          "suffix": ""
+        },
+        {
+          "first": "Siddhartha",
+          "middle": [],
+          "last": "Chaudhuri",
+          "suffix": ""
+        },
+        {
+          "first": "Preethi",
+          "middle": [],
+          "last": "Jyothi",
+          "suffix": ""
+        },
+        {
+          "first": "Sunita",
+          "middle": [],
+          "last": "Sarawagi",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Very deep convolutional networks for large-scale image recognition",
+      "authors": [
+        {
+          "first": "Karen",
+          "middle": [],
+          "last": "Simonyan",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Generalizable person re-identification by domain-invariant mapping network",
+      "authors": [
+        {
+          "first": "Jifei",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Yongxin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yi-Zhe",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Xiang",
+          "suffix": ""
+        },
+        {
+          "first": "Timothy",
+          "middle": [
+            "M"
+          ],
+          "last": "Hospedales",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "Pose-driven deep convolutional model for person re-identification",
+      "authors": [
+        {
+          "first": "Chi",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Jianing",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Shiliang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Junliang",
+          "middle": [],
+          "last": "Xing",
+          "suffix": ""
+        },
+        {
+          "first": "Wen",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF72",
+      "title": "Beyond part models: Person retrieval with refined part pooling (and a strong convolutional baseline)",
+      "authors": [
+        {
+          "first": "Yifan",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "Shengjin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF73",
+      "title": "Visualizing data using t-sne",
+      "authors": [
+        {
+          "first": "Laurens",
+          "middle": [],
+          "last": "Van Der Maaten",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF74",
+      "title": "Generalizing to unseen domains via adversarial data augmentation",
+      "authors": [
+        {
+          "first": "Riccardo",
+          "middle": [],
+          "last": "Volpi",
+          "suffix": ""
+        },
+        {
+          "first": "Hongseok",
+          "middle": [],
+          "last": "Namkoong",
+          "suffix": ""
+        },
+        {
+          "first": "Ozan",
+          "middle": [],
+          "last": "Sener",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [
+            "C"
+          ],
+          "last": "Duchi",
+          "suffix": ""
+        },
+        {
+          "first": "Vittorio",
+          "middle": [],
+          "last": "Murino",
+          "suffix": ""
+        },
+        {
+          "first": "Silvio",
+          "middle": [],
+          "last": "Savarese",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF75",
+      "title": "Tent: Fully test-time adaptation by entropy minimization",
+      "authors": [
+        {
+          "first": "Dequan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Evan",
+          "middle": [],
+          "last": "Shelhamer",
+          "suffix": ""
+        },
+        {
+          "first": "Shaoteng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Bruno",
+          "middle": [],
+          "last": "Olshausen",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Darrell",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF76",
+      "title": "Understanding the behaviour of contrastive loss",
+      "authors": [
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Huaping",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF77",
+      "title": "Learning discriminative features with multiple granularities for person re-identification",
+      "authors": [
+        {
+          "first": "Guanshuo",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yufeng",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Xiong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jiwei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "ACM MM"
+    },
+    {
+      "id": "BIBREF78",
+      "title": "Generalizing to unseen domains: A survey on domain generalization",
+      "authors": [
+        {
+          "first": "Jindong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Cuiling",
+          "middle": [],
+          "last": "Lan",
+          "suffix": ""
+        },
+        {
+          "first": "Chang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yidong",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Wang",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Yiqiang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Wenjun",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE Transactions on Knowledge and Data Engineering"
+    },
+    {
+      "id": "BIBREF79",
+      "title": "Feature alignment and uniformity for test time adaptation",
+      "authors": [
+        {
+          "first": "Shuai",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Daoan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zipei",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Jianguo",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF80",
+      "title": "Understanding contrastive representation learning through alignment and uniformity on the hypersphere",
+      "authors": [
+        {
+          "first": "Tongzhou",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Isola",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF81",
+      "title": "Domainmix: Learning generalizable person re-identification without human annotations",
+      "authors": [
+        {
+          "first": "Wenhao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Shengcai",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "Fang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Cuicui",
+          "middle": [],
+          "last": "Kang",
+          "suffix": ""
+        },
+        {
+          "first": "Ling",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "BMVC"
+    },
+    {
+      "id": "BIBREF82",
+      "title": "Person transfer gan to bridge domain gap for person re-identification",
+      "authors": [
+        {
+          "first": "Longhui",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Shiliang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Wen",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF83",
+      "title": "A topological filter for learning with label noise",
+      "authors": [
+        {
+          "first": "Pengxiang",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Songzhu",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Mayank",
+          "middle": [],
+          "last": "Goswami",
+          "suffix": ""
+        },
+        {
+          "first": "Dimitris",
+          "middle": [],
+          "last": "Metaxas",
+          "suffix": ""
+        },
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF84",
+      "title": "Joint detection and identification feature learning for person search",
+      "authors": [
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Shuang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Bochao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaogang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF85",
+      "title": "Mimic embedding via adaptive aggregation: learning generalizable person re-identification",
+      "authors": [
+        {
+          "first": "Boqiang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Lingxiao",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenan",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF86",
+      "title": "Learning with diversity: Selfexpanded equalization for better generalized deep metric learning",
+      "authors": [
+        {
+          "first": "Jiexi",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Zhihui",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Erkun",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yanhua",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Heng",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF87",
+      "title": "Deep learning for person re-identification: A survey and outlook",
+      "authors": [
+        {
+          "first": "Mang",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Jianbing",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Gaojie",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Xiang",
+          "suffix": ""
+        },
+        {
+          "first": "Ling",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        },
+        {
+          "first": "Steven Ch",
+          "middle": [],
+          "last": "Hoi",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence"
+    },
+    {
+      "id": "BIBREF88",
+      "title": "Cutmix: Regularization strategy to train strong classifiers with localizable features",
+      "authors": [
+        {
+          "first": "Sangdoo",
+          "middle": [],
+          "last": "Yun",
+          "suffix": ""
+        },
+        {
+          "first": "Dongyoon",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Seong",
+          "middle": [],
+          "last": "Joon Oh",
+          "suffix": ""
+        },
+        {
+          "first": "Sanghyuk",
+          "middle": [],
+          "last": "Chun",
+          "suffix": ""
+        },
+        {
+          "first": "Junsuk",
+          "middle": [],
+          "last": "Choe",
+          "suffix": ""
+        },
+        {
+          "first": "Youngjoon",
+          "middle": [],
+          "last": "Yoo",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF89",
+      "title": "Adaptive cross-domain learning for generalizable person re-identification",
+      "authors": [
+        {
+          "first": "Pengyi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Huanzhang",
+          "middle": [],
+          "last": "Dou",
+          "suffix": ""
+        },
+        {
+          "first": "Yunlong",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF90",
+      "title": "Learning domain invariant representations for generalizable person re-identification",
+      "authors": [
+        {
+          "first": "Yi-Fan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Da",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zhen",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Tieniu",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE Transactions on Image Processing"
+    },
+    {
+      "id": "BIBREF91",
+      "title": "Generalized cross entropy loss for training deep neural networks with noisy labels",
+      "authors": [
+        {
+          "first": "Zhilu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Mert",
+          "middle": [],
+          "last": "Sabuncu",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF92",
+      "title": "Maximum-entropy adversarial data augmentation for improved generalization and robustness",
+      "authors": [
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Dimitris",
+          "middle": [],
+          "last": "Metaxas",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "NeruIPS"
+    },
+    {
+      "id": "BIBREF93",
+      "title": "Learning to generalize unseen domains via memory-based multi-source meta-learning for person reidentification",
+      "authors": [
+        {
+          "first": "Yuyang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhun",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Fengxiang",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiming",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Yaojin",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Shaozi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Nicu",
+          "middle": [],
+          "last": "Sebe",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF94",
+      "title": "Scalable person re-identification: A benchmark",
+      "authors": [
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Liyue",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "Shengjin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jingdong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF95",
+      "title": "Person re-identification: Past, present and future",
+      "authors": [
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [
+            "G"
+          ],
+          "last": "Hauptmann",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF96",
+      "title": "Associating groups of people",
+      "authors": [
+        {
+          "first": "Wei-Shi",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Shaogang",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Xiang",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "BMVC"
+    },
+    {
+      "id": "BIBREF97",
+      "title": "Unlabeled samples generated by gan improve the person re-identification baseline in vitro",
+      "authors": [
+        {
+          "first": "Zhedong",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF98",
+      "title": "Adversarial style augmentation for domain generalized urban-scene segmentation",
+      "authors": [
+        {
+          "first": "Zhun",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Yuyang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Gim",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Hee",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Nicu",
+          "middle": [],
+          "last": "Sebe",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF99",
+      "title": "Re-ranking person re-identification with k-reciprocal encoding",
+      "authors": [
+        {
+          "first": "Zhun",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Donglin",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Shaozi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF100",
+      "title": "Random erasing data augmentation",
+      "authors": [
+        {
+          "first": "Zhun",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Guoliang",
+          "middle": [],
+          "last": "Kang",
+          "suffix": ""
+        },
+        {
+          "first": "Shaozi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "AAAI"
+    },
+    {
+      "id": "BIBREF101",
+      "title": "Invariance matters: Exemplar memory for domain adaptive person re-identification",
+      "authors": [
+        {
+          "first": "Zhun",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiming",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Shaozi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF102",
+      "title": "Domain generalization: A survey",
+      "authors": [
+        {
+          "first": "Kaiyang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Ziwei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Xiang",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [
+            "Change"
+          ],
+          "last": "Loy",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence"
+    },
+    {
+      "id": "BIBREF103",
+      "title": "Deep domain-adversarial image generation for domain generalisation",
+      "authors": [
+        {
+          "first": "Kaiyang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Yongxin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Timothy",
+          "middle": [],
+          "last": "Hospedales",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Xiang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "AAAI"
+    },
+    {
+      "id": "BIBREF104",
+      "title": "Learning to generate novel domains for domain generalization",
+      "authors": [
+        {
+          "first": "Kaiyang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Yongxin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Timothy",
+          "middle": [],
+          "last": "Hospedales",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Xiang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF105",
+      "title": "Domain generalization with mixstyle",
+      "authors": [
+        {
+          "first": "Kaiyang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Yongxin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Xiang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF106",
+      "title": "Rethinking the distribution gap of person re-identification with camera-based batch normalization",
+      "authors": [
+        {
+          "first": "Zijie",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Longhui",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Lingxi",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Hengheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Haozhe",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Haizhou",
+          "middle": [],
+          "last": "Ai",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ECCV"
+    }
+  ]
+}

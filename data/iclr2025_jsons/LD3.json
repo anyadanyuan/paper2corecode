@@ -1,0 +1,1755 @@
+{
+  "paper_id": "LD3",
+  "title": "LEARNING TO DISCRETIZE DENOISING DIFFUSION ODES",
+  "authors": [
+    {
+      "first": "Vinh",
+      "middle": [],
+      "last": "Tong",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Stuttgart",
+        "location": {
+          "addrLine": "2 IMPRS-IS"
+        }
+      }
+    },
+    {
+      "first": "Trung-Dung",
+      "middle": [],
+      "last": "Hoang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Bern",
+        "location": {}
+      }
+    },
+    {
+      "first": "Anji",
+      "middle": [],
+      "last": "Liu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Stuttgart",
+        "location": {
+          "addrLine": "2 IMPRS-IS"
+        }
+      }
+    },
+    {
+      "first": "Guy",
+      "middle": [],
+      "last": "Van Den Broeck",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "UCLA",
+        "location": {}
+      }
+    },
+    {
+      "first": "Mathias",
+      "middle": [],
+      "last": "Niepert",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Stuttgart",
+        "location": {
+          "addrLine": "2 IMPRS-IS"
+        }
+      }
+    }
+  ],
+  "abstract": "Sampling from pre-trained DPMs involves multiple neural function evaluations (NFEs) to transform Gaussian noise samples into images, resulting in higher computational costs compared to single-step generative models such as GANs or VAEs. Therefore, reducing the number of NFEs while preserving generation quality is crucial. To address this, we propose LD3, a lightweight framework designed to learn the optimal time discretization for sampling. LD3 can be combined with various samplers and consistently improves generation quality without having to retrain resource-intensive neural networks. We demonstrate analytically and empirically that LD3 improves sampling efficiency with much less computational overhead. We evaluate our method with extensive experiments on 7 pre-trained models, covering unconditional and conditional sampling in both pixel-space and latent-space DPMs. We achieve FIDs of 2.38 (10 NFE), and 2.27 (10 NFE) on unconditional CIFAR10 and AFHQv2 in 5-10 minutes of training. LD3 offers an efficient approach to sampling from pre-trained diffusion models.",
+  "body": {
+    "1_INTRODUCTION": "Diffusion Probabilistic Models (DPMs) have emerged as a popular class of generative models, demonstrating competitive performance across various tasks, including image synthesis (Ho et al., 2020; Song et al., 2020b; Dhariwal & Nichol, 2021 ), text-to-image generation (Nichol et al., 2021; Rombach et al., 2022; Gu et al., 2022) , 3D point cloud generation (Luo & Hu, 2021) , and molecular generation (Hoogeboom et al., 2022) . DPMs learn a multi-step transformation from random (e.g., multivariate Gaussian) noise to the data distribution. While they achieve improved sample quality and diversity compared to single-step generative models like GANs (Goodfellow et al., 2014) or VAEs (Kingma et al., 2021) , their multi-step nature incurs significant computational overhead.\nDistillation-based methods are one category of approaches for accelerating DPMs (Meng et al., 2023; Liu et al., 2022b; Salimans & Ho, 2022; Song et al., 2023) . These methods refine the denoising network to improve generation quality while reducing the number of sampling steps. Although these approaches can significantly enhance quality, they require costly re-training or fine-tuning of the entire network. Moreover, distillation-based methods often face challenges such as information loss (Zheng et al., 2024) and difficulties with conditional sampling (Meng et al., 2023) .\nThe second set of approaches capitalizes on the ability to sample from DPMs by solving a corresponding diffusion Ordinary Differential Equation (ODE) (Song et al., 2020a; Lu et al., 2022a; Zhang & Chen, 2022; Liu et al., 2022a; Song et al., 2020a; Lu et al., 2022b; Zhao et al., 2023; Zheng et al., 2024) . These methods use more sophisticated numerical solvers for diffusion ODEs and require no neural network retraining. Solving diffusion ODEs involves a mandatory step of selecting discretization time steps, and the choice of discretization points greatly influences sample quality. However, there does not exist a time discretization strategy that works well for all dataset-model-ODE solver combinations. Here, we propose an effective yet lightweight approach to learn good discretization time steps for any pre-trained DPM.\nAssuming the ODE solving pipeline is differentiable, which holds for most ODE solvers currently in use, our idea is to directly minimize the global truncation error to optimize the time steps, which are input to the solver and hence can be treated as trainable parameters. Specifically, we employ a teacher ODE solver that takes small step sizes to approximate the gold standard solution of the ODE. The student with learnable discretized time steps is then tasked to mimic the teacher's final output given the same input (i.e., the initial condition of the ODE).\nOne problem with this learning framework is the limited capacity of the student model, which can only optimize a few parameters to mimic a stronger teacher, sometimes leading to \"underfitting\" and suboptimal performance. To address this, we propose a surrogate objective that is easier for the student to optimize. We validate this objective by theoretically proving its \"closeness\" to the original distillation objective, upper bounding the KL divergence between the distributions induced by the teacher and the student solvers. The resulting algorithm, termed Learning to Discretize Denoising Diffusion ODEs (LD3), efficiently learns the time discretization by backpropagating through the ODE-solving procedure using the proposed surrogate loss. LD3 can be viewed as an additional step to further improve the sample quality of DPMs after making other design choices such as distilling the denoising model and choosing an ODE solver. Additionally, LD3 is efficient and only requires a small set of random samples from a tractable noise distribution. Table 1 summarizes the benefits that LD3 brings compared to related approaches.\nEmpirically, we test LD3 on both pixel space (Karras et al., 2022) and latent space DPMs (Rombach et al., 2022) across various resolutions, including 32×32 (e.g., CIFAR10 (Krizhevsky & Hinton, 2009) ), 256×256 (e.g., LSUN-Bedroom (Yu et al., 2015) , ImageNet (Russakovsky et al., 2015) ), and 512×512 text-to-image generation (Rombach et al., 2022; Liu et al., 2023) as well as various types of conditions (e.g., class, text prompt) (Rombach et al., 2022) . LD3 performs significantly better than existing time discretization heuristics, especially with small NFE (below 10). Additionally, LD3 can be trained in 5 to 40 minutes on a single GPU.\n2 RELATED WORK Table 1 : Comparison of LD3 with existing methods, including Watson et al. (2022) , AYS (Sabour et al., 2024) , GITS (Chen et al., 2024) , and DMN (Xue et al., 2024) , based on several criteria. The first criterion is training speed: methods that optimize time discretizations in less than one hour are classified as \"Fast\", while others are considered \"Slow\". Training stability is true for methods not requiring variance reduction techniques or early stopping to exhibit stable training. A method is, respectively, solver-adaptable and network-adaptable if it considers information about the solver and trained neural networks when optimizing the time steps. Finally, we examine whether a model can directly optimize the global truncation error.",
+    "4_LEARNING_TO_DISCRETIZE_DENOISING_DIFFUSION_ODES": {
+      "4.1_LEARNING_TO_DISCRETIZE_BY_OPTIMIZING_THE_GLOBAL_TRUNCATION_ERROR": "Given a pre-trained denoising network ϵ θ (•, •) and an initial state x T ∼ N (0, σ 2 T I) at time step T , we solve the diffusion ODE stated in Equation (3), typically by applying a numerical method such as Euler or Heun's method. This process is carried out over a sequence of decreasing time steps {t i } N i=0 , where T = t 0 > t 1 > • • • > t N = 0. At each time step, the state is updated according to the ODE dynamics, guided by the denoising network. The final solution, computed at time t N = 0 is denoted as Ψ(x T , {t i } N i=0 , ϵ θ ). Recall that our goal is to learn the set of time steps {t i } N i=0 . To ensure these time steps remain monotonic (i.e., non-increasing), we encode the time steps by a monotonic function τ ξ parameterized by ξ such that for each i ∈ N, 0 ≤ i ≤ N , we have τ ξ (i) = t i . 1 For simplicity in notation, we now express Ψ(x T , {τ ξ (i)} N i=0 , ϵ θ ) as Ψ ξ (x T ). Additionally, we denote the distribution induced by the transformed state Ψ ξ (x T ) as p ξ (x 0 ), which is obtained by first sampling x T and then passing it through the network Ψ ξ (•).\nDefine Ψ * (x T , ϵ θ ) as a teacher ODE solver that accurately solves the diffusion ODE and the distribution induced by Ψ * as q(x 0 ). We aim to minimize the KL divergence between the teacher distribution q(x 0 ) and the student distribution p ξ (x 0 ):\nEQUATION\nTo minimize the objective mentioned above, we focus on reducing the global truncation error, which entails training the student ODE solver Ψ ξ to closely mimic the behavior of the teacher ODE solver Ψ * . We refer to this as hard teacher forcing. Formally, this gives rise to the following optimization problem we propose:\nEQUATION\nwhere d(•, •) is a differentiable function that satisfies ∀x, y : d(x, y) ≥ 0 and d(x, y) = 0 if and only if x = y. Some examples are squared l 2 distance d(x, y) = ∥x -y∥ 2 2 and Learned Perceptual Image Patch Similarity (LPIPS) (Zhang et al., 2018) .\nFor any valid loss in the form of Equation (5), its global optimal solutions are also global optimal solutions to Equation (4). Our proposed objective improves upon previous works by directly optimizing the global truncation error and, consequently, the Kullback-Leibler (KL) divergence between the student and teacher distributions. Unlike existing approaches that focus on minimizing local truncation error (Chen et al., 2024) or optimizing an derived upper bound (Sabour et al., 2024; Xue et al., 2024) , our method addresses the fundamental error more effectively. Additionally, our approach leverages information from both the student solver and the trained neural network, which are often overlooked in similar studies (Chen et al., 2024; Xue et al., 2024) . This holistic consideration enhances the accuracy and performance of our solution.",
+      "4.2_OPTIMIZING_DISCRETIZATION_POINTS_BY_SOFT_TEACHER_FORCING": "Despite having the same global optimum as the KL divergence between the teacher-induced and the student-induced distribution, directly optimizing L hard (ξ) could lead to underfitting -to minimize the objective, we need to ensure Ψ * (x T ) = Ψ ξ (x T ) for any x T , which is hard as we are only allowed to optimize ξ, which typically contains no more than 20 parameters for student ODE solvers with low NFE. This issue is illustrated by the 1D ODE shown in Figure 1 (a), where the green curves are the ground truth integral curves, and the red trajectories are from the teacher. The teacher matches the ground truth closely, as it can take fine-grained steps to solve the ODE. However, given the restriction that the student solver can only evaluate the ODE at three time steps before generating the output, an inevitable truncation error exists between the teacher and the student.\nOne way around this problem is to optimize the parameters of the student denoising network ϵ θ in addition to ξ. However, this will significantly increase the sample complexity and the training time, limiting the method's efficiency and portability. Instead, we propose to relax the \"hard\" teacher forcing criterion. Specifically, for any x T and the corresponding output of the teacher x 0 := Ψ * (x T ), we only require the existence of an input x ′ T that is \"close\" to x T , such that the student's output given x ′ T (i.e., Ψ ξ (x ′ T )) matches x 0 . We define B(x, rσ T ) := {x ′ | ∥x -x ′ ∥ 2 ≤ rσ T } as the L2 ball of radius rσ T around x. Take the 1D ODE in Figure 1 (a) as an example. Although it may be impossible to force the student solvers to map the same point x T to the teacher's output, we can instead find a nearby input x ′ T that does map to the teacher's output Ψ * (x T ) (i.e., Ψ ξ (x ′ T )). The goal is that, by finding such x ′ T points close to x T , as illustrated in Figure 1(c ), the student solver's distribution at t = 0 will still closely match the teacher's distribution. Note that x ′ T is only used during training to find the optimal discretization points. Formally, we relax the objective defined in Equation ( 5) into the following for an r > 0: The effectiveness of this relaxed objective depends on two questions: (i) compared to L hard (ξ), how much easier is it to optimize L soft (ξ) given the fact that we only have a handful of learnable parameters (i.e., ξ); (ii) whether minimizing L soft (ξ) leads to student distributions that have small KL divergence with the teacher distribution (i.e., the ground-truth objective in Eq. ( 4)).\nEQUATION\nWe start by showing positive evidence to the first question -empirically, a small r suffices to ensure L soft (ξ) being much smaller than L hard (ξ) after training. We experiment on a pre-trained DPM (Karras et al., 2022) on AFHQv2 (Choi et al., 2020) . We optimize the discretization points (i.e., ξ) with respect to L soft (ξ) using different r and plot the training loss. We use the LPIPS distance (Zhang et al., 2018) for d(•, •). As shown in Figure 2 , compared to r = 0.0, where L soft and L hard are identical, the loss is significantly reduced as we relax the optimization problem by increasing r.\nWe now move on to the second question: if we can effectively minimize L soft (ξ), can we establish some form of guarantee of the student in terms of its KL divergence with the teacher distribution?\nWe confirm this with the following theoretical result.\nTheorem 1. Let Ψ * and Ψ ξ be a teacher and student ODE solver each with noise distribution N (0, σ 2 T I) ∈ R d , and with, respectively, distributions q and p ξ . Assume both Ψ * and Ψ ξ are invertible. Let r > 0, if the objective from Equation (6) has an optimal solution ξ * for r with objective value 0, we have\nD KL (q(x) ∥ p ξ * (x)) ≤ r 2 2 + r √ d + 1 + E x∼q(x) [|C(Ψ * (x)) -C(Ψ ξ * (x))|] , where C(Ψ ξ * (x)) = log | det J Ψ ξ * (Ψ -1 ξ * (x))|.\nThe proof is provided in Appendix A.1. Intuitively, the theorem states that, if we can find an optimal solution ξ * that minimizes L soft , then the KL divergence between the teacher (i.e., q(x)) and the student (i.e., p ξ * (x)) can be upper bounded. The first two terms depend mainly on r and the square root of the dimensionality: √ d + 1. Since r is chosen to be quite small (e.g., 0.19 for CIFAR10, 4 NFE), the first two terms are effectively tight in practice. While it is hard to establish an analytic bound for the third term, we conduct numerical evaluations to estimate its magnitude in practice and observe that it reduces with r. See Appendix A.2 for more details.",
+      "_text": "Our main goal is to reduce the computational burden of DPMs while maintaining their generation quality. In particular, we focus on the small number of neural function evaluation (NFE) regimes with at most 10 evaluations of the denoising network to generate a sample.\nThe ODE view of DPMs allows us to treat the problem of DPM sampling as solving a class of ODEs, where choosing discretization points is critical. Although one may hope that a universal discretization strategy exists for various DPMs, we find that both the structure of the DPM and the training data influence the optimal time discretization, with no single strategy working well for all cases. Instead, we propose a general yet efficient algorithm to learn discretization strategies for DPMs.\nIn the following, we first approach this problem under the framework of global truncation error optimization (Sec. 4.1). We then elaborate on a potential underfitting problem of this optimization problem and propose a surrogate objective to improve sampling performance (Sec. 4.2). Finally, we provide details of the algorithm and the training process (Sec. 4.3)."
+    },
+    "5_EXPERIMENTS": "Experiment setup. We evaluate 7 pre-trained diffusion models across different domains. For pixel space models, we include CIFAR10 (32×32) (Krizhevsky & Hinton, 2009) , FFHQ (64×64) (Karras et al., 2019) , and AFHQv2 (64×64) (Choi et al., 2020) . For latent space models, we assess LSUN-Bedroom (256×256) (Yu et al., 2015) and class-conditional ImageNet (256×256) (Russakovsky et al., 2015) with a guidance scale of 2.0. Additionally, we consider text-to-image generation models, including Stable Diffusion v1.5 (Rombach et al., 2022) at 512×512 pixels with a guidance scale of 7.5, and InstaFlow Liu et al. (2023) .\nWe primarily assess LD3 using advanced diffusion ODE solvers, including DPM_solver++ (Lu et al., 2022b) , Uni_PC (Zhao et al., 2023) , and iPNDM (Zhang & Chen, 2022) . Additionally, we test LD3 with Euler, a standard black-box ODE solver. To evaluate the performance of our learned discretization method, we compare it against 8 existing discretization methods. For commonly used discretization choices, we include time uniform (Lu et al., 2022b; Ho et al., 2020) , time quadratic (Song et al., 2020a) , time EDM (Karras et al., 2022) , and time logSNR (uniform in λ) (Zhang & Chen, 2022) , with details provided in Appendix D.2. For more recent advanced discretization methods, we compare LD3 to DMN (Xue et al., 2024) , GITS (Chen et al., 2024) , AYS (Sabour et al., 2024) , and Watson et al. (2022) . Since AYS (Sabour et al., 2024) and Watson et al. (2022) do not have published code, we adhere to their settings and compare our results with their reported metrics in Appendix E. For CIFAR10, FFHQ, and AFHQv2, we use 100 samples for both training and validation and train LD3 for 7 epochs with a batch size of 2. We set r proportional to the dimensionality d and inversely proportional to the squared NFE: r = γ × d NFE 2 , where γ = 0.001 in all experiments. For Latent Diffusion (Rombach et al., 2022) on ImageNet and LSUN-Bedroom, we use 100 samples for both training and validation, with the training conducted over 5 epochs. Unless stated otherwise, we draw 50k samples for the evaluation using the FID score (Heusel et al., 2017) against a reference data set, where lower scores indicate better quality. For text-to-image generation, we train Stable Diffusion (Rombach et al., 2022) and InstaFlow Liu et al. (2023) by randomly selecting 5 prompts from the MSCOCO dataset (Lin et al., 2015) and generate 10 training pairs for each prompt. We train them for 5 epochs. Details of experiment settings can be found in Appendix D.",
+    "6_CONCLUSION_AND_LIMITATIONS": "We introduced LD3, a lightweight framework designed to reduce computational costs when sampling from pre-trained DPMs. LD3 learns time discretization for ODE sampling, significantly lowering the NFE needed to generate high-quality images with minimal training overhead. Our experiments across various datasets demonstrate that LD3 consistently improves sampling quality. For instance, LD3 reduced the FID score on CIFAR10 (4 NFE) from 35.04 to 9.31 with 5 minutes of training on a GPU. These results indicate that LD3 provides a more efficient approach to sampling from pre-trained diffusion models, with promising applications in image synthesis and beyond.\nLimitations and broader impact. Despite significant performance improvements for a few NFE, LD3 still falls short of distillation-based methods regarding sample quality. A limitation of LD3 is that it needs to be trained separately for each given number of NFEs. Additionally, our model necessitates a differentiable solver, which may not always be feasible. Using LD3 with advanced diffusion ODE solvers to generate fake content could also exacerbate the potential risks of LD3 being used for malicious purposes."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Shapenet: An information-rich 3d model repository",
+      "authors": [
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Angel X Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Leonidas",
+          "middle": [],
+          "last": "Funkhouser",
+          "suffix": ""
+        },
+        {
+          "first": "Pat",
+          "middle": [],
+          "last": "Guibas",
+          "suffix": ""
+        },
+        {
+          "first": "Qixing",
+          "middle": [],
+          "last": "Hanrahan",
+          "suffix": ""
+        },
+        {
+          "first": "Zimo",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Silvio",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Manolis",
+          "middle": [],
+          "last": "Savarese",
+          "suffix": ""
+        },
+        {
+          "first": "Shuran",
+          "middle": [],
+          "last": "Savva",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "On the trajectory regularity of ode-based diffusion sampling",
+      "authors": [
+        {
+          "first": "Defang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenyu",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Can",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Chunhua",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Siwei",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Stargan v2: Diverse image synthesis for multiple domains",
+      "authors": [
+        {
+          "first": "Yunjey",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        },
+        {
+          "first": "Youngjung",
+          "middle": [],
+          "last": "Uh",
+          "suffix": ""
+        },
+        {
+          "first": "Jaejun",
+          "middle": [],
+          "last": "Yoo",
+          "suffix": ""
+        },
+        {
+          "first": "Jung-Woo",
+          "middle": [],
+          "last": "Ha",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Diffdock: Diffusion steps, twists, and turns for molecular docking",
+      "authors": [
+        {
+          "first": "Gabriele",
+          "middle": [],
+          "last": "Corso",
+          "suffix": ""
+        },
+        {
+          "first": "Hannes",
+          "middle": [],
+          "last": "Stärk",
+          "suffix": ""
+        },
+        {
+          "first": "Bowen",
+          "middle": [],
+          "last": "Jing",
+          "suffix": ""
+        },
+        {
+          "first": "Regina",
+          "middle": [],
+          "last": "Barzilay",
+          "suffix": ""
+        },
+        {
+          "first": "Tommi",
+          "middle": [],
+          "last": "Jaakkola",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Diffusion models beat gans on image synthesis",
+      "authors": [
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Nichol",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Progress in molecular docking",
+      "authors": [
+        {
+          "first": "Jiyu",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Ailing",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Le",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Quantitative Biology"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Optimizing ddpm sampling with shortcut fine-tuning",
+      "authors": [
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Kangwook",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Consistency models made easy",
+      "authors": [
+        {
+          "first": "Zhengyang",
+          "middle": [],
+          "last": "Geng",
+          "suffix": ""
+        },
+        {
+          "first": "Ashwini",
+          "middle": [],
+          "last": "Pokle",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "J Zico",
+          "middle": [],
+          "last": "Kolter",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Generative adversarial nets",
+      "authors": [
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "Jean",
+          "middle": [],
+          "last": "Pouget-Abadie",
+          "suffix": ""
+        },
+        {
+          "first": "Mehdi",
+          "middle": [],
+          "last": "Mirza",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Warde-Farley",
+          "suffix": ""
+        },
+        {
+          "first": "Sherjil",
+          "middle": [],
+          "last": "Ozair",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Vector quantized diffusion model for text-to-image synthesis",
+      "authors": [
+        {
+          "first": "Shuyang",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Dong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jianmin",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Fang",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Dongdong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Baining",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Gans trained by a two time-scale update rule converge to a local nash equilibrium",
+      "authors": [
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Heusel",
+          "suffix": ""
+        },
+        {
+          "first": "Hubert",
+          "middle": [],
+          "last": "Ramsauer",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "Bernhard",
+          "middle": [],
+          "last": "Nessler",
+          "suffix": ""
+        },
+        {
+          "first": "Sepp",
+          "middle": [],
+          "last": "Hochreiter",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Denoising diffusion probabilistic models",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Ajay",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Equivariant diffusion for molecule generation in 3d",
+      "authors": [
+        {
+          "first": "Emiel",
+          "middle": [],
+          "last": "Hoogeboom",
+          "suffix": ""
+        },
+        {
+          "first": "Garcia",
+          "middle": [],
+          "last": "Vıctor",
+          "suffix": ""
+        },
+        {
+          "first": "Clément",
+          "middle": [],
+          "last": "Satorras",
+          "suffix": ""
+        },
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Vignac",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "A style-based generator architecture for generative adversarial networks",
+      "authors": [
+        {
+          "first": "Tero",
+          "middle": [],
+          "last": "Karras",
+          "suffix": ""
+        },
+        {
+          "first": "Samuli",
+          "middle": [],
+          "last": "Laine",
+          "suffix": ""
+        },
+        {
+          "first": "Timo",
+          "middle": [],
+          "last": "Aila",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Elucidating the design space of diffusionbased generative models",
+      "authors": [
+        {
+          "first": "Tero",
+          "middle": [],
+          "last": "Karras",
+          "suffix": ""
+        },
+        {
+          "first": "Miika",
+          "middle": [],
+          "last": "Aittala",
+          "suffix": ""
+        },
+        {
+          "first": "Timo",
+          "middle": [],
+          "last": "Aila",
+          "suffix": ""
+        },
+        {
+          "first": "Samuli",
+          "middle": [],
+          "last": "Laine",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Variational diffusion models",
+      "authors": [
+        {
+          "first": "Diederik",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Poole",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Learning multiple layers of features from tiny images",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Krizhevsky",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Efficient rematerialization for deep networks",
+      "authors": [
+        {
+          "first": "Ravi",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Manish",
+          "middle": [],
+          "last": "Purohit",
+          "suffix": ""
+        },
+        {
+          "first": "Zoya",
+          "middle": [],
+          "last": "Svitkina",
+          "suffix": ""
+        },
+        {
+          "first": "Erik",
+          "middle": [],
+          "last": "Vee",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Alleviating exposure bias in diffusion models through sampling with shifted time steps",
+      "authors": [
+        {
+          "first": "Mingxiao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Tingyu",
+          "middle": [],
+          "last": "Qu",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Marie-Francine",
+          "middle": [],
+          "last": "Moens",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Microsoft coco: Common objects in context",
+      "authors": [
+        {
+          "first": "Tsung-Yi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Maire",
+          "suffix": ""
+        },
+        {
+          "first": "Serge",
+          "middle": [],
+          "last": "Belongie",
+          "suffix": ""
+        },
+        {
+          "first": "Lubomir",
+          "middle": [],
+          "last": "Bourdev",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Hays",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Perona",
+          "suffix": ""
+        },
+        {
+          "first": "Deva",
+          "middle": [],
+          "last": "Ramanan",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "Lawrence"
+          ],
+          "last": "Zitnick",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Pseudo numerical methods for diffusion models on manifolds",
+      "authors": [
+        {
+          "first": "Luping",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Zhijie",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhou",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Flow straight and fast: Learning to generate and transfer data with rectified flow",
+      "authors": [
+        {
+          "first": "Xingchao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chengyue",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Qiang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Instaflow: One step is enough for high-quality diffusion-based text-to-image generation",
+      "authors": [
+        {
+          "first": "Xingchao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiwen",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jianzhu",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Dpm-solver: A fast ode solver for diffusion probabilistic model sampling in around 10 steps",
+      "authors": [
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhao",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Jianfei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Chongxuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Dpm-solver++: Fast solver for guided sampling of diffusion probabilistic models",
+      "authors": [
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhao",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Jianfei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Chongxuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Knowledge distillation in iterative generative models for improved sampling speed",
+      "authors": [
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Luhman",
+          "suffix": ""
+        },
+        {
+          "first": "Troy",
+          "middle": [],
+          "last": "Luhman",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Diffusion probabilistic models for 3d point cloud generation",
+      "authors": [
+        {
+          "first": "Shitong",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "On distillation of guided diffusion models",
+      "authors": [
+        {
+          "first": "Chenlin",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        },
+        {
+          "first": "Ruiqi",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Diederik",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Glide: Towards photorealistic image generation and editing with text-guided diffusion models",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Nichol",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Pranav",
+          "middle": [],
+          "last": "Shyam",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Bob",
+          "middle": [],
+          "last": "Mcgrew",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Improved denoising diffusion probabilistic models",
+      "authors": [
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Quinn",
+          "suffix": ""
+        },
+        {
+          "first": "Nichol",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Input perturbation reduces exposure bias in diffusion models",
+      "authors": [
+        {
+          "first": "Mang",
+          "middle": [],
+          "last": "Ning",
+          "suffix": ""
+        },
+        {
+          "first": "Enver",
+          "middle": [],
+          "last": "Sangineto",
+          "suffix": ""
+        },
+        {
+          "first": "Angelo",
+          "middle": [],
+          "last": "Porrello",
+          "suffix": ""
+        },
+        {
+          "first": "Simone",
+          "middle": [],
+          "last": "Calderara",
+          "suffix": ""
+        },
+        {
+          "first": "Rita",
+          "middle": [],
+          "last": "Cucchiara",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Highresolution image synthesis with latent diffusion models",
+      "authors": [
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "Dominik",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "Björn",
+          "middle": [],
+          "last": "Ommer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Imagenet large scale visual recognition challenge",
+      "authors": [
+        {
+          "first": "Olga",
+          "middle": [],
+          "last": "Russakovsky",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Krause",
+          "suffix": ""
+        },
+        {
+          "first": "Sanjeev",
+          "middle": [],
+          "last": "Satheesh",
+          "suffix": ""
+        },
+        {
+          "first": "Sean",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiheng",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Andrej",
+          "middle": [],
+          "last": "Karpathy",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Khosla",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Bernstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International journal of computer vision"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Align your steps: Optimizing sampling schedules in diffusion models",
+      "authors": [
+        {
+          "first": "Amirmojtaba",
+          "middle": [],
+          "last": "Sabour",
+          "suffix": ""
+        },
+        {
+          "first": "Sanja",
+          "middle": [],
+          "last": "Fidler",
+          "suffix": ""
+        },
+        {
+          "first": "Karsten",
+          "middle": [],
+          "last": "Kreis",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Progressive distillation for fast sampling of diffusion models",
+      "authors": [
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Denoising diffusion implicit models",
+      "authors": [
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Chenlin",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Score-based generative modeling through stochastic differential equations",
+      "authors": [
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Jascha",
+          "middle": [],
+          "last": "Sohl-Dickstein",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Diederik",
+          "suffix": ""
+        },
+        {
+          "first": "Abhishek",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Poole",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Consistency models",
+      "authors": [
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Learning to efficiently sample from diffusion probabilistic models",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Watson",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Norouzi",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Learning fast samplers for diffusion models by differentiating through sample quality",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Watson",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Norouzi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Accelerating diffusion sampling with optimized time steps",
+      "authors": [
+        {
+          "first": "Shuchen",
+          "middle": [],
+          "last": "Xue",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaoqiang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Fei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Shifeng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyang",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Enze",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenguo",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Lsun: Construction of a large-scale image dataset using deep learning with humans in the loop",
+      "authors": [
+        {
+          "first": "Fisher",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Ari",
+          "middle": [],
+          "last": "Seff",
+          "suffix": ""
+        },
+        {
+          "first": "Yinda",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuran",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Funkhouser",
+          "suffix": ""
+        },
+        {
+          "first": "Jianxiong",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Fast sampling of diffusion models with exponential integrator",
+      "authors": [
+        {
+          "first": "Qinsheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yongxin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "The unreasonable effectiveness of deep features as a perceptual metric",
+      "authors": [
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Isola",
+          "suffix": ""
+        },
+        {
+          "first": "Alexei",
+          "middle": [
+            "A"
+          ],
+          "last": "Efros",
+          "suffix": ""
+        },
+        {
+          "first": "Eli",
+          "middle": [],
+          "last": "Shechtman",
+          "suffix": ""
+        },
+        {
+          "first": "Oliver",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Unipc: A unified predictorcorrector framework for fast sampling of diffusion models",
+      "authors": [
+        {
+          "first": "Wenliang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Lujia",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Yongming",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Jiwen",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Dpm-solver-v3: Improved diffusion ode solver with empirical model statistics",
+      "authors": [
+        {
+          "first": "Kaiwen",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianfei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    }
+  ]
+}

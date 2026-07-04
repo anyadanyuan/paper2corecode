@@ -1,0 +1,2570 @@
+{
+  "paper_id": "cospgd",
+  "title": "COSPGD: AN EFFICIENT WHITE-BOX ADVERSARIAL ATTACK FOR PIXEL-WISE PREDICTION TASKS",
+  "authors": [],
+  "abstract": "While neural networks allow highly accurate predictions in many tasks, their lack of robustness towards even slight input perturbations hampers their deployment in many real-world applications. White-box adversarial attacks such as the seminal projected gradient descent (PGD) offer an effective means to evaluate the model robustness and dedicated solutions have been proposed for example for attacks on semantic segmentation or on optical flow. To streamline the evaluation process, we propose an efficient white-box adversarial attack, termed CosPGD, that can be applied to any pixel-wise prediction task in a unified setting. To this end, CosPGD employs a simple loss scaling based on the cosine similarity between the distributions over the predictions and ground truth (or target, for targeted attacks). This leads to efficient evaluations of a model's robustness for pixelwise classification as well as regression models, providing new insights into their performance at earlier attack stages. We outperform the SotA on semantic segmentation attacks in our experiments on PASCAL VOC2012 and CityScapes. Further, we showcase CosPGD's versatility by evaluating optical flow as well as image restoration models. We provide code for the CosPGD algorithm and example usage at https: //anonymous.4open.science/r/cospgd-iclr2024-909/.",
+  "body": {
+    "1_INTRODUCTION": "Deep Neural Networks (DNNs) have been gaining popularity for estimating solutions to various complex tasks including numerous vision tasks like classification (Krizhevsky et al., 2012; He et al., 2015; Xie et al., 2016; Liu et al., 2022) , semantic segmentation (Ronneberger et al., 2015; Zhao et al., 2017) , or disparity (Li et al., 2020) and optical flow (Fischer et al., 2015; Ilg et al., 2016; Teed and Deng, 2020) estimation, due to their overall precise predictions. However, DNNs are inherently black-box function approximators (Buhrmester et al., 2019) , known to find shortcuts to map the input to a target (Geirhos et al., 2020) or to learn biases (Geirhos et al., 2018) . Thus, we have limited information on the quality of representations learned by the network and their robustness.\nAn adversarial attack adds a crafted, small (epsilon-sized) perturbation to the input of a neural network that aims to alter the prediction, thus assessing a network's robustness as in the benchmarks (Croce et al., 2021; Jung et al., 2023) . Due to the practical relevance to evaluate and analyze DNN models, such attacks have been extensively studied (Goodfellow et al., 2014; Kurakin et al., 2017; Wong et al., 2020b; Madry et al., 2017; Moosavi-Dezfooli et al., 2015; Kurakin et al., 2016) . Single step attacks such as FGSM (Goodfellow et al., 2014) are most efficient but often less effective and reliable than multistep versions such as projected gradient descent (PGD) (Kurakin et al., 2017) and subsequent attacks (Schrodi et al., 2022; Croce and Hein, 2020; 2021) for image classification.\nExisting approaches predominantly focus on attacking image classification models. However, arguably, the robustness of models for pixel-wise prediction tasks is highly relevant for many safetycritical applications such as motion estimation in autonomous driving or image segmentation. The application of existing attacks to pixel-wise prediction tasks such as semantic segmentation or optical flow estimation is possible in principle (e.g. as in Arnab et al. (2017) ), albeit carrying only limited information since the pixel-specific loss information is not fully leveraged. In Figure 1 , we illustrate this effect for a targeted attack on optical flow estimation and show that classical classification attacks such as PGD (see Figure 1(e )) can only fool the network predictions to some extent: PGD tends to only fit the target (all zeros, i.e. white) in parts of the optical flow, while CosPGD is more coherent. For semantic segmentation, Gu et al. (2022) showed that harnessing pixel-wise information for adversarial attacks leads to much stronger attacks. They argue that, during the attack, the loss to be backpropagated needs to be altered such that already flipped pixel predictions are less important for the gradient computation. Thus, SegPGD (Gu et al., 2022) makes a binary decision for each pixel based on the classification result at this location in order to weigh the attack loss for incorrect and correct model predictions individually. While this is intuitive for semantic segmentation, it can not extend to pixel-wise regression tasks by definition. Furthermore, SegPGD has to fade back in the loss of already incorrectly predicted pixels over time, since otherwise the overall gradient vanishes or becomes instable (Gu et al., 2022) . We hypothesize that this leads to SegPGD needing more iterations than necessary. Soft decisions on each pixel's impact to the overall attack update are therefore beneficial to increase attack efficiency.\nIn this work, we propose CosPGD, an efficient white-box adversarial attack that considers the cosine-similarity between the prediction and target for each pixel. Due to its principled formulation, CosPGD can be used for a wide range of pixel-wise prediction tasks beyond semantic segmentation. Figure 1(f ) shows its effect on optical flow estimation, where it can fit the target at almost all locations. Since it leverages the posterior distribution of the prediction for loss computation, it can significantly outperform SegPGD on semantic segmentation. This additionally enables CosPGD to gauge the model's robustness correctly with significantly fewer iterations than SegPGD, thus making the attack efficient. The main contributions of this work are as follows:\n• We propose an efficient white-box adversarial attack, CosPGD that can be used to attack all pixel-wise prediction tasks, including semantic segmentation as well as optical flow prediction, and thus allows for an efficient evaluation of their robustness in a unified setting.\n• For semantic segmentation, we compare CosPGD to the recently proposed SegPGD which also uses pixel-wise information for generating attacks but can only be applied to semantic segmentation models. CosPGD outperforms SegPGD by a significant margin.\n• The proposed CosPGD can be used as a targeted attack and as a non-targeted attack. We provide implementations for both l 2 and l ∞ bounded CosPGD attacks to allow for a wide range of evaluation scenarios.\n• To demonstrate CosPGD's versatility, we also evaluate it on optical flow estimation and image restoration in several settings and on several datasets and compare to previous attacks.",
+    "2_RELATED_WORK": "The vulnerability of DNNs to adversarial attacks was first explored in Goodfellow et al. (2014) for image classification, proposing the Fast Gradient Sign Method (FGSM). FGSM is a single-step (one iteration) white-box adversarial attack that perturbs the input in the direction of its gradient, generated from backpropagating the loss, with a small step size, such that the model prediction becomes incorrect. Due to its fast computation, it is still a widely used approach. Numerous subsequent works have been directed towards generating effective adversarial attacks for diverse tasks including NLP (Morris et al., 2020; Ribeiro et al., 2018; Iyyer et al., 2018) , or 3D tasks (Zhang et al., 2021; Sun et al., 2021) . Yet, the high input dimensionality of image classification models results in the striking effectiveness of adversarial attacks in this field (Goodfellow et al., 2014; Jia et al., 2022) .\nA vast line of work has been dedicated to assessing the quality and robustness of representations learned by the network, including the curation of dedicated evaluation data for particular tasks (Kang et al., 2019; Hendrycks and Dietterich, 2019; Hendrycks et al., 2019) or the crafting of effective adversarial attacks. These adversarial attacks can be image-wide or localized in a small region or patch. These perturbations are in a small region of the image and are called Patch Attacks (e.g.\nBrown et al. (2017)),while methods such as proposed in Goodfellow et al. (2014); Kurakin et al. (2017); Madry et al. (2017); Wong et al. (2020b); Moosavi-Dezfooli et al. (2015); Croce and Hein (2020); Andriushchenko et al. (2020); Carlini and Wagner (2017); Rony et al. (2019); Dong et al. (2018) argue in a Lipschitz continuity motivated way that a robust network's prediction should not change drastically if the perturbed image is within the epsilon-ball of the original image and thus optimize attacks globally within the epsilon neighborhood of the original input. Our proposed CosPGD approach follows this line of work.\nWhite-box attacks assume full access to the model and its gradients (Goodfellow et al., 2014; Kurakin et al., 2017; Madry et al., 2017; Wong et al., 2020b; Gu et al., 2022; Moosavi-Dezfooli et al., 2015; Rony et al., 2023a; Dong et al., 2018) while black-box attacks optimize the perturbation in a randomized way (Andriushchenko et al., 2020; Ilyas et al., 2018; Qu et al., 2023) . The proposed CosPGD derives its optimization objective from Projected Gradient Descent PGD (Kurakin et al., 2017) and is a white-box attack.\nFurther, one distinguishes between targeted attacks (e.g.\nWong et al. (2020a); Gajjar et al. (2022); Schmalfuss et al. ( 2022)) that turn the network predictions towards a specific target and untargeted attacks (or non-targeted attacks) that optimize the attack to cause any incorrect prediction. PGD (Kurakin et al., 2017) , and CosPGD by extension, allows for both settings (Vo et al., 2022) .\nWhile previous attacks predominantly focus on classification tasks, only a few approaches specifically address the analysis of pixel-wise prediction tasks such as semantic segmentation, optical flow, or disparity estimation. For example, PCFA (Schmalfuss et al., 2022) was applied to the estimation of optical flow and specifically minimizes the average end-point error (AEE) to a target flow field. A notable exception of pixel-wise white-box adversarial attack is proposed in Gu et al. (2022) . The recent SegPGD attack could showcase the importance of pixel-wise attacks for semantic segmentation.\nIn this work, we propose CosPGD to provide a principled and efficient adversarial attack, that can be applied to a wide range of pixel-wise prediction tasks.\nSimilar to SegPGD, the here proposed CosPGD is based on the optimization formulated in Projected Gradient Descent (PGD) (Kurakin et al., 2017) . PGD in its formulation is very similar to FGSM, i.e. it aims to increase the network's loss for an image by adding epsilon-bounded noise. Yet, it is significantly more expensive to optimize than FGSM since it is allowed not one but multiple optimization steps. We explain PGD in more detail in Section 3. SegPGD (Gu et al., 2022) extends upon PGD for semantic segmentation by considering the loss per pixel. For effective optimization, it splits the model's predicted segmentation mask into correctly classified and incorrectly classified pixels, by comparing it to the ground truth segmentation mask. Thus, the loss is scaled over the iterations and the attack does not continue to increase the loss on already flipped pixel labels. While SegPGD improves upon previous adversarial attacks, it is limited to pixel-wise classification tasks (i.e. semantic segmentation) by definition and cannot be extended to regression-based tasks like disparity estimation or optical flow estimation. Thus, we propose CosPGD. CosPGD uses the pixelwise cosine similarity between the distribution over the predictions and the distribution over the targets to scale the loss for each pixel so that it can be applied to classification and regression tasks in a principled way. Further, the cosine similarity can be evaluated on the prediction scores for pixel-wise classification tasks and thereby leverage even more information from the network. Thus, CosPGD outperforms SegPGD by a significant margin when attacking semantic segmentation models while preserving the efficiency of SegPGD and extending it to other pixelwise prediction tasks.\nAlgorithm 1 Algorithm for generating adversarial examples using CosPGD.\nRequire: model fnet(•), clean samples X clean , perturbation range ϵ, step size α, attack iterations T , ground truth/target Y X adv 0 = X clean + U(-ϵ, +ϵ) ▷ initialize adversarial example and clip to valid l∞ or l2 bound for t ← 0 to T-1 do ▷ loop over attack iterations\nP = fnet(X adv t ) ▷ make predictions cossim ← CosineSimilarity(Ψ * (P ), Ψ ′ (Y ))\n▷ compute cosine similarity if targeted attack:\ncossim ← 1 -cossim ▷ punish dissimilarity to target α ← -α ▷ opposite direction for targeted attack Lcos ← cossim • L(P, Y )\n▷ scaling the pixel-wise loss for sample updates\nX adv t+1 ← X adv t + α • sign(∇ X adv t Lcos) ▷ update adversarial examples δ ← ϕ ϵ (X adv t+1 -X clean ) ▷ clip δ to valid l∞ or l2 bound X adv t+1 = ϕ ϵ (X clean + δ)\n▷ add δ to X clean and clip into valid image range end for P = fnet(X adv T ) ▷ make predictions on adversarial examples 3 METHOD CosPGD is an iterative white-box attack that uses the pixel-wise cosine similarity to generate strong adversarial examples. It effectively extends PGD to all pixel-wise prediction tasks using the same attack step as PGD, given by Equation 1and Equation 2 and in Kurakin et al. (2017) ; Gu et al. (2022) .\nEQUATION\nEQUATION\nHere, L(•) is a one-differentiable function of the model prediction and the target, which defines the loss the model aims to minimize, X advt+1 is a new adversarial example for time step t + 1, generated using X advt , the adversarial example at time step t and initial clean sample X clean . Y is the ground truth label for non-targeted attacks and the target for targeted attacks, α is the step size for the perturbation (α is multiplied by -1 for targeted attacks to take a step in the direction of the target), and the function ϕ ϵ is clipping the δ in ϵ-ball for l ∞ -norm bounded attacks or the ϵ-projection in l 2 -norm bounded attacks, complying with the l ∞ -norm or l 2 -norm constraints, respectively. ϕ r is clipping the generated example in the valid input range (usually between [0, 1]). ∇ X adv t L(•) denotes the gradient of X advt generated by backpropagating the loss and is used to determine the direction of the perturbation step. SegPGD extends this formulation to tensor-valued predictions and labels Y ∈ R H×W ×M for images of size H × W and categorical M output classes. This allows specifically optimizing perturbations on pixels on which the segmentation is not yet flipped instead of considering all positions equally important.",
+    "4_EXPERIMENTS": {
+      "4.1_SEMANTIC_SEGMENTATION_(a)_DeepLabV3": "Ground Truth PGD SegPGD CosPGD mIoU= 6.79% mIoU= 2.69% mIoU= 0.08% However, once the dominant class label is changed by SegPGD or PGD, they do not further optimize over small regions of correct prediction. In contrast, CosPGD successfully fools the model into making incorrect predictions even in these small regions by either swapping the region prediction with an already existing class or forcing the model into predicting a class not existing in that sample.\nGreedy approaches like PGD, originally designed for image classification, are able to bring down the mIoU of DeepLabV3 to 6.79%. SegPGD, by naïvely utilizing the pixel-wise segmentation error, deteriorates the model performance further to 2.69%. However, CosPGD is able to fool the network into making incorrect predictions for almost all pixels of the samples, bringing down the model performance to 0.08% after 40 iterations and to approximately 0% after 100 iterations.\nAdditionally, in\nTable 4 (Appendix) we observe that at low attack iterations (iterations=3) SegPGD implies that PSPNet is more adversarially robust than DeepLabV3. However, after more attack iterations (iterations≥5), SegPGD reveals that DeepLabV3 is more robust than PSPNet. Contrary to this, CosPGD even at low attack iterations correctly predicts DeepLabV3 to be more robust than PSPNet. This is an insight that CosPGD provides with considerably fewer iterations, thus lower overall computation time. Compute costs per iteration are comparable, see Table 2 (Appendix). DeepLabV3 l2-norm constrained Furthermore, the improved performance of CosPGD is not limited to l ∞ -norm constrained attacks that were observed in Figures 2 & 3 . As shown in Figure 4 , it also extends to l 2 -norm constrained attacks, where CosPGD again outperforms both SegPGD and PGD across attack iterations. Moreover, the gap in performance of the three adversarial attacks significantly increases when increasing the number of attack iterations. This demonstrates that CosPGD is able to utilize the increase in attack iterations best and highlights the significance of scaling the pixel-wise loss with the cosine similarities rather than using a heuristical scaling as in SegPGD.\nThus, we successfully demonstrate the benefit of the proposed attack over existing adversarial attacks for semantic segmentation. We provide more results on l ∞ -norm and l 2 -norm constrained non-targeted adversarial attacks for semantic segmentation using UNet (Ronneberger et al., 2015) with ConvNeXt backbone on CityScapes (Cordts et al., 2016) in Appendix B.1, further confirming the benefit of CosPGD. Additionally, we ablate over the attack step size α for l ∞ -norm constrained attacks on DeepLabV3 using PASCAL VOC2012 validation dataset in Appendix B.2.2 and over multiple attack step size α and permissible perturbation ϵ for l 2 -norm constrained attacks on DeepLabV3 using PASCAL VOC2012 validation dataset in Appendix B.2. Thus demonstrating the versatility of CosPGD. (a) Target flow (b) PGD 5 itrs epe = 14.42 (c) PGD 40 itrs epe = 7.32 (d) Initial flow epe = 31.1 (e) CosPGD 5 itrs epe = 14.28 (f) CosPGD 40 itrs epe = 4.84 Figure 6: Comparing PGD and CosPGD as a targeted l ∞ -norm constrained attack on RAFT using KITTI15 validation set over various iterations. (a) shows the targeted prediction, a -→ 0 , and (d) shows the initial optical flow estimation by the network before adversarial attacks. EPEs between the target and the final prediction are reported, thus lower epe is better. (b) and (c) show flow predictions after PGD attack over 5 and 40 iterations respectively, while figures (e) and (f) show flow predictions after CosPGD attack over 5 and 40 iterations respectively. CosPGD significantly changes the overall structure of the optical flow field, bringing is visibly closer to target (a).",
+      "4.2_OPTICAL_FLOW": "For optical flow, we explore the l ∞ -norm constrained targeted setting. A comparison of CosPGD to PGD is shown in Figure 5 . Here we quantitatively observe the better performance of CosPGD compared to PGD. As this is the targeted setting, we intend to close the gap between the target prediction and the model predictions, thus a lower epe of the model prediction w.r.t the target prediction is desired. As the attack iterations increase, across datasets, CosPGD is able to significantly fool the network into making predictions closer to the target, bringing down the epe to as low as 1.55 for Sintel (final). We qualitatively observe in Figure 6 that the initial optical flow estimation by the model (which is very different from the target) is only moderately changed when the model is attacked with a strong adversarial attack like PGD. As the attack was originally designed for classification tasks, the model is not significantly fooled even as the intensity of the attack is increased to 40 iterations. Figure 6(b) , shows qualitatively that the model predictions are not significantly different from the initial predictions. The shape of the moving car is preserved to a considerable extent. The limited effectiveness of the PGD attack is further highlighted on increasing the attack strength to 40 iterations (see Figure 6(c )). Here, some initial predictions are still preserved, for example the bark of the tree. This is in contrast to when the model is attacked using CosPGD, a method that utilizes pixel-wise information. In Figure 6 (e), we observe that even at a low intensity of the attack (5 iterations), the model predictions are significantly different from the initial predictions, especially in the background and the shape of the moving car. The model is incorrectly predicting the motion of the pixels around the moving car. At high attack intensity, as shown in Figure 6 (f) with 40 iterations, the model's optical flow predictions are significantly inaccurate and exceedingly different from the initial predictions and very close to the target of -→ 0 . The model fails to differentiate the moving car from its background, moreover, the bark of the tree has completely vanished. In a real-world scenario, this vulnerability of the model to a relatively small perturbation (ϵ = 8 255 ) could be hazardous. CosPGD provides us with this new insight. A similar observation is made for the Sintel dataset as shown in Figure 1 . The benefit of CosPGD over PGD for optical flow can be quantitatively seen in Figure 5 and Table 6 provided in the supplementary material. In addition, we provide results comparing CosPGD to PGD as a l ∞ -constrained non-targeted attack for optical flow estimation in Appendix C.2. We also provide a comparison to PCFA (Schmalfuss et al., 2022) in Appendix. C.3. CosPGD can be very useful in predicting a new model's robustness efficiently. To demonstrate its versatility, we consider the new vision transformer-based image restoration model NAFNet (Chen et al., 2022) . NAFNet outperforms Restormer (Zamir et al., 2022) for image restoration tasks like image de-blurring and image denoising on clean data, thus implying that NAFNet learns good representations.",
+      "4.3_IMAGE_RESTORATION": "Here, we compare the adversarial robustness of these networks and discuss interesting findings.\nFigure 7 depicts results for NAFNet on image deblurring of the GoPro dataset images. We observe that CosPGD is a significantly stronger attack than both PGD and SegPGD. To enable the applicability of SegPGD on this task, we implement SegPGD by comparing the equality of the pixel values to use their proposed loss for comparison. We observe that at low number of attack iterations (3 attack iterations) it performs significantly worse than PGD, thus demonstrating its limitation on this task. Interestingly, after 5 attack iterations, SegPGD is stronger than PGD. This exhibits the strength of pixel-wise scaling of the loss. Nonetheless, CosPGD is able to provide us with both wide applicability and an even stronger attack while being more efficient.\nWe provide further discussion and results on Restormer (Zamir et al., 2022) and the \"Baseline network\" (Chen et al., 2022) in Appendix D.1. We additionally discuss results on the image denoising task in Appendix D.2.",
+      "_text": "To demonstrate the wide applicability of CosPGD, we conduct our experiments on distinct downstream tasks: semantic segmentation, optical flow estimation, and image restoration. For semantic segmentation, we compare CosPGD to SegPGD and PGD, while for optical flow estimation and other tasks (such as image deblurring and image denoising), we compare CosPGD to PGD. We observe that CosPGD is a significantly stronger attack compared to SegPGD and PGD.\nWhen evaluating l ∞ -norm constrained attacks, we use the same ϵ ≈ 8 255 for CosPGD, SegPGD, and PGD. For α, we follow Gu et al. (2022) and set the step size to α = 0.01 (please refer to Appendix B.2 for an ablation study). Further, when evaluating the l 2 -norm constraint, we follow (Croce et al., 2020; Wang et al., 2023) and use the same ϵ for CosPGD, SegPGD, and PGD i.e. ϵ ≈{ 64 255 , 128 255 } and α ={0.01, 0.02}. We show in Appendix B.2.1 that CosPGD outperforms both PGD and SegPGD (for segmentation) in the l 2 -norm constraint settings under all commonly used ϵ and α values."
+    },
+    "5_CONCLUSION": "In this work, we demonstrated across different downstream tasks and architectures that our proposed adversarial attack, CosPGD, is significantly more effective than other existing and commonly used adversarial attacks on several pixel-wise prediction tasks. We provide a new algorithm for evaluating the adversarial robustness of models on pixel-wise tasks. By comparing CosPGD to attacks like PGD, which were originally proposed for image classification tasks, we expanded on the work by Gu et al. (2022) and highlighted the need and effectiveness of attacks specifically designed for pixel-wise prediction tasks beyond segmentation. We illustrated the intuition behind using cosine similarity as a measure for generating stronger adversaries and leveraging more information from the model and backed it with experimental results from different downstream tasks. This further highlights the simplicity and principled formulation of CosPGD, thus making it applicable to a wide range of pixel-wise prediction tasks and in principle extendable to all Lipschitz continuous bounds as a targeted or a non-targeted attack.\nLimitations There are settings, especially for non-targeted attacks, where approaches like pixelwise PGD would work at par with CosPGD as the epe can be increased equally well by either changing all pixel-wise regression estimates slightly (sophisticated attack like CosPGD) or by changing only a few of them drastically (brute force attacks like PGD). We discuss this further in detail in Appendix E."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "A high-quality denoising dataset for smartphone cameras",
+      "authors": [
+        {
+          "first": "Abdelrahman",
+          "middle": [],
+          "last": "Abdelhamed",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "S"
+          ],
+          "last": "Brown",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "On the unreasonable vulnerability of transformers for image restoration -and an easy fix",
+      "authors": [
+        {
+          "first": "Shashank",
+          "middle": [],
+          "last": "Agnihotri",
+          "suffix": ""
+        },
+        {
+          "first": "Kanchana",
+          "middle": [],
+          "last": "Vaishnavi Gandikota",
+          "suffix": ""
+        },
+        {
+          "first": "Julia",
+          "middle": [],
+          "last": "Grabinski",
+          "suffix": ""
+        },
+        {
+          "first": "Paramanand",
+          "middle": [],
+          "last": "Chandramouli",
+          "suffix": ""
+        },
+        {
+          "first": "Margret",
+          "middle": [],
+          "last": "Keuper",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Square attack: a queryefficient black-box adversarial attack via random search",
+      "authors": [
+        {
+          "first": "Maksym",
+          "middle": [],
+          "last": "Andriushchenko",
+          "suffix": ""
+        },
+        {
+          "first": "Francesco",
+          "middle": [],
+          "last": "Croce",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Flammarion",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Hein",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "On the robustness of semantic segmentation models to adversarial attacks",
+      "authors": [
+        {
+          "first": "Anurag",
+          "middle": [],
+          "last": "Arnab",
+          "suffix": ""
+        },
+        {
+          "first": "Ondrej",
+          "middle": [],
+          "last": "Miksik",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [
+            "H S"
+          ],
+          "last": "Torr",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Adversarial patch",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Tom",
+          "suffix": ""
+        },
+        {
+          "first": "Dandelion",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Aurko",
+          "middle": [],
+          "last": "Mané",
+          "suffix": ""
+        },
+        {
+          "first": "Martín",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        },
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Abadi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gilmer",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Analysis of explainers of black box deep neural networks for computer vision: A survey",
+      "authors": [
+        {
+          "first": "Vanessa",
+          "middle": [],
+          "last": "Buhrmester",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Münch",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Arens",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "A naturalistic open source movie for optical flow evaluation",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "J"
+          ],
+          "last": "Butler",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wulff",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "B"
+          ],
+          "last": "Stanley",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "J"
+          ],
+          "last": "Black",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "European Conf. on Computer Vision (ECCV), Part IV, LNCS"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Towards evaluating the robustness of neural networks",
+      "authors": [
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Carlini",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Wagner",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "ieee symposium on security and privacy (sp)"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Rethinking atrous convolution for semantic image segmentation",
+      "authors": [
+        {
+          "first": "Liang-Chieh",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Papandreou",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Schroff",
+          "suffix": ""
+        },
+        {
+          "first": "Hartwig",
+          "middle": [],
+          "last": "Adam",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Simple baselines for image restoration",
+      "authors": [
+        {
+          "first": "Liangyu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaojie",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "The cityscapes dataset for semantic urban scene understanding",
+      "authors": [
+        {
+          "first": "Marius",
+          "middle": [],
+          "last": "Cordts",
+          "suffix": ""
+        },
+        {
+          "first": "Mohamed",
+          "middle": [],
+          "last": "Omran",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Ramos",
+          "suffix": ""
+        },
+        {
+          "first": "Timo",
+          "middle": [],
+          "last": "Rehfeld",
+          "suffix": ""
+        },
+        {
+          "first": "Markus",
+          "middle": [],
+          "last": "Enzweiler",
+          "suffix": ""
+        },
+        {
+          "first": "Rodrigo",
+          "middle": [],
+          "last": "Benenson",
+          "suffix": ""
+        },
+        {
+          "first": "Uwe",
+          "middle": [],
+          "last": "Franke",
+          "suffix": ""
+        },
+        {
+          "first": "Stefan",
+          "middle": [],
+          "last": "Roth",
+          "suffix": ""
+        },
+        {
+          "first": "Bernt",
+          "middle": [],
+          "last": "Schiele",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Reliable evaluation of adversarial robustness with an ensemble of diverse parameter-free attacks",
+      "authors": [
+        {
+          "first": "Francesco",
+          "middle": [],
+          "last": "Croce",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Hein",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Mind the box: l1-apgd for sparse adversarial attacks on image classifiers",
+      "authors": [
+        {
+          "first": "Francesco",
+          "middle": [],
+          "last": "Croce",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Hein",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Robustbench: a standardized adversarial robustness benchmark",
+      "authors": [
+        {
+          "first": "Francesco",
+          "middle": [],
+          "last": "Croce",
+          "suffix": ""
+        },
+        {
+          "first": "Maksym",
+          "middle": [],
+          "last": "Andriushchenko",
+          "suffix": ""
+        },
+        {
+          "first": "Vikash",
+          "middle": [],
+          "last": "Sehwag",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Flammarion",
+          "suffix": ""
+        },
+        {
+          "first": "Mung",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Prateek",
+          "middle": [],
+          "last": "Mittal",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Hein",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Robustbench: a standardized adversarial robustness benchmark",
+      "authors": [
+        {
+          "first": "Francesco",
+          "middle": [],
+          "last": "Croce",
+          "suffix": ""
+        },
+        {
+          "first": "Maksym",
+          "middle": [],
+          "last": "Andriushchenko",
+          "suffix": ""
+        },
+        {
+          "first": "Vikash",
+          "middle": [],
+          "last": "Sehwag",
+          "suffix": ""
+        },
+        {
+          "first": "Edoardo",
+          "middle": [],
+          "last": "Debenedetti",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Flammarion",
+          "suffix": ""
+        },
+        {
+          "first": "Mung",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Prateek",
+          "middle": [],
+          "last": "Mittal",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Hein",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round 2)"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Boosting adversarial attacks with momentum",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Flownet: Learning optical flow with convolutional networks",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Ilg",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Häusser",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Hazırbas",
+          "suffix": ""
+        },
+        {
+          "first": "¸",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Golkov",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "V D"
+          ],
+          "last": "Smagt",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Cremers",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Brox",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "IEEE International Conference on Computer Vision (ICCV)"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "The PAS-CAL Visual Object Classes Challenge 2012",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Everingham",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Van Gool",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "K I"
+          ],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Winn",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "VOC2012) Results"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Flownet: Learning optical flow with convolutional networks",
+      "authors": [
+        {
+          "first": "Philipp",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        },
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "Eddy",
+          "middle": [],
+          "last": "Ilg",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [],
+          "last": "Häusser",
+          "suffix": ""
+        },
+        {
+          "first": "Caner",
+          "middle": [],
+          "last": "Hazırbas",
+          "suffix": ""
+        },
+        {
+          "first": "¸",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Vladimir",
+          "middle": [],
+          "last": "Golkov",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Van Der Smagt",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Cremers",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Brox",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Generating targeted adversarial attacks and assessing their effectiveness in fooling deep neural networks",
+      "authors": [
+        {
+          "first": "Shivangi",
+          "middle": [],
+          "last": "Gajjar",
+          "suffix": ""
+        },
+        {
+          "first": "Avik",
+          "middle": [],
+          "last": "Hati",
+          "suffix": ""
+        },
+        {
+          "first": "Shruti",
+          "middle": [],
+          "last": "Bhilare",
+          "suffix": ""
+        },
+        {
+          "first": "Srimanta",
+          "middle": [],
+          "last": "Mandal",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE International Conference on Signal Processing and Communications (SPCOM)"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Imagenet-trained cnns are biased towards texture; increasing shape bias improves accuracy and robustness",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Geirhos",
+          "suffix": ""
+        },
+        {
+          "first": "Patricia",
+          "middle": [],
+          "last": "Rubisch",
+          "suffix": ""
+        },
+        {
+          "first": "Claudio",
+          "middle": [],
+          "last": "Michaelis",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Bethge",
+          "suffix": ""
+        },
+        {
+          "first": "Felix",
+          "middle": [
+            "A"
+          ],
+          "last": "Wichmann",
+          "suffix": ""
+        },
+        {
+          "first": "Wieland",
+          "middle": [],
+          "last": "Brendel",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Shortcut learning in deep neural networks",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Geirhos",
+          "suffix": ""
+        },
+        {
+          "first": "Jörn-Henrik",
+          "middle": [],
+          "last": "Jacobsen",
+          "suffix": ""
+        },
+        {
+          "first": "Claudio",
+          "middle": [],
+          "last": "Michaelis",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Zemel",
+          "suffix": ""
+        },
+        {
+          "first": "Wieland",
+          "middle": [],
+          "last": "Brendel",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Bethge",
+          "suffix": ""
+        },
+        {
+          "first": "Felix",
+          "middle": [
+            "A"
+          ],
+          "last": "Wichmann",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature Machine Intelligence"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Explaining and harnessing adversarial examples",
+      "authors": [
+        {
+          "first": "Ian",
+          "middle": [
+            "J"
+          ],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathon",
+          "middle": [],
+          "last": "Shlens",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Szegedy",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Segpgd: An effective and efficient adversarial attack for evaluating and boosting segmentation robustness",
+      "authors": [
+        {
+          "first": "Jindong",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Hengshuang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [],
+          "last": "Volker Tresp",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Torr",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Semantic contours from inverse detectors",
+      "authors": [
+        {
+          "first": "Bharath",
+          "middle": [],
+          "last": "Hariharan",
+          "suffix": ""
+        },
+        {
+          "first": "Pablo",
+          "middle": [],
+          "last": "Arbelaez",
+          "suffix": ""
+        },
+        {
+          "first": "Lubomir",
+          "middle": [],
+          "last": "Bourdev",
+          "suffix": ""
+        },
+        {
+          "first": "Subhransu",
+          "middle": [],
+          "last": "Maji",
+          "suffix": ""
+        },
+        {
+          "first": "Jitendra",
+          "middle": [],
+          "last": "Malik",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "International Conference on Computer Vision (ICCV)"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Hypercolumns for object segmentation and fine-grained localization",
+      "authors": [
+        {
+          "first": "Bharath",
+          "middle": [],
+          "last": "Hariharan",
+          "suffix": ""
+        },
+        {
+          "first": "Pablo",
+          "middle": [],
+          "last": "Arbeláez",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "Jitendra",
+          "middle": [],
+          "last": "Malik",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "IEEE Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Deep residual learning for image recognition",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shaoqing",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Benchmarking neural network robustness to common corruptions and perturbations",
+      "authors": [
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Dietterich",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Natural adversarial examples",
+      "authors": [
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Basart",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Flownet 2.0: Evolution of optical flow estimation with deep networks",
+      "authors": [
+        {
+          "first": "Eddy",
+          "middle": [],
+          "last": "Ilg",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolaus",
+          "middle": [],
+          "last": "Mayer",
+          "suffix": ""
+        },
+        {
+          "first": "Tonmoy",
+          "middle": [],
+          "last": "Saikia",
+          "suffix": ""
+        },
+        {
+          "first": "Margret",
+          "middle": [],
+          "last": "Keuper",
+          "suffix": ""
+        },
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Brox",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Black-box adversarial attacks with limited queries and information",
+      "authors": [
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Ilyas",
+          "suffix": ""
+        },
+        {
+          "first": "Logan",
+          "middle": [],
+          "last": "Engstrom",
+          "suffix": ""
+        },
+        {
+          "first": "Anish",
+          "middle": [],
+          "last": "Athalye",
+          "suffix": ""
+        },
+        {
+          "first": "Jessy",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 35th International Conference on Machine Learning, ICML 2018"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Adversarial example generation with syntactically controlled paraphrase networks",
+      "authors": [
+        {
+          "first": "Mohit",
+          "middle": [],
+          "last": "Iyyer",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Wieting",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Gimpel",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 2018 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Multiguard: Provably robust multi-label classification against adversarial examples",
+      "authors": [
+        {
+          "first": "Jinyuan",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Wenjie",
+          "middle": [],
+          "last": "Qu",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Learning to estimate hidden motions with global motion aggregation",
+      "authors": [
+        {
+          "first": "Shihao",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Dylan",
+          "middle": [],
+          "last": "Campbell",
+          "suffix": ""
+        },
+        {
+          "first": "Yao",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Hongdong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Hartley",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Neural architecture design and robustness: A dataset",
+      "authors": [
+        {
+          "first": "Steffen",
+          "middle": [],
+          "last": "Jung",
+          "suffix": ""
+        },
+        {
+          "first": "Jovita",
+          "middle": [],
+          "last": "Lukasik",
+          "suffix": ""
+        },
+        {
+          "first": "Margret",
+          "middle": [],
+          "last": "Keuper",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Testing robustness against unforeseen adversaries",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Kang",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Adversarial attacks for image segmentation on multiple lightweight models",
+      "authors": [
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Kang",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaojiang",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Mohsen",
+          "middle": [],
+          "last": "Guizani",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE Access"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Imagenet classification with deep convolutional neural networks",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Krizhevsky",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Adversarial examples in the physical world",
+      "authors": [
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Kurakin",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "Samy",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Adversarial machine learning at scale",
+      "authors": [
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Kurakin",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "Samy",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Revisiting stereo depth estimation from a sequence-to-sequence perspective with transformers",
+      "authors": [
+        {
+          "first": "Zhaoshuo",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xingtong",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Nathan",
+          "middle": [],
+          "last": "Drenkow",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Francis",
+          "middle": [
+            "X"
+          ],
+          "last": "Creighton",
+          "suffix": ""
+        },
+        {
+          "first": "Russell",
+          "middle": [
+            "H"
+          ],
+          "last": "Taylor",
+          "suffix": ""
+        },
+        {
+          "first": "Mathias",
+          "middle": [],
+          "last": "Unberath",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "A convnet for the 2020s",
+      "authors": [
+        {
+          "first": "Zhuang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Hanzi",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Chao-Yuan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Feichtenhofer",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Darrell",
+          "suffix": ""
+        },
+        {
+          "first": "Saining",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Towards deep learning models resistant to adversarial attacks",
+      "authors": [
+        {
+          "first": "Aleksander",
+          "middle": [],
+          "last": "Madry",
+          "suffix": ""
+        },
+        {
+          "first": "Aleksandar",
+          "middle": [],
+          "last": "Makelov",
+          "suffix": ""
+        },
+        {
+          "first": "Ludwig",
+          "middle": [],
+          "last": "Schmidt",
+          "suffix": ""
+        },
+        {
+          "first": "Dimitris",
+          "middle": [],
+          "last": "Tsipras",
+          "suffix": ""
+        },
+        {
+          "first": "Adrian",
+          "middle": [],
+          "last": "Vladu",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "A large dataset to train convolutional networks for disparity, optical flow, and scene flow estimation",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Mayer",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Ilg",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Häusser",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Cremers",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Brox",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "IEEE International Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Object scene flow for autonomous vehicles",
+      "authors": [
+        {
+          "first": "Moritz",
+          "middle": [],
+          "last": "Menze",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Geiger",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Deepfool: a simple and accurate method to fool deep neural networks",
+      "authors": [
+        {
+          "first": "Seyed-Mohsen",
+          "middle": [],
+          "last": "Moosavi-Dezfooli",
+          "suffix": ""
+        },
+        {
+          "first": "Alhussein",
+          "middle": [],
+          "last": "Fawzi",
+          "suffix": ""
+        },
+        {
+          "first": "Pascal",
+          "middle": [],
+          "last": "Frossard",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Textattack: A framework for adversarial attacks, data augmentation, and adversarial training in nlp",
+      "authors": [
+        {
+          "first": "John",
+          "middle": [
+            "X"
+          ],
+          "last": "Morris",
+          "suffix": ""
+        },
+        {
+          "first": "Eli",
+          "middle": [],
+          "last": "Lifland",
+          "suffix": ""
+        },
+        {
+          "first": "Jin",
+          "middle": [
+            "Yong"
+          ],
+          "last": "Yoo",
+          "suffix": ""
+        },
+        {
+          "first": "Jake",
+          "middle": [],
+          "last": "Grigsby",
+          "suffix": ""
+        },
+        {
+          "first": "Di",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Yanjun",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Deep multi-scale convolutional neural network for dynamic scene deblurring",
+      "authors": [
+        {
+          "first": "Seungjun",
+          "middle": [],
+          "last": "Nah",
+          "suffix": ""
+        },
+        {
+          "first": "Tae",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Hyun",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Kyoung",
+          "middle": [],
+          "last": "Mu",
+          "suffix": ""
+        },
+        {
+          "first": "Lee",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "A certified radius-guided attack framework to image segmentation models",
+      "authors": [
+        {
+          "first": "Wenjie",
+          "middle": [],
+          "last": "Qu",
+          "suffix": ""
+        },
+        {
+          "first": "Youqi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Binghui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Optical flow estimation using a spatial pyramid network",
+      "authors": [
+        {
+          "first": "Anurag",
+          "middle": [],
+          "last": "Ranjan",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "J"
+          ],
+          "last": "Black",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Semantically equivalent adversarial rules for debugging NLP models",
+      "authors": [
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Tulio Ribeiro",
+          "suffix": ""
+        },
+        {
+          "first": "Sameer",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "Carlos",
+          "middle": [],
+          "last": "Guestrin",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "U-net: Convolutional networks for biomedical image segmentation",
+      "authors": [
+        {
+          "first": "Olaf",
+          "middle": [],
+          "last": "Ronneberger",
+          "suffix": ""
+        },
+        {
+          "first": "Philipp",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Brox",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Proximal splitting adversarial attack for semantic segmentation",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Rony",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Pesquet",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Ayed",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Decoupling direction and norm for efficient gradient-based l2 adversarial attacks and defenses",
+      "authors": [
+        {
+          "first": "Jérôme",
+          "middle": [],
+          "last": "Rony",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Luiz",
+          "suffix": ""
+        },
+        {
+          "first": "Luiz",
+          "middle": [
+            "S"
+          ],
+          "last": "Hafemann",
+          "suffix": ""
+        },
+        {
+          "first": "Ismail",
+          "middle": [],
+          "last": "Oliveira",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Ben Ayed",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Sabourin",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Granger",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Proximal splitting adversarial attacks for semantic segmentation",
+      "authors": [
+        {
+          "first": "Jérôme",
+          "middle": [],
+          "last": "Rony",
+          "suffix": ""
+        },
+        {
+          "first": "Jean-Christophe",
+          "middle": [],
+          "last": "Pesquet",
+          "suffix": ""
+        },
+        {
+          "first": "Ismail",
+          "middle": [],
+          "last": "Ben",
+          "suffix": ""
+        },
+        {
+          "first": "Ayed",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF56",
+      "title": "A perturbation-constrained adversarial attack for evaluating the robustness of optical flow",
+      "authors": [
+        {
+          "first": "Jenny",
+          "middle": [],
+          "last": "Schmalfuss",
+          "suffix": ""
+        },
+        {
+          "first": "Philipp",
+          "middle": [],
+          "last": "Scholze",
+          "suffix": ""
+        },
+        {
+          "first": "Andrés",
+          "middle": [],
+          "last": "Bruhn",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Towards understanding adversarial robustness of optical flow networks",
+      "authors": [
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Schrodi",
+          "suffix": ""
+        },
+        {
+          "first": "Tonmoy",
+          "middle": [],
+          "last": "Saikia",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Brox",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Pwc-net: Cnns for optical flow using pyramid",
+      "authors": [
+        {
+          "first": "Deqing",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaodong",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Yu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Kautz",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "warping, and cost"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Local aggressive adversarial attacks on 3d point cloud",
+      "authors": [
+        {
+          "first": "Yiming",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiyu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Mingjie",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Raft: Recurrent all-pairs field transforms for optical flow",
+      "authors": [
+        {
+          "first": "Zachary",
+          "middle": [],
+          "last": "Teed",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Berkay Mayalı username: mberkay0. mberkay0/pretrained-backbones-unet",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Multiclass asma vs targeted pgd attack in image segmentation",
+      "authors": [
+        {
+          "first": "Johnson",
+          "middle": [],
+          "last": "Vo",
+          "suffix": ""
+        },
+        {
+          "first": "Jiabao",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Sahil",
+          "middle": [],
+          "last": "Patel",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Better diffusion models further improve adversarial training",
+      "authors": [
+        {
+          "first": "Zekai",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyu",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Min",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Weiwei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Shuicheng",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Image quality assessment: from error visibility to structural similarity",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "C"
+          ],
+          "last": "Zhou Wang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "R"
+          ],
+          "last": "Bovik",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "P"
+          ],
+          "last": "Sheikh",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Simoncelli",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": "IEEE Transactions on Image Processing"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Targeted adversarial perturbations for monocular depth prediction",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        },
+        {
+          "first": "Safa",
+          "middle": [],
+          "last": "Cicek",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Soatto",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Fast is better than free: Revisiting adversarial training",
+      "authors": [
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        },
+        {
+          "first": "Leslie",
+          "middle": [],
+          "last": "Rice",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "Zico"
+          ],
+          "last": "Kolter",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Lessons and insights from creating a synthetic optical flow benchmark",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wulff",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "J"
+          ],
+          "last": "Butler",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "B"
+          ],
+          "last": "Stanley",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "J"
+          ],
+          "last": "Black",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "ECCV Workshop on Unsolved Problems in Optical Flow and Stereo Estimation, Part II"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Feature denoising for improving adversarial robustness",
+      "authors": [
+        {
+          "first": "Cihang",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxin",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Laurens",
+          "middle": [],
+          "last": "Van Der Maaten",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [],
+          "last": "Yuille",
+          "suffix": ""
+        },
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Aggregated residual transformations for deep neural networks",
+      "authors": [
+        {
+          "first": "Saining",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuowen",
+          "middle": [],
+          "last": "Tu",
+          "suffix": ""
+        },
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Restormer: Efficient transformer for high-resolution image restoration",
+      "authors": [
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Syed Waqas Zamir",
+          "suffix": ""
+        },
+        {
+          "first": "Salman",
+          "middle": [],
+          "last": "Arora",
+          "suffix": ""
+        },
+        {
+          "first": "Munawar",
+          "middle": [],
+          "last": "Khan",
+          "suffix": ""
+        },
+        {
+          "first": "Fahad",
+          "middle": [],
+          "last": "Hayat",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Hsuan",
+          "middle": [],
+          "last": "Shahbaz Khan",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "3d adversarial attacks beyond point cloud",
+      "authors": [
+        {
+          "first": "Jinlai",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Lyujie",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Binbin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Qizhi",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Jihong",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Weiming",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yanmei",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF72",
+      "title": "semseg",
+      "authors": [
+        {
+          "first": "Hengshuang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF73",
+      "title": "Pyramid scene parsing network",
+      "authors": [
+        {
+          "first": "Hengshuang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Jianping",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaojuan",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaogang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaya",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "CVPR"
+    }
+  ]
+}

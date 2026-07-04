@@ -1,0 +1,2003 @@
+{
+  "paper_id": "BrainBandit",
+  "title": "BRAIN BANDIT: A BIOLOGICALLY GROUNDED NEU-RAL NETWORK FOR EFFICIENT CONTROL OF EXPLO-RATION",
+  "authors": [
+    {
+      "first": "Chen",
+      "middle": [],
+      "last": "Jiang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Chinese Institute for Brain Research",
+        "location": {
+          "settlement": "Beijing"
+        }
+      }
+    },
+    {
+      "first": "Jiahui",
+      "middle": [],
+      "last": "An",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Chinese Institute for Brain Research",
+        "location": {
+          "settlement": "Beijing"
+        }
+      }
+    },
+    {
+      "first": "Yating",
+      "middle": [],
+      "last": "Liu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Chinese Institute for Brain Research",
+        "location": {
+          "settlement": "Beijing"
+        }
+      }
+    },
+    {
+      "first": "",
+      "middle": [],
+      "last": "Ni",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Chinese Institute for Brain Research",
+        "location": {
+          "settlement": "Beijing"
+        }
+      }
+    }
+  ],
+  "abstract": "How to balance between exploration and exploitation in an uncertain environment is a central challenge in reinforcement learning. In contrast, humans and animals have demonstrated superior exploration efficiency in novel environments. To understand how the brain's neural network controls exploration under uncertainty, we analyzed the dynamical systems model of a biological neural network that controls explore-exploit decisions during foraging. Mathematically, this model (named the Brain Bandit Net, or BBN) is a special type of stochastic continuous Hopfield network. We show through theory and simulation that BBN can perform posterior sampling of action values with a tunable bias towards or against uncertain options. We then demonstrate that, in multi-armed bandit (MAB) tasks, BBN can generate probabilistic choice behavior with a flexible uncertainty bias resembling human and animal choice patterns. In addition to its high efficiency in MAB tasks, BBN can also be embedded with reinforcement learning algorithms to accelerate learning in MDP tasks. Altogether, our findings reveal the theoretical foundation for efficient exploration in biological neural networks and propose a general, brain-inspired algorithm for enhancing exploration in RL. The code is available at https://github.com/",
+  "body": {
+    "1_INTRODUCTION": "The explore-exploit (E-E) dilemma, originally described in the context of animal foraging (Stephens & Krebs, 1986; Charnov, 1976) , has become an important problem across many fields including psychology, neuroscience and reinforcement learning (RL) (Addicott et al., 2017) . Despite the development of numerous algorithms, sample-efficient exploration in RL remains difficult for complex, sparse-reward tasks (Sutton & Barto, 2018) . Meanwhile, studies in humans and animals have revealed a diverse array of exploration strategies (Wilson et al., 2021; Schulz & Gershman, 2019) . In addition, excitingly, recent research has begun to reveal the biological neural networks that give rise to the rich and flexible exploration behaviors (Costa et al., 2019; Tomov et al., 2020; Hogeveen et al., 2022; Costa & Averbeck, 2020) . Based on recent findings in the biological neural network that controls exploration, we built the Brain Bandit Network (BBN), a stochastic Hopfield network for controlling exploratory action selection under input uncertainty. We show theoretically that the BBN model can perform Bayesian posterior sampling while implementing a tunable bias that ranges from optimistic, neutral, and conservative in the face of uncertainty.\nOur main contributions are four-fold:\n1. We propose a biologically grounded, scalable network model for solving the E-E dilemma. 2. We analytically show that BBN implements a hybrid between Bayesian posterior sampling and uncertainty-directed exploration.\n3. We show that BBN can closely approximate human and animal behavior in bandit tasks under a variety of conditions. 4. We show that BBN can drive highly efficient exploration in bandit and MDP tasks, promising further application to more complex RL problems.\n2 BACKGROUND AND RELATED WORK",
+    "2.1_THE_EXPLORATION_PROBLEM_IN_REINFORCEMENT_LEARNING": "The domain of efficient exploration in reinforcement learning focuses on balancing immediate rewards (exploitation) and information gathering for future rewards (exploration). A classic example is the Multi-Armed Bandit (MAB) problem, introduced by (Robbins, 1952) in 1952 and widely used to model this tradeoff (Lai & Robbins, 1985; Berry & Fristedt, 1985; Agrawal, 1995; Auer et al., 1995; Sutton & Barto, 1999) . Conventional methods inject noise into action selection (Sutton & Barto, 1999) , but these dithering algorithms can be inefficient. Alternative methods like Upper Confidence Bound (UCB) employ optimism in the face of uncertainty (OFU) by biasing for uncertain choices (Lai & Robbins, 1985; Agrawal, 1995; Auer et al., 1995) . Thompson sampling (Thompson, 1933 ) makes decisions based on posterior samples rather than optimistic estimates. Optimistic Thompson Sampling (O-TS), combining UCB and Thompson sampling, reshapes the posterior distribution optimistically and exhibits strong empirical and theoretical performance (Chapelle & Li, 2011; May et al., 2012) . More recent methods leverage deep networks to learn the exploration bonus (Zhou et al., 2020; Ban et al., 2022) or the posterior variance (Zhang et al., 2021) .",
+    "2.2_BIOLOGICAL_SOLUTIONS_TO_THE_EXPLORE-EXPLOIT_DILEMMA": "Early work on the explore-exploit tradeoff, rooted in Optimal Foraging Theory and the Marginal Value Theorem (Stephens & Krebs, 1986; Charnov, 1976) , suggests that animals achieve nearoptimal balance between exploiting known resources and exploring uncertain options. Cognitive scientists have used bandit tasks to study this tradeoff in humans and animals (Addicott et al., 2017; Cohen et al., 2007; Wang et al., 2023; Beron et al., 2022) . Two main strategies emerge: random exploration, involving stochastic action choices, and directed exploration, leveraging uncertainty to guide actions (Wilson et al., 2021; Schulz & Gershman, 2019) . Humans and animals often combine these strategies flexibly, adjusting based on task horizon, option novelty, developmental stage, and mental state (Gershman, 2018; Bartumeus et al., 2016; Wilson et al., 2014; Cockburn et al., 2022; Mizell et al., 2024; Schulz et al., 2019; Addicott et al., 2017; Fan et al., 2023; Waltz et al., 2020) . Additionally, they exhibit persistent exploration, repeating previous choices regardless of value (Beron et al., 2022; Laurie et al., 2024) . These strategies resemble algorithms like Thompson sampling and Optimism in the Face of Uncertainty (OFU), but with key differences (Wilson et al., 2021) .\nTo understand the brain's solution to the E-E dilemma, neuroscientists have identified neurobiological mechanisms that control explore-exploit decisions (Daw et al., 2006; Costa et al., 2019; Hogeveen et al., 2022) . Recent studies in C. elegans (Flavell et al., 2013; Ji et al., 2021) have revealed a compact recurrent network governing the transitions between behavioral states analogous to exploration and exploitation (Fig. 1 ). This minimal network provides a unique opportunity to explore the algorithmic principles the brain uses to solve the E-E problem.",
+    "3.1_THE_BRAIN-INSPIRED_BANDIT_NETWORK_(BBN)_IS_A_STOCHASTIC_CONTINUOUS_HOPFIELD_NETWORK": "To model the biological neural network that controls E-E decisions during foraging (Fig. 8 (Ji et al., 2021) ), we define a set of N neurons whose temporal dynamics are described by the following stochastic differential equations (or Langevin equations): Where f (x) = 1 1+e -n(x-k) , w i,j < 0, and dW (t) is the Wiener process. Here, w ij f (x j ) represents the inhibitory interaction between neurons; b i is the baseline activity of neuron i; I i and σ i dW (t) are the deterministic and the stochastic components of the external input, respectively. σ i is the standard deviation of the Wiener noise. We term this type of stochastic continuous Hopfield network with all negative weights the Brain-inspired Bandit Network (BBN), for reasons that will become clear later.\nEQUATION\nAssuming approximately symmetric weights i.e., w ij = w jifoot_0 , the deterministic part of the model is essentially a continuous Hopfield network (Hopfield, 1982; 1984) with exclusively inhibitory connections. It is hence associated with a Hopfield energy or Lyapunov function of the form:\nEQUATION\nHere, we have decomposed the Hopfield energy E into E int , dependent only on internal network parameters, and E ext , which embodies influence from external inputs I i . With suitable parameters (see Appendix B.1), the model can have up to N local energy minima or attractor states exhibiting winner-take-all dynamics (Fig. 1 and Fig. 12 ). Stochastic noise induces transitions between these attractor states, consistent with experimental findings in foraging networks (Ji et al., 2021) .",
+    "3.2_THE_BBN_IMPLEMENTS_BAYESIAN_POSTERIOR_SAMPLING": "Hinton and Sejnowski (Hinton & Sejnowski, 1983) have demonstrated that a discrete Hopfield network with stochastically activating units (i.e. an Ising network) can implement Bayesian inference by sampling from the posterior distribution. Here we extend this conclusion to continuous Hopfield networks. Briefly, using Kramers' escape theory (Kramers, 1940; Langer, 1968; Hänggi et al., 1990) , we can approximately compute the mean first passage time (MFPT), defined here as the expected time to leave an attractor state A and crossing the nearby saddle point S, as:\nEQUATION\n)\nWhere γ is the friction coefficient (equivalent to τ in Eq. 1, and ω A i are the angular frequencies (i.e. eigenvalues of the Hessian matrix) at the center (i.e. energy minimum) of the attractor. ω b and ω S i are the angular frequencies of the saddle point, with ω b associated specifically with the unstable mode. ∆E A is the energy difference between the saddle point and the center of the attractor and\n∆E A→S = E S -E A . D A\nis the diffusion constant, which in thermodynamics scales with the magnitude of the stochastic noise.\nThe equilibrium probability of the network being in a given attractor state A 1 can be approximated by its stability, measured via the MFPT, relative to the other attractors. This translates to:\nEQUATION\n)\nAssuming identical biophysical parameters and inputs for all neurons, the angular frequencies ω Ai j of the N attractors are permutations of each other and there is a single saddle point defined by x = 1 γ N wf (x) + b + Ī. This leads to α 1 = α j , ∀i. Further, by substituting\n∆E A = (E S -E int A ) + E ext A\ninto Eq. 4, we have:\nEQUATION\nNow if we define the probability of an attractor state in the absence of external inputs as its prior probability as: P prior Ai = exp ∆E int Ai /D Ai , and the probability of the state given input data (e.g. sensory evidence) as:\nP Ī | A i = exp (E ext\nAi /D Ai ), we have:\nEQUATION\nEq. 6 reveals a close connection between the Hopfield-energy-based formulation of attractor state probability and Bayesian inference. Specifically, if we consider P Ai as the probability of a hypothesis i being true or a decision i being optimal, then Eq. 6 essentially computes the Bayesian posterior of i given external evidence.",
+    "3.3_THE_BBN_CAN_EXHIBIT_OPTIMISTIC,_NEUTRAL,_OR_CONSERVATIVE_BIASES_ON_INPUT_UNCERTAINTY": "In Kramers' theory, the diffusion constant D from thermal fluctuations is typically isotropic (Σ = σ 2 I, D = σ 2 ). However, in our model, input to each neuron can have different levels of uncertainty, making the overall noise anisotropic. Recent studies (Zhu et al., 2018; Yang et al., 2023) show that anisotropic noise affects escape efficiency (the rate at which model leaves one of its attractor states (i.e. 1/MFPT)) by interacting with local attractor curvature. Starting from a local energy minimum at x 0 , the model evolves as:\nEQUATION\n)\nHere, H 0 is the Hessian matrix evaluated at the attractor bottom, and Σ is the noise covariance matrix. Since both matrices are diagonal in our model, the escape efficiency is highest when the dimensions of largest input noise align with those of highest curvature. To capture this effect, we define an isotropic noise Σ = σ 2 I that yields the same efficiency as Σ:\nTr(H i Σ) = 2σ i 2 Tr(H i ) = Tr(H i Σ), where σ i 2 = Tr(H i Σ) Tr(H i ) = D eff i (8)\nHere, D eff i represents the effective diffusion constant and H i = P H j = H A , ∀i where P is a permutation matrix. Substituting Eq. 8 into Eq. 4 , we have: While all N attractors have equal energy and share a common set of angular frequencies, their Hessian matrices are non-identical and can interact differently with non-isotropic noise (i.e.,Σ ̸ = cI). If P A1 corresponds to the attractor state with the highest input noise, the following scenarios can occur (assuming j ̸ = 1):\nP A1 = 1 1 + exp 2 Tr(H A )∆E A 1 Tr(H T A Σ) - 1 Tr(H A Σ) (9)\n1. Tr(H 1 Σ) < Tr(H j Σ) and P A1 > P Aj (Optimistic). 2. Tr(H 1 Σ) = Tr(H j Σ) and P A1 = P Aj (Neutral). 3. Tr(H 1 Σ) > Tr(H j Σ) and P A1 < P Aj (Conservative).\nThese regimes are termed as Optimistic, Neutral, and Conservative, respectively. Fig. 2 illustrates the input dependence of attractor state probabilities under these three regimes.\nParameter sensitivity analyses (Fig. 3(a-b ) and Fig. 11 in Appendix A) reveal that the three parameter regimes span a wide range of parameter combinations, obviating the need for fine-tuning. By adjusting the baseline activity b, synaptic threshold k, or inhibitory synaptic weight w -either individually or in pairs -one can flexibly modulate the uncertainty bias from highly optimistic (P A1 → 1) to neutral (P A1 = 1 N ) to highly conservative (P A1 → 0).",
+    "3.4_(OPTIMISTIC)_UNCERTAINTY_BIAS_IS_PRESERVED_IN_HIGHER_DIMENSIONS": "The theoretical analysis above predicts that the uncertainty bias of BBN should scale well to high dimensions. To verify this empirically, we progressively increased network dimension by adding more neurons, while keeping all network parameters in Eq. 1 unchanged. Strikingly, for a BBN that is optimistic at N = 2, scaling up to N = 10 did not alter its optimistic bias (Fig. 3(c )). In contrast, a BBN that is neutral in 2D became mildly optimistic as N increased, while a conservative BBN becomes mildly optimistic at N > 5. Thus, with increasing network dimension, the model exhibits a tendency to bias towards attractor states with higher input uncertainty.\nTo understand this empirical phenomenon, we examined state-transition dynamics near the saddle point for a perfectly neutral 3D BBN (i.e., H i = cI, ∀i) (Fig. 13 ). With isotropic noise, the network exhibited equal probability of entering any attractor state. However, with highly anisotropic noise, it preferentially entered the attractor state along the dimension of highest noise, creating a bias towards high-uncertainty states. This makes conservative bias harder to maintain and optimistic bias more prominent in high-dimensional models (Fig. 14 . To incorporate this effect into our theoretical framework, we need to combine escape rates analysis (Kramers, 1940; Zhu et al., 2018) with theory of dynamics around saddle points (Daneshmand et al., 2018)-a challenge we aim to address in future work.",
+    "4.1_UNCERTAINTY-AWARE_EXPLORATION_IN_MULTI-ARMED_BANDIT_TASK": {
+      "4.1.1_RUNNING_BBN_IN_BANDIT_GAMES": "To make the BBN model play bandit games, we (1) define a BBN model with N neurons, each corresponding to one of the N bandit arms; (2) pick network parameters that yield \"optimistic\" exploration for a 2-D BBN, and simply apply the same parameters to all neurons in the N-D model;\n(3) prior to each bandit trial, assign network input I by sampling from the reward memory buffer and numerically simulate the network for T steps using the Runge-Kutta method; (4) at the end of simulation, select the arm a whose corresponding neuron has the highest activation value; (5) collect the reward r a and add it to the memory buffer for arm a; (6) repeat ( 3)-( 5) for the next trial till the game ends. The pseudocode along with detailed task parameters are presented in Appendix B.1.",
+      "4.1.2_BBN_IMPLEMENTS_UNCERTAINTY-AWARE_POSTERIOR_SAMPLING": "To reveal BBN's exploration strategies, we examined the dependence of choice probability on total and relative reward uncertainty for BBN agents with optimistic, neutral, or conservative biases, as well as classic algorithms Thompson Sampling (TS) and Upper Confidence Bound (UCB). As shown in Fig. 4 (a-b), TS exhibited a constant intercept regardless of relative uncertainty (RU) and a decreasing slope with increasing total uncertainty (TU), indicating sensitivity only to total uncertainty; UCB exhibited a constant slope with varying TU and an increasing intercept with increasing RU, indicating sensitivity only to relative uncertainty. In contrast, BBN with optimistic parameters showed variation in both slope and intercept with changes in TU and RU. These results indicate that BBN implements a hybrid algorithm combining posterior sampling (like TS) with tunable bias towards high uncertainty (akin to UCB). 4.1.3 EFFICIENT EXPLORATION IN BANDIT TASKS We next compared the empirical performance of BBN-driven exploration in comparison against UCB, Thompson sampling, and Optimistic Thompson Sampling (OTS, (Hu et al., 2023)) in both 2-armed bandit and 3-armed bandit games. Each agent played 10,000 game blocks of 20 trials each in 2-armed bandit games and 30 trials each in 3-armed bandit games. Fig. 5 (a-b) presents the probability of choosing the optimal arm as trial number increases. BBN (with optimistic parameters) consistently outperformed other algorithms in 2-armed bandits and topped the performance in 3-armed bandit games. The other 'hybrid' algorithm, OTS, performed close to BBN in 3-armed bandits, but did poorly in 2-armed bandits. 4.2 BBN CLOSELY APPROXIMATES BANDIT CHOICE BEHAVIOR IN HUMANS AND ANIMALS\nThe results above indicate that BBN exhibits similar hybrid strategies as previously reported in humans (Wilson et al., 2014; Gershman, 2018) . We thus asked whether BBN can accurately model human and animal choice patterns in bandit tasks. We first compiled several publicly available datasets of humans playing bandit games (detailed list in Appendix C). We performed optimization on two network parameters b and k to minimize the difference between the choice probability curves output by BBN and in the human datasets. As shown in Fig. 6 (a-b), BBN can closely fit to both the intercept and the slope of human choice probability curves. In contrast, Thompson sampling failed to fit to the diverse intercepts across human groups, and UCB consistently yielded slopes that are much higher than those observed in human data.\nWe next extended the above analyses to a dataset in which mice played switching blocks of 2armed bandit games (Beron et al., 2022) . In this dataset, the reward for each arm is sampled from a Bernoulli distribution. In addition, the mean reward for each arm is not static, with a small probability (0.02) of being reversed before each trial starts. Based on results from ( Beron we used the last five rewards as inputs to the BBN model to drive choice behavior. As shown in Fig. 6 (c-d), parameter-tuned BBN generated choice and switching behavior that closely approximated those exhibited in the mice study.",
+      "_text": "Given BBN's ability to infer and sample from a posterior distribution with a tunable uncertainty bias, a natural application of BBN is to control action choice given external, uncertain evidence. We thus adapted the BBN model to play multi-armed bandit (MAB) games and compared its performance with classic bandit algorithms."
+    },
+    "4.3_EFFICIENT_EXPLORATION_IN_MDP_PROBLEMS": "Building on the strong performance of BBN in MAB tasks, we next applied BBN to MDP problems. Unlike bandit problems with immediate rewards and no state transitions, MDP tasks require sequential decision-making under delayed rewards and unknown transition probabilities (Bellman, 1966; Bertsekas, 2012) . Among existing methods, UCRL2 (Auer et al., 2008) extends OFU to MDPs, while PSRL (Strens, 2000; Osband et al., 2013) generalizes posterior sampling to RL. Hybrid algorithms like Optimistic Thompson Sampling (OTS) (Agrawal & Jia, 2017; Tiapkin et al., 2022; Hu et al., 2023) aim to improve exploration efficiency but face challenges such as computational cost and uncertainty estimation.\nWe consider a finite-horizon MDP with state space S, action space A, horizon H, rewards r l sa , and transition probabilities P sa conditioned on states s, actions a, and step l. The expected total return at step l under policy π can be estimated iteratively using the Bellman equation:\nQ t+1 sa = µ sa + s ′ a ′ π s ′ a ′ P sas ′ Q t s ′ a ′ where µ = E(r)\nis the mean reward. Estimating uncertainty in Q-values remains an open issue in RL. Donoghue et al. (O'Donoghue et al., 2018) proposed the Uncertainty Bellman Equation (UBE) to provide an upper bound on the variance of Q-value posteriors. For tabular state space, this method effectively propagates local variance estimates to global value uncertainty. 4.3.1 RUNNING BBN IN MDP TASKS To apply BBN to drive action-selection in MDP tasks, we (1) define a BBN model with N neurons, each corresponding to one of the N discrete actions, select network parameters that belong to the \"optimistic\" regime for a 2D network; (2) initialize state-action values to i.i.d. Gaussian distributions; (3) sample input values for each neuron from the distributions of state-action values and perform numerical simulation of the BBN network for T steps using the Runge-Kutta method; (4) at the end of the simulation, select action a whose corresponding neuron has the highest activation value; (5) collect the reward r a and move to the next state ; (6) Repeat (3)-(5) till the episode ends; (7) Update the distribution of state-action values using the Uncertainty Bellman Equation (UBE) algorithm(O'Donoghue et al., 2018). (8) repeat (3)-(7) for the next episode till the game ends. We present the pseudo-code for the Algorithm 2 in Appendix B.4. We first compared the exploration efficiency of the BBN-based algorithm (UBE BBN) on the SixArms (Strehl & Littman, 2008) task, with additional implementation details presented in Appendix B.5. We compare our model to PSRL (Osband et al., 2013) , UCRL2 (Auer et al., 2008) and OTS-MDP (Hu et al., 2023) . We also specifically tested the role of BBN by replacing it with UCB (UBE UCB) or Thompson sampling (UBE TS). In PSRL, we maintain a Gaussian distribution for the rewards and a Dirichlet distribution for the transition probabilities. In the OTS-MDP and BBN models, we follow (Hu et al., 2023) and limit our uncertainty estimation to the reward r for simplicity. As shown in Fig. 5 (c ), the cumulative regret is lowest in UBE-BBN, which demonstrates the potential of BBN in promoting highly efficient exploration. We next evaluated the exploration efficiency of BBN on sparse-reward MDP tasks, specifically the FourRooms task. In this task, an N-by-N grid world is divided into four compartments connected by narrow passages (Fig. 7 (a) ). The agent starts from the upper left corner (red dot) and explores the environment to learn state-action values. First, we conducted reward-free exploration by assuming no rewards at any state. Exploration efficiency was measured as the coverage rate (ratio of visited states to total states) over episodes. Parameter sensitivity in MDP tasks: We additionally performed parameter sensitivity analysis for the SixArms and FourRooms task (as shown in Fig. 18 in Appendix E.1) and demonstrated that a broad range of \"optimistic\" network parameters yielded high performance on these tasks. Hence, optimistic BBN generally delivers good performance in these MDP tasks without requiring parameter fine-tuning.",
+    "5_DISCUSSION": "We have demonstrated both theoretically and empirically that the BBN architecture can drive flexible and efficient exploration in ways similar to humans and animals. However, several limitations and open questions remain regarding its practical application. First, simulating the stochastic differential equations incurs high computational costs. This issue may be circumvented by analytically computing the attractor probabilities using Eq. 4 or by employing neuromorphic hardware. Second, given the development of many hybrid TS and OFU methods in the RL community (Hu et al., 2023; Tiapkin et al., 2022; Agrawal & Jia, 2017) , it's intriguing to consider what gives rise to BBN's superior performance. One possibility is that BBN, as a system of coupled Langevin equations, effectively implements Langevin sampling of the posterior distribution. Langevin sampling has been shown to enjoy faster mixing and convergence rates than other sampling methods and is particularly well-suited for approximate Bayesian inference (Welling & Teh, 2011) . Third, the current BBN algorithm lacks the ability to estimate uncertainty associated with state-action values, relying instead on a separate algorithm (in this case, the UBE) to generate value distributions. How biological neural networks compute and encode uncertainty remains an outstanding question, especially in sequential decision settings. Recent studies have suggested that a distributed population code (Dehaene et al., 2021) or a spatiotemporal activity pattern could encode uncertainty levels (Savin & Denève, 2014) . We hope future experimental and theoretical studies will provide more insights into how the brain estimates and utilizes uncertainty. Lastly, given that humans and animals can flexibly modulate their uncertainty bias in a context-dependent manner, a valuable extension for the BBN algorithm would be to integrate contextual information into the network input. Expanding the BBN model to include upstream neurons found in the biological foraging network might help implement context-dependent E-E decisions (Fig. 8 ). B METHOD DETAILS B.1 PARAMETER SELECTION Parameter Definition Suggested range w inhibitory weights [2, 4], increase to make states more stable b activity baseline [5.5, 7], increase makes network optimistic k threshold of sigmoid [6, 8], increase makes network conservative n slope of sigmoid [1, 2], increase amplifies uncertainty bias γ leak current or decay rate 0.5 τ time constant 1 In this section, we list the primary parameters used in BBN (Tables 1 , 2 , 3) and provide a principled way to determine optimal parameters for new environments.\nBased on our experience and past literature (May et al., 2012; Hu et al., 2023; Agrawal & Jia, 2017) , optimistic bias generally promotes efficient exploration. In addition, our sensitivity analysis on MDP tasks (Fig. 18 ) showed that a broad range of \"optimistic\" parameters yielded high performance, obviating the need for extensive fine-tuning. Further, we have shown that network parameters that yield optimistic bias for a 2D BBN preserve such bias in higher dimensions (Fig. 3(c ) and Fig. 12 ). Thus, the steps to set up a N -dimensional BBN model are:\n(1) Define a BBN model with N interconnected neurons;\n(2) Select internal network parameters 1 from the \"optimistic\" regime based on sensitivity analysis results presented in (Fig. 3(a-b ) and Fig. 11 ), or use the parameter ranges suggested below as a starting point;\n(3) Verify that the 2D network has two attractors and exhibits optimistic bias by numerically simulating the model under anisotropic 2D Gaussian noise with µ = [0, 0], σ = [1, 0.1]); tune the parameters if necessary using the tips provided below;\n(4) Apply these parameters to all neurons in the N D network;\n(5) Scale the input to the network (typically past rewards or Q-values) to a range that permits the existence of multiple attractors (use suggested range or verify empirically).\nWe found that simulation step number of T=400 is sufficient for bandit and MDP tasks t. Below are sample network dynamics in the first episode of a 2-armed bandit game. Multiple transitions occurred between the attractor states, reflecting equal state probability as expected for equal uncertainty for the two arms. B.2 RUNNING BBN IN BANDIT GAMES\nTo make the BBN model play bandit games, we (1) define a BBN model with N neurons, each corresponding to one of the N bandit arms;\n(2) pick network parameters that yield \"optimistic\" exploration for a 2-D BBN, and simply apply the parameters to all neurons in the N-D model;\n(3) at each trial, sample input I from the reward memory buffer and numerical simulation of the network for T steps using the Runge-Kutta method;\n(4) at the end of the simulation, select the arm a whose corresponding neuron has the highest activation value;\n(5) collect the reward r a and add it to memory buffer for arm a;\n(6) repeat ( 3)-( 5) for the next trial till game ends.\nB.3 RUNNING BBN IN MDP TASKS Here we consider the tabular case MDP, so the states and Q-values are parameterized as entries in a lookup table, where each state-action pair maps to a Q-value. To implement BBN in action selection, the agent needs to estimate the uncertainty of Q-values for BBN's input. However, how to estimate uncertainty of the cumulative rewards in MDP tasks remains an open issue in the RL community because the choice of an action affects both the current immediate reward and subsequent state transfer. O'Donoghue et al. (2018) gave an upper bound on the variance of posterior distribution of the Q-values by proposing the Uncertainty Bellman Equation (UBE), which connects the uncertainty at any time-step to the expected uncertainties at subsequent time-steps. We leverage the upper bound on the variance by UBE to obtain uncertainty estimation for Q-values.\nHere we present detailed steps to apply BBN to drive action selection in MDP tasks: (1) define a BBN model with N neurons, each corresponding to one of the N discrete actions, select network parameters that belong to the \"optimistic\" regime for a 2D network;\n(2) initialize state-action values to i.i.d. Gaussian distributions;\n(3) sample input values for each neuron from the distributions of state-action values and perform numerical simulation of the BBN network for T steps using the Runge-Kutta method;\n(4) at the end of the simulation, select action a whose corresponding neuron has the highest activation value;\n(5) collect the reward r a and move to the next state ; BBN doesn't need all the past experience in the memory buffer. For example, in the experiment of fitting to mice behavior, we only used the last 5 reward histories since the reward for each bandit will change over time. We also performed additional experiments to test if the limited memory buffer would hurt the performance in bandit tasks. We limited the buffer size to 8 for each arm. Fig 17 shows BBN with limited memory buffer size still consistently outperforms other methods. E FURTHER RESULTS ON MDP TASKS E.1 PARAMETER SENSITIVITY ANALYSIS Figure 18: Parameter sensitivity analysis of UBE-BBN with different parameter combinations evaluated in two MDP tasks. Performance in the SixArms task was evaluated by the cumulated regret of the agent, while performance in the FourRooms grid world task was evaluated by the coverage rate. a broad range of \"optimistic network parameters\" generally yielded high performance on these tasks. "
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "A primer on foraging and the explore/exploit trade-off for psychiatry research",
+      "authors": [
+        {
+          "first": "Merideth",
+          "middle": [
+            "A"
+          ],
+          "last": "Addicott",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [
+            "M"
+          ],
+          "last": "Pearson",
+          "suffix": ""
+        },
+        {
+          "first": "Maggie",
+          "middle": [
+            "M"
+          ],
+          "last": "Sweitzer",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "L"
+          ],
+          "last": "Barack",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "L"
+          ],
+          "last": "Platt",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Neuropsychopharmacology"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Sample mean based index policies by o (log n) regret for the multi-armed bandit problem",
+      "authors": [
+        {
+          "first": "Rajeev",
+          "middle": [],
+          "last": "Agrawal",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "Advances in applied probability"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Optimistic posterior sampling for reinforcement learning: worstcase regret bounds",
+      "authors": [
+        {
+          "first": "Shipra",
+          "middle": [],
+          "last": "Agrawal",
+          "suffix": ""
+        },
+        {
+          "first": "Randy",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Gambling in a rigged casino: The adversarial multi-armed bandit problem",
+      "authors": [
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Auer",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolo",
+          "middle": [],
+          "last": "Cesa-Bianchi",
+          "suffix": ""
+        },
+        {
+          "first": "Yoav",
+          "middle": [],
+          "last": "Freund",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [
+            "E"
+          ],
+          "last": "Schapire",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "Proceedings of IEEE 36th annual foundations of computer science"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Near-optimal regret bounds for reinforcement learning",
+      "authors": [
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Auer",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Jaksch",
+          "suffix": ""
+        },
+        {
+          "first": "Ronald",
+          "middle": [],
+          "last": "Ortner",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "EE-net: Exploitation-exploration neural networks in contextual bandits",
+      "authors": [
+        {
+          "first": "Yikun",
+          "middle": [],
+          "last": "Ban",
+          "suffix": ""
+        },
+        {
+          "first": "Yuchen",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Arindam",
+          "middle": [],
+          "last": "Banerjee",
+          "suffix": ""
+        },
+        {
+          "first": "Jingrui",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Foraging success under uncertainty: search tradeoffs and optimal space use",
+      "authors": [
+        {
+          "first": "Frederic",
+          "middle": [],
+          "last": "Bartumeus",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Campos",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [
+            "S"
+          ],
+          "last": "Ryu",
+          "suffix": ""
+        },
+        {
+          "first": "Roger",
+          "middle": [],
+          "last": "Lloret-Cabot",
+          "suffix": ""
+        },
+        {
+          "first": "Jordi",
+          "middle": [],
+          "last": "Vicenc",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Catalan",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Ecology letters"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Dynamic programming",
+      "authors": [
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Bellman",
+          "suffix": ""
+        }
+      ],
+      "year": 1966,
+      "venue": "science"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Mice exhibit stochastic and efficient action switching during probabilistic decision making",
+      "authors": [
+        {
+          "first": "Shay",
+          "middle": [
+            "Q"
+          ],
+          "last": "Celia C Beron",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [
+            "W"
+          ],
+          "last": "Neufeld",
+          "suffix": ""
+        },
+        {
+          "first": "Bernardo",
+          "middle": [
+            "L"
+          ],
+          "last": "Linderman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Sabatini",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Bandit problems: sequential allocation of experiments (monographs on statistics and applied probability)",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Donald",
+          "suffix": ""
+        },
+        {
+          "first": "Bert",
+          "middle": [],
+          "last": "Berry",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Fristedt",
+          "suffix": ""
+        }
+      ],
+      "year": 1985,
+      "venue": "Chapman and Hall"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Dynamic programming and optimal control",
+      "authors": [
+        {
+          "first": "Dimitri",
+          "middle": [],
+          "last": "Bertsekas",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "An empirical evaluation of thompson sampling",
+      "authors": [
+        {
+          "first": "Olivier",
+          "middle": [],
+          "last": "Chapelle",
+          "suffix": ""
+        },
+        {
+          "first": "Lihong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Optimal foraging, the marginal value theorem",
+      "authors": [
+        {
+          "first": "Eric",
+          "middle": [
+            "L"
+          ],
+          "last": "Charnov",
+          "suffix": ""
+        }
+      ],
+      "year": 1976,
+      "venue": "Theoretical population biology"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Stability of asymmetric hopfield networks",
+      "authors": [
+        {
+          "first": "Tianping",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Shun",
+          "middle": [],
+          "last": "Ichi",
+          "suffix": ""
+        },
+        {
+          "first": "Amari",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "IEEE Transactions on Neural Networks"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Novelty and uncertainty regulate the balance between exploration and exploitation through distinct mechanisms in the human brain",
+      "authors": [
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Cockburn",
+          "suffix": ""
+        },
+        {
+          "first": "Vincent",
+          "middle": [],
+          "last": "Man",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [
+            "A"
+          ],
+          "last": "Cunningham",
+          "suffix": ""
+        },
+        {
+          "first": "John P O'",
+          "middle": [],
+          "last": "Doherty",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Neuron"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Should i stay or should i go? how the human brain manages the trade-off between exploitation and exploration",
+      "authors": [
+        {
+          "first": "Samuel",
+          "middle": [
+            "M"
+          ],
+          "last": "Jonathan D Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "Angela",
+          "middle": [
+            "J"
+          ],
+          "last": "Mcclure",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Philosophical Transactions of the Royal Society B: Biological Sciences"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Primate orbitofrontal cortex codes information relevant for managing explore-exploit tradeoffs",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Vincent",
+          "suffix": ""
+        },
+        {
+          "first": "Bruno",
+          "middle": [
+            "B"
+          ],
+          "last": "Costa",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Averbeck",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Journal of Neuroscience"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Subcortical substrates of explore-exploit decisions in primates",
+      "authors": [
+        {
+          "first": "Andrew",
+          "middle": [
+            "R"
+          ],
+          "last": "Vincent D Costa",
+          "suffix": ""
+        },
+        {
+          "first": "Bruno",
+          "middle": [
+            "B"
+          ],
+          "last": "Mitz",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Averbeck",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Neuron"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Escaping saddles with stochastic gradients",
+      "authors": [
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Hadi Daneshmand",
+          "suffix": ""
+        },
+        {
+          "first": "Aurelien",
+          "middle": [],
+          "last": "Kohler",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Lucchi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hofmann",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Cortical substrates for exploratory decisions in humans",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nathaniel D Daw",
+          "suffix": ""
+        },
+        {
+          "first": "P O'",
+          "middle": [],
+          "last": "John",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Doherty",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Dayan",
+          "suffix": ""
+        },
+        {
+          "first": "Raymond",
+          "middle": [
+            "J"
+          ],
+          "last": "Seymour",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dolan",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Investigating the representation of uncertainty in neuronal circuits",
+      "authors": [
+        {
+          "first": "Ruben",
+          "middle": [],
+          "last": "Guillaume P Dehaene",
+          "suffix": ""
+        },
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Coen-Cagli",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Pouget",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "PLOS Computational Biology"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Trait somatic anxiety is associated with reduced directed exploration and underestimation of uncertainty",
+      "authors": [
+        {
+          "first": "Haoxue",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Elizabeth",
+          "middle": [
+            "A"
+          ],
+          "last": "Samuel J Gershman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Phelps",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Nature Human Behaviour"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Serotonin and the neuropeptide pdf initiate and extend opposing behavioral states in c. elegans",
+      "authors": [
+        {
+          "first": "Navin",
+          "middle": [],
+          "last": "Steven W Flavell",
+          "suffix": ""
+        },
+        {
+          "first": "Evan",
+          "middle": [
+            "Z"
+          ],
+          "last": "Pokala",
+          "suffix": ""
+        },
+        {
+          "first": "Dirk",
+          "middle": [
+            "R"
+          ],
+          "last": "Macosko",
+          "suffix": ""
+        },
+        {
+          "first": "Johannes",
+          "middle": [],
+          "last": "Albrecht",
+          "suffix": ""
+        },
+        {
+          "first": "Cornelia",
+          "middle": [
+            "I"
+          ],
+          "last": "Larsch",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bargmann",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Cell"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Deconstructing the human algorithms for exploration",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Samuel J Gershman",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Cognition"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Uncertainty and exploration",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Samuel J Gershman",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Decision"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Reaction-rate theory: fifty years after kramers",
+      "authors": [
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Hänggi",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Talkner",
+          "suffix": ""
+        },
+        {
+          "first": "Michal",
+          "middle": [],
+          "last": "Borkovec",
+          "suffix": ""
+        }
+      ],
+      "year": 1990,
+      "venue": "Reviews of modern physics"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Optimal perceptual inference",
+      "authors": [
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        },
+        {
+          "first": "Terrence",
+          "middle": [
+            "J"
+          ],
+          "last": "Sejnowski",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Proceedings of the IEEE conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "The neurocomputational bases of exploreexploit decision-making",
+      "authors": [
+        {
+          "first": "Jeremy",
+          "middle": [],
+          "last": "Hogeveen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Teagan",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [
+            "D"
+          ],
+          "last": "Mullins",
+          "suffix": ""
+        },
+        {
+          "first": "Elizabeth",
+          "middle": [],
+          "last": "Romero",
+          "suffix": ""
+        },
+        {
+          "first": "Kimberly",
+          "middle": [],
+          "last": "Eversole",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "R"
+          ],
+          "last": "Rogge-Obando",
+          "suffix": ""
+        },
+        {
+          "first": "Vincent",
+          "middle": [
+            "D"
+          ],
+          "last": "Mayer",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Costa",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Neuron"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Neural networks and physical systems with emergent collective computational abilities",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "John",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hopfield",
+          "suffix": ""
+        }
+      ],
+      "year": 1982,
+      "venue": "Proceedings of the national academy of sciences"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Neurons with graded response have collective computational properties like those of two-state neurons",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "John",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hopfield",
+          "suffix": ""
+        }
+      ],
+      "year": 1984,
+      "venue": "Proceedings of the national academy of sciences"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Optimistic thompson samplingbased algorithms for episodic reinforcement learning",
+      "authors": [
+        {
+          "first": "Bingshan",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Tianyue",
+          "suffix": ""
+        },
+        {
+          "first": "Nidhi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Hegde",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Schmidt",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Uncertainty in Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "A neural circuit for flexible control of persistent behavioral states",
+      "authors": [
+        {
+          "first": "Ni",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Guadalupe",
+          "middle": [
+            "I"
+          ],
+          "last": "Gurrein K Madan",
+          "suffix": ""
+        },
+        {
+          "first": "Alyssa",
+          "middle": [],
+          "last": "Fabre",
+          "suffix": ""
+        },
+        {
+          "first": "Casey",
+          "middle": [
+            "M"
+          ],
+          "last": "Dayan",
+          "suffix": ""
+        },
+        {
+          "first": "Talya",
+          "middle": [
+            "S"
+          ],
+          "last": "Baker",
+          "suffix": ""
+        },
+        {
+          "first": "Ijeoma",
+          "middle": [],
+          "last": "Kramer",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [
+            "W"
+          ],
+          "last": "Nwabudike",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Flavell",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Elife"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Brownian motion in a field of force and the diffusion model of chemical reactions",
+      "authors": [
+        {
+          "first": "Hendrik",
+          "middle": [],
+          "last": "Anthony",
+          "suffix": ""
+        },
+        {
+          "first": "Kramers",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 1940,
+      "venue": "Physica"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Asymptotically efficient adaptive allocation rules",
+      "authors": [
+        {
+          "first": "Tze",
+          "middle": [],
+          "last": "Leung",
+          "suffix": ""
+        },
+        {
+          "first": "Lai",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Herbert",
+          "middle": [],
+          "last": "Robbins",
+          "suffix": ""
+        }
+      ],
+      "year": 1985,
+      "venue": "Advances in applied mathematics"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Theory of nucleation rates",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Langer",
+          "suffix": ""
+        }
+      ],
+      "year": 1968,
+      "venue": "Physical Review Letters"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Persistent decision-making in mice, monkeys, and humans",
+      "authors": [
+        {
+          "first": "Veldon-James",
+          "middle": [],
+          "last": "Laurie",
+          "suffix": ""
+        },
+        {
+          "first": "Akram",
+          "middle": [],
+          "last": "Shourkeshti",
+          "suffix": ""
+        },
+        {
+          "first": "Cathy",
+          "middle": [
+            "S"
+          ],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [
+            "B"
+          ],
+          "last": "Herman",
+          "suffix": ""
+        },
+        {
+          "first": "Nicola",
+          "middle": [
+            "M"
+          ],
+          "last": "Grissom",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Becket",
+          "suffix": ""
+        },
+        {
+          "first": "Ebitz",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "bioRxiv"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Stability conditions for nonlinear continuous neural networks with asymmetric connection weights",
+      "authors": [
+        {
+          "first": "Kiyotoshi",
+          "middle": [],
+          "last": "Matsuoka",
+          "suffix": ""
+        }
+      ],
+      "year": 1992,
+      "venue": "Neural networks"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Optimistic bayesian sampling in contextual-bandit problems",
+      "authors": [
+        {
+          "first": "Nathan",
+          "middle": [],
+          "last": "Benedict C May",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Korda",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "S"
+          ],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolo",
+          "middle": [],
+          "last": "Leslie",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Cesa-Bianchi",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Differential impacts of healthy cognitive aging on directed and random exploration",
+      "authors": [
+        {
+          "first": "Jack-Morgan",
+          "middle": [],
+          "last": "Mizell",
+          "suffix": ""
+        },
+        {
+          "first": "Siyu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Frisvold",
+          "suffix": ""
+        },
+        {
+          "first": "Lily",
+          "middle": [],
+          "last": "Alvarado",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Farrell-Skupny",
+          "suffix": ""
+        },
+        {
+          "first": "Waitsang",
+          "middle": [],
+          "last": "Keung",
+          "suffix": ""
+        },
+        {
+          "first": "Caroline",
+          "middle": [
+            "E"
+          ],
+          "last": "Phelps",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [
+            "H"
+          ],
+          "last": "Sundman",
+          "suffix": ""
+        },
+        {
+          "first": "Mary-Kathryn",
+          "middle": [],
+          "last": "Franchetti",
+          "suffix": ""
+        },
+        {
+          "first": "Ying-Hui",
+          "middle": [],
+          "last": "Chou",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Psychology and Aging"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "more) efficient reinforcement learning via posterior sampling",
+      "authors": [
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Osband",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Russo",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Van",
+          "suffix": ""
+        },
+        {
+          "first": "Roy",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "The uncertainty bellman equation and exploration",
+      "authors": [
+        {
+          "first": "O'",
+          "middle": [],
+          "last": "Brendan",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Donoghue",
+          "suffix": ""
+        },
+        {
+          "first": "Remi",
+          "middle": [],
+          "last": "Osband",
+          "suffix": ""
+        },
+        {
+          "first": "Volodymyr",
+          "middle": [],
+          "last": "Munos",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mnih",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Some aspects of the sequential design of experiments",
+      "authors": [
+        {
+          "first": "Herbert",
+          "middle": [],
+          "last": "Robbins",
+          "suffix": ""
+        }
+      ],
+      "year": 1952,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Spatio-temporal representations of uncertainty in spiking neural networks",
+      "authors": [
+        {
+          "first": "Cristina",
+          "middle": [],
+          "last": "Savin",
+          "suffix": ""
+        },
+        {
+          "first": "Sophie",
+          "middle": [],
+          "last": "Denève",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "The algorithmic architecture of exploration in the human brain",
+      "authors": [
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Schulz",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Samuel J Gershman",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Current opinion in neurobiology"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Searching for rewards like a child means less generalization and more directed exploration",
+      "authors": [
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Schulz",
+          "suffix": ""
+        },
+        {
+          "first": "Charley",
+          "middle": [
+            "M"
+          ],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Azzurra",
+          "middle": [],
+          "last": "Ruggeri",
+          "suffix": ""
+        },
+        {
+          "first": "Björn",
+          "middle": [],
+          "last": "Meder",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Psychological science"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Foraging theory",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "David",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [
+            "R"
+          ],
+          "last": "Stephens",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Krebs",
+          "suffix": ""
+        }
+      ],
+      "year": 1986,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "An analysis of model-based interval estimation for markov decision processes",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Alexander",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Strehl",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Michael L Littman",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Journal of Computer and System Sciences"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "A bayesian framework for reinforcement learning",
+      "authors": [
+        {
+          "first": "Malcolm",
+          "middle": [],
+          "last": "Strens",
+          "suffix": ""
+        }
+      ],
+      "year": 2000,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Reinforcement learning: An introduction",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Richard",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "G"
+          ],
+          "last": "Sutton",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Barto",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": "Robotica"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Reinforcement learning: An introduction",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Richard",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "G"
+          ],
+          "last": "Sutton",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Barto",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF50",
+      "title": "On the likelihood that one unknown probability exceeds another in view of the evidence of two samples",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "William R Thompson",
+          "suffix": ""
+        }
+      ],
+      "year": 1933,
+      "venue": "Biometrika"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Optimistic posterior sampling for reinforcement learning with few samples and tight guarantees",
+      "authors": [
+        {
+          "first": "Daniil",
+          "middle": [],
+          "last": "Tiapkin",
+          "suffix": ""
+        },
+        {
+          "first": "Denis",
+          "middle": [],
+          "last": "Belomestny",
+          "suffix": ""
+        },
+        {
+          "first": "Daniele",
+          "middle": [],
+          "last": "Calandriello",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Moulines",
+          "suffix": ""
+        },
+        {
+          "first": "Remi",
+          "middle": [],
+          "last": "Munos",
+          "suffix": ""
+        },
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Naumov",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Rowland",
+          "suffix": ""
+        },
+        {
+          "first": "Michal",
+          "middle": [],
+          "last": "Valko",
+          "suffix": ""
+        },
+        {
+          "first": "Pierre",
+          "middle": [],
+          "last": "Ménard",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Dissociable neural correlates of uncertainty underlie different exploration strategies",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Momchil S Tomov",
+          "suffix": ""
+        },
+        {
+          "first": "Rohan",
+          "middle": [
+            "A"
+          ],
+          "last": "Van Q Truong",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [
+            "J"
+          ],
+          "last": "Hundia",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gershman",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature communications"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Differential effects of psychotic illness on directed and random exploration",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "James A Waltz",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [
+            "A"
+          ],
+          "last": "Robert C Wilson",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "J"
+          ],
+          "last": "Albrecht",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [
+            "M"
+          ],
+          "last": "Frank",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gold",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Computational Psychiatry"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "The effects of time horizon and guided choices on explore-exploit decisions in rodents",
+      "authors": [
+        {
+          "first": "Siyu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Blake",
+          "middle": [],
+          "last": "Gerken",
+          "suffix": ""
+        },
+        {
+          "first": "Julia",
+          "middle": [
+            "R"
+          ],
+          "last": "Wieland",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [
+            "C"
+          ],
+          "last": "Wilson",
+          "suffix": ""
+        },
+        {
+          "first": "Jean-Marc",
+          "middle": [],
+          "last": "Fellous",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Behavioral neuroscience"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Bayesian learning via stochastic gradient langevin dynamics",
+      "authors": [
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        },
+        {
+          "first": "Yee",
+          "middle": [
+            "W"
+          ],
+          "last": "Teh",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Proceedings of the 28th international conference on machine learning (ICML-11)"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Humans use directed and random exploration to solve the explore-exploit dilemma",
+      "authors": [
+        {
+          "first": "Andra",
+          "middle": [],
+          "last": "Robert C Wilson",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [
+            "M"
+          ],
+          "last": "Geana",
+          "suffix": ""
+        },
+        {
+          "first": "Elliot",
+          "middle": [
+            "A"
+          ],
+          "last": "White",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [
+            "D"
+          ],
+          "last": "Ludvig",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Cohen",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Journal of experimental psychology: General"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Balancing exploration and exploitation with information and randomization",
+      "authors": [
+        {
+          "first": "Elizabeth",
+          "middle": [],
+          "last": "Robert C Wilson",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bonawitz",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Vincent D Costa",
+          "suffix": ""
+        },
+        {
+          "first": "Ebitz",
+          "middle": [],
+          "last": "Becket",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Current opinion in behavioral sciences"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Stochastic gradient descent introduces an effective landscapedependent regularization favoring flat solutions",
+      "authors": [
+        {
+          "first": "Ning",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhai",
+          "middle": [],
+          "last": "Tu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Physical Review Letters"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "A causal role for right frontopolar cortex in directed, but not random, exploration",
+      "authors": [
+        {
+          "first": "Malgorzata",
+          "middle": [],
+          "last": "Wojciech K Zajkowski",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [
+            "C"
+          ],
+          "last": "Kossut",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wilson",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Elife"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Neural thompson sampling",
+      "authors": [
+        {
+          "first": "Weitong",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Dongruo",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Lihong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Quanquan",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Neural contextual bandits with ucb-based exploration",
+      "authors": [
+        {
+          "first": "Dongruo",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Lihong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Quanquan",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "The anisotropic noise in stochastic gradient descent: Its behavior of escaping from sharp minima and regularization effects",
+      "authors": [
+        {
+          "first": "Zhanxing",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Jingfeng",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Jinwen",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    }
+  ]
+}

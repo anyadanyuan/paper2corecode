@@ -1,0 +1,2598 @@
+{
+  "paper_id": "ConceptAttention",
+  "title": "ConceptAttention: Diffusion Transformers Learn Highly Interpretable Features",
+  "authors": [
+    {
+      "first": "Alec",
+      "middle": [],
+      "last": "Helbling",
+      "affiliation": {}
+    },
+    {
+      "first": "Tuna",
+      "middle": [],
+      "last": "Han",
+      "affiliation": {}
+    },
+    {
+      "first": "Salih",
+      "middle": [],
+      "last": "Meral",
+      "affiliation": {}
+    },
+    {
+      "first": "Benjamin",
+      "middle": [],
+      "last": "Hoover",
+      "affiliation": {}
+    },
+    {
+      "first": "Pinar",
+      "middle": [],
+      "last": "Yanardag",
+      "affiliation": {}
+    },
+    {
+      "first": "Duen",
+      "middle": [],
+      "last": "Horng",
+      "affiliation": {}
+    },
+    {
+      "first": "",
+      "middle": [],
+      "last": "Chau",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "Do the rich representations of multi-modal diffusion transformers (DiTs) exhibit unique properties that enhance their interpretability? We introduce CONCEPTATTENTION, a novel method that leverages the expressive power of DiT attention layers to generate high-quality saliency maps that precisely locate textual concepts within images. Without requiring additional training, CONCEPTATTENTION repurposes the parameters of DiT attention layers to produce highly contextualized concept embeddings, contributing the major discovery that performing linear projections in the output space of DiT attention layers yields significantly sharper saliency maps compared to commonly used cross-attention maps. CONCEPTATTENTION even achieves state-of-theart performance on zero-shot image segmentation benchmarks, outperforming 15 other zeroshot interpretability methods on the ImageNet-Segmentation dataset. CONCEPTATTENTION works for popular image models and even seamlessly generalizes to video generation. Our work contributes the first evidence that the representations of multi-modal DiTs are highly transferable to vision tasks like segmentation.",
+  "body": {
+    "4.1._Using_CONCEPTATTENTION": "The user specifies a set of r single token concepts, like \"cat\", \"sky\", etc. which are passed through a T5 encoder to produce an initial embedding c 0 for each concept. For each MMATTN layer (indexed by L) we layer-normalize the input concept embeddings c L and repurpose the text prompt's projection matrices (i.e. K p , Q p , V p ), to produce a set of keys, values, and queries\nEQUATION\nOne-directional Attention Operation We would like to update our concept embeddings so they are compatible with subsequent layers, but also prevent them from impacting the image tokens. Let k x and v x be the keys and values of the image patches x respectively. We can concatenate the image and concept keys to get\nEQUATION\nand the image and concept values to get\nEQUATION\nWe can then perform the following attention operation\nEQUATION\nwhich produces a set of concept output embeddings.\nNotice, that instead of just performing a cross attention (i.e. softmax(q c k T x )v x ) our approach leverages both cross attention from the image patches to the concepts and self attention among the concepts. We found that performing both operations improves performance on downstream evaluation tasks like segmentation (See Table 4 ). We hypothesize this is because it allows the concept embeddings to repel from each other, avoiding redundancy between concepts.\nMeanwhile, the image patch and prompt tokens ignore the concept tokens and attend only to each other as in\nEQUATION\nA diagram of these operations is shown in Figure 5(b) .",
+    "5.3._Ablation_Studies": "We perform several ablation studies to investigate the impact of various architectural choices and hyperparameters on the performance of CONCEPTATTENTION. ",
+    "4.2._Limitations_of_Raw_Cross_Attention_Maps": "For multi-modal DiT architectures, we could additionally consider using the raw cross attention maps\nEQUATION\nto produce saliency maps. However, these have a key limitation in that their vocabulary is limited to the tokens in the user's prompt. Unlike UNet-based models, multi-modal DiTs sequentially update a set of prompt embeddings with each MMATTN layer. This makes it difficult to produce cross attention maps for an open-set of concepts, as you would need to add the concept to the prompt sequence which would then change the appearance of the image. CONCEP-TATTENTION overcomes this key limitation, and makes the additional discovery that the output space of attention mechanisms produces high-fidelity saliency maps. ",
+    "5.4._Video_Model_Results": "We include qualitative results demonstrating the efficacy of CONCEPTATTENTION on the CogVideoX video generation multi-modal DiT model (Figure 8 ). Also see Figures 16 and 17 in the Appendix.",
+    "3.1._Rectified-Flow_Models_for_Image_Generation": "Flux and Stable Diffusion 3 leverage multi-modal DiTs that are trained to parameterize rectified flow models. Throughout this paper we may refer to rectified flow models as diffusion models for convenience. These models attempt to generate realistic images from noise that correspond to given text prompts. Flow based models (Lipman et al., 2023) attempt to map a sample x 1 from a noise distribution p 1 , typically p 1 ∼ N (0, I), to a sample x 0 in the data distribution. Rectified flows (Liu et al., 2022) attempt to learn ODEs that follow straight paths between the p 0 and p 1 , i.e.\nEQUATION\nFlux and SD3 are trained using a conditional flow matching objective which can be expressed conveniently as\nEQUATION\nwhere λ ′ t corresponds to a signal-to-noise ratio and w t is a time dependent-weighting factor. Above ϵ Θ (z t , t) is parameterized by a multi-modal diffusion transformer network. The architecture of this model and it's properties is of primary interest in this work.",
+    "5.5._Limitations": "The primary limitation of CONCEPTATTENTION is that it struggles to differentiate between very similar textual concepts. For example, for a photo with a sky with the sun in it, the model does not necessarily know where the boundary of the sun resides, instead capturing a halo around the sun (Figure 6 ). Additionally, when no relevant concept is present, CONCEPTATTENTION will select the most similar one even if it is incorrect (Figure 15 in the Appendix).",
+    "2._Related_Work": "Diffusion Model Interpretability A fair amount of existing work attempts to interpret diffusion models. Some works investigate diffusion models from an analytic lens (Kadkhodaie et al., 2024; Wang et al., 2024) , attempting to understand how diffusion models geometrically model the manifold of data. Other works attempt to understand how models memorize images (Carlini et al., 2023 ). An increasing body of work attempts to repurpose the representations of diffusion models for various tasks like classification (Li et al., 2023a) , segmentation (Karazija et al., 2024) , and even robotic control (Gupta et al., 2024) . However, most relevant to our work is the substantial body of methods investigating how the representations of the neural network architectures underpinning diffusion can be used to garner insight into how these models work, steer their behavior, and improve their safety.\nNumerous papers have observed that the cross attention mechanisms of UNet-based diffusion models like Stable Diffusion (Rombach et al., 2022) and SDXL (Podell et al., 2023) can produce interpretable saliency maps of textual concepts (Tang et al., 2022) . Cross attention maps are used in a variety of image editing tasks like producing masks that localize objects of interest to edit (Dalva et al., 2024) , controlling the layout of images (Chen et al., 2023; Epstein et al., 2023) , altering the appearance of an image but retaining its layout (Hertz et al., 2022) , and even generating synthetic data to train instruction based editing models (Brooks et al., 2023) . Other works observe that performing interventions on cross attention maps can improve the faithfulness of images to prompts by ensuring attributes are assigned to the correct objects (Meral et al., 2024; Chefer et al., 2023) . Additionally, it has been observed that self-attention layers of diffusion models encode useful information about the layout of images (Liu et al., 2024) .",
+    "6._Conclusion": "We introduce CONCEPTATTENTION, a method for interpreting the rich features of multi-modal DiTs. Our approach allows a user to produce high quality saliency maps of an open-set of textual concepts that shed light on how a diffusion model \"sees\" an image. We perform an extensive evaluation of the saliency maps on zero-shot segmentation and find that they significantly outperform a variety of other zero-shot interpretability methods. Our results suggest the potential for DiT models to act as powerful and interpretable image encoders with representations that are transferable zero-shot to tasks like image segmentation.",
+    "4._Methods": "We introduce CONCEPTATTENTION, a method for generating high quality saliency maps depicting the location of\n(a) Multi-modal Attention Image Keys Prompt Values Image Values Image Queries Prompt Queries Prompt Keys Prompt Output Image Output Prompt->Image Cross Attention Prompt Self Attention Image->Prompt Cross Attention Image Self Attention (b) Concept Attention Image Keys Concept Keys Concept Queries Image Values Concept Output Concept Self Attention Image->Concept Cross Attention Concept Values textual concepts in images. CONCEPTATTENTION works by creating a set of contextualized concept embeddings for simple textual concepts (e.g. \"cat\", \"sky\", etc.). These concept embeddings are sequentially updated alongside the text and image embeddings, so they match the structure that each MMATTN layer expects. However, unlike the text prompt, concept embeddings do not impact the appearance of the image. We can produce high-fidelity saliency maps by projecting image patch representations onto the concept embeddings. CONCEPTATTENTION requires no additional training and has minimal impact on model latency and memory footprint. A high level depiction of our methodology is shown in Figure 2 .",
+    "3.2._The_Anatomy_of_a_Multi-modal_DiT_Layer": "Multi-modal DiTs like Flux and Stable Diffusion 3 leverage multi-modal attention layers (MMATTN) that process a combination of textual tokens and image patches. There are two key classes of layers: one that keeps separate residual streams for each modality and one that uses a single stream. In this work, we take advantage of the properties of these dual stream layers, which we refer to as multi-modal attention layers (MMATTNs).\nThe input to a given layer is a sequence of image patch representations x ∈ R h×w×d and prompt token embeddings p ∈ R l×d . The initial prompt embeddings at the beginning of the network are formed by taking the T5 (Raffel et al., 2023) embeddings of the prompt tokens.\nFollowing (Peebles & Xie, 2023) , each MMATTN layer leverages a set of adaptive layer norm modulation layers (Xu et al., 2019) , conditioned on the time-step and global CLIP vector. An adaptive layernorm operation is applied to the input image and text embeddings. The final modulated outputs are then residually added back to the original input. Notably, the image and text modalities are kept in separate residual streams. The exact details of this operation are omitted for brevity.\nThe key workhorse in MMATTN layers is the familiar multihead self attention operation. The prompt and image embeddings have separate learned key, value, and query projection matrices which we refer to as K x , Q x , V x for images and K p , Q p , V p for text. The keys, queries, and values for both modalities are collectively denoted q xp , k xp , and v xp , where for example\nEQUATION\nHere we refer to o x and o p as the attention output vectors. Another linear layer is then applied to these outputs and added to a separate residual streams weighted according to the output of the modulation layer. This gives us updated embeddings x L+1 and p L+1 which are given as input to the next layer.",
+    "5.1._Implementation_Details": "Flux DiT For most of our experiments we use the Flux DiT architecture implemented in PyTorch (Paszke et al., 2019) . In particular, we use the distilled Flux-Schnell model. We encode real images with the DiT by first mapping them to the VAE latent space and then adding varying degrees of Gaussian noise before passing them through the Flux DiT. We then cache all of the concept output o c and image output vectors o x from each MMATTN layer. At the end of generation we then construct our concept saliency maps for each layer and average them over all layers of interest. In our experiments we leverage the activations from the last 10 of the 18 MMATTN layers.",
+    "5.2._Zero-shot_Image_Segmentation": "We are interested in investigating (1) the efficacy of CON-CEPTATTENTION to generate highly localized and semantically meaningful saliency maps, and (2) understand the transferability of multi-modal DiT representations to important downstream vision tasks. Zero-shot image segmentation is a natural choice for achieving these goals.\nDatasets We leverage two key datasets zero-shot image segmentation datasets. First, we use a commonly used (Gandelsman et al., 2024; Chefer et al., 2021) zero-shot segmentation benchmark called ImageNet-Segmentation (Guillaumin et al., 2014) . It is composed of 4,276 images from 445 categories. Each image primarily depicts a single central object or concept, which makes it a good method for comparing CONCEPTATTENTION to a variety of methods which generate a single saliency map that are unable to generate class-specific segmentation maps. For the second dataset we leverage PascalVOC 2012 benchmark (Everingham et al., 2015) . We investigate both a single class (930 images) and multi-class split (1,449 images) of this dataset. Many methods (e.g. DINO) do not condition their saliency map on class, so for these methods we restrict our evaluation to examples only containing a single class and the background. For methods that can accept text as conditioning we evaluate on the full dataset.",
+    "1._Introduction": "Diffusion models have recently gained widespread popularity, emerging as the state-of-the-art approach for a variety of generative tasks, particularly text-to-image synthesis (Rombach et al., 2022) . These models transform random noise into photorealistic images guided by textual descriptions, achieving unprecedented fidelity and detail. Despite the impressive generative capabilities of diffusion models, our understanding of their internal mechanisms remains limited. Diffusion models operate as black boxes, where the We compare Flux raw cross attention, DAAM (Tang et al., 2022) with SDXL, and TextSpan (Gandelsman et al., 2024) for CLIP.\nrelationships between input prompts and generated outputs are visible, but the decision-making processes that connect them are hidden from human understanding.\nExisting work on interpreting T2I models has predominantly focused on UNet-based architectures (Podell et al., 2023; Rombach et al., 2022) , which utilize shallow cross-attention mechanisms between prompt embeddings and image patch representations. UNet cross attention maps can produce high-fidelity saliency maps that predict the location of textual concepts (Tang et al., 2022) and have found numerous applications in tasks like image editing (Hertz et al., 2022; Chefer et al., 2023) . However, the interpretability of more recent multi-modal diffusion transformers (DiTs) remains underexplored. DiT-based models have recently replaced UNets (Ronneberger et al., 2015) as the state-ofthe-art architecture for image generation, with models such as Flux (Labs, 2023) and SD3 (Esser et al., 2024) achieving breakthroughs in text-to-image generation. The rapid advancement and enhanced capabilities of DiT-based models highlight the critical importance of methods that improve their interpretability, transparency, and safety.\nIn this work, we propose CONCEPTATTENTION, a novel method that leverages the representations of multi-modal DiTs to produce high-fidelity saliency maps that localize textual concepts within images. Our method provides insight into the rich semantics of DiT representations. CONCEPTAT-TENTION is lightweight and requires no additional training, instead it repurposes the existing parameters of DiT attention layers. CONCEPTATTENTION works by producing a set of rich contextualized text embeddings each corresponding to visual concepts (e.g. \"dragon\", \"sun\"). By linearly projecting these concept embeddings and the image we can produce rich saliency maps that are even higher quality than commonly used cross attention maps.\nWe evaluate the efficacy of CONCEPTATTENTION in a zeroshot semantic segmentation task on real world images. We compare our interpretative maps against annotated segmentations to measure the accuracy and relevance of the attributions generated by our method. Our experiments and extensive comparisons demonstrate that CONCEPTATTEN-TION provides valuable insights into the inner workings of these otherwise complex black-box models. By explaining the meaning of the representations of generative models our method paves the way for advancements in interpretability, controllability, and trust in generative AI systems.\nIn summary, we contribute:\n• CONCEPTATTENTION, a method for interpreting text-to-image diffusion transformers. Our method requires no additional training, by leveraging the representations of multi-modal DiTs to generate highly interpretable saliency maps that depict the presence of arbitrary textual concepts (e.g. \"dragon\", \"sky\", etc.) in images (as shown in Figure 1 ).\n• The novel discovery that the output vectors of attention operations produce higher-quality saliency maps than cross attentions. CONCEPTATTENTION repurposes the parameters of DiT attention layers to produce rich textual embeddings corresponding to different concepts, something that is uniquely enabled by multi-modal DiT architectures. By performing linear projections between these concept embeddings and image patch representations in the attention output space we can produce high quality saliency maps.\n• CONCEPTATTENTION achieves state-of-the-art performance in zero-shot segmentation on benchmarks like ImageNet Segmentation and Pascal VOC across multiple DiT architectures. We achieve superior performance to a diverse set of zero-shot interpretability methods based on various foundation models like CLIP, DINO, and UNet-based diffusion models; this highlights the potential for the representations of DiTs to transfer to important downstream vision tasks like segmentation. We replicate our results quantitatively on both Flux and Stable Diffusion 3.5 Turbo.\n• CONCEPTATTENTION works with a video generation DiT model. Additionally, we demonstrate qualitatively that CONCEPTATTENTION seamlessly generalizes to the CogVideoX (Yang et al., 2025 ) video generation MMDiT model, producing higher-quality saliency maps than native cross attention maps.\nA man with flowers. flowers suit sky face tree grass balloon sun sky mountain clouds water A hot air balloon over a lake. "
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Quantifying Attention Flow in Transformers",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Abnar",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Zuidema",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "SegDiff: Image Segmentation with Diffusion Probabilistic Models",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Amit",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Shaharbany",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Nachmani",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wolf",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Label-Efficient Semantic Segmentation with Diffusion Models",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Baranchuk",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Rubachev",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Voynov",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Khrulkov",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Babenko",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Layer-wise Relevance Propagation for Neural Networks with Local Renormalization Layers",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Binder",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Montavon",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bach",
+          "suffix": ""
+        },
+        {
+          "first": "K.-R",
+          "middle": [],
+          "last": "Müller",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Samek",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "InstructPix2Pix: Learning to Follow Image Editing Instructions",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Brooks",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Holynski",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "A"
+          ],
+          "last": "Efros",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Extracting Training Data from Diffusion Models",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Carlini",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hayes",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Nasr",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jagielski",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Sehwag",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Tramèr",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Balle",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Ippolito",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Wallace",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Emerging Properties in Self-Supervised Vision Transformers",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Caron",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Misra",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Jégou",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Mairal",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bojanowski",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Joulin",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Transformer Interpretability Beyond Attention Visualization",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Chefer",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gur",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wolf",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Attend-and-Excite: Attention-Based Semantic Guidance for Text-to-Image Diffusion Models",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Chefer",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Alaluf",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Vinker",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wolf",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Cohen-Or",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ACM Transactions on Graphics"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Training-Free Layout Control with Cross-Attention Guidance",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Laina",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vedaldi",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "November 2023"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "PiCIE: Unsupervised Semantic Segmentation using Invariance and Equivariance in Clustering",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "H"
+          ],
+          "last": "Cho",
+          "suffix": ""
+        },
+        {
+          "first": "U",
+          "middle": [],
+          "last": "Mall",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Bala",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Hariharan",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "FluxSpace: Disentangled Semantic Editing in Rectified Flow Transformers",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Dalva",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Venkatesh",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Yanardag",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Vision Transformers Need Registers",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Darcet",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Oquab",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Mairal",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bojanowski",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Weissenborn",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Minderer",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Heigold",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gelly",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Houlsby",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Diffusion Self-Guidance for Controllable Image Generation",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Epstein",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Jabri",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Poole",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "A"
+          ],
+          "last": "Efros",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Holynski",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Scaling Rectified Flow Transformers for High-Resolution Image Synthesis",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kulal",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Entezari",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Müller",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Saini",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Levi",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sauer",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Boesel",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Podell",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Dockhorn",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "English",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lacey",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Goodwin",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Marek",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "The Pascal Visual Object Classes Challenge: A Retrospective",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Everingham",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "M A"
+          ],
+          "last": "Eslami",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Van Gool",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "K I"
+          ],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Winn",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International Journal of Computer Vision"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Interpreting CLIP's Image Representation via Text-Based Decomposition",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Gandelsman",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "A"
+          ],
+          "last": "Efros",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "ImageNet Auto-Annotation with Segmentation Propagation",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Guillaumin",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Küttel",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Ferrari",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "International Journal of Computer Vision"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Pre-trained Text-to-Image Diffusion Models Are Versatile Representation Learners for Control",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Yadav",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Gal",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Kira",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "G J"
+          ],
+          "last": "Rudner",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Unsupervised Semantic Segmentation by Distilling Feature Correspondences",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Hamilton",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Hariharan",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Snavely",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [
+            "T"
+          ],
+          "last": "Freeman",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Prompt-to-Prompt Image Editing with Cross Attention Control",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Hertz",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Mokady",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tenenbaum",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Aberman",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Pritch",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Cohen-Or",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "August 2022"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Generalization in diffusion models arises from geometry-adaptive harmonic representations",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Kadkhodaie",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Guth",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "P"
+          ],
+          "last": "Simoncelli",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Mallat",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Diffusion Models for Open-Vocabulary Segmentation",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Karazija",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Laina",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vedaldi",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rupprecht",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "September 2024"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Segment Anything",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kirillov",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Mintun",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Ravi",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rolland",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Gustafson",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Whitehead",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "C"
+          ],
+          "last": "Berg",
+          "suffix": ""
+        },
+        {
+          "first": "W.-Y",
+          "middle": [],
+          "last": "Lo",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "The Hungarian method for the assignment problem",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [
+            "W"
+          ],
+          "last": "Kuhn",
+          "suffix": ""
+        }
+      ],
+      "year": 1955,
+      "venue": "Naval Research Logistics Quarterly"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Your Diffusion Model is Secretly a Zero-Shot Classifier",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "C"
+          ],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Prabhudesai",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Duggal",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Pathak",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Open-vocabulary Object Segmentation with Diffusion Models",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Flow Matching for Generative Modeling",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Lipman",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "T Q"
+          ],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Ben-Hamu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Nickel",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "February 2023"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Towards Understanding Cross and Self-Attention in Stable Diffusion for Text-Guided Image Editing",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Open-Vocabulary Attention Maps with Token Optimization for Semantic Segmentation in Diffusion Models",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Marcos-Manchón",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Alcover-Couso",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "C"
+          ],
+          "last": "Sanmiguel",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "M"
+          ],
+          "last": "Martínez",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Contrast is All You Need for High-Fidelity Text-to-Image Diffusion Models",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [
+            "H S"
+          ],
+          "last": "Meral",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Simsar",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Tombari",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Yanardag",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Conform",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "DINOv2: Learning Robust Visual Features without Supervision",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Oquab",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Darcet",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Moutakanni",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Vo",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Szafraniec",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Khalidov",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Fernandez",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Haziza",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "El-Nouby",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Assran",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Ballas",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Galuba",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Howes",
+          "suffix": ""
+        },
+        {
+          "first": "P.-Y",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "S.-W",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Misra",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Rabbat",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Synnaeve",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Jegou",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Mairal",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Labatut",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Joulin",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bojanowski",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "February 2024"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "PyTorch: An Imperative Style, High-Performance Deep Learning Library",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Paszke",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gross",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lerer",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Chanan",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Killeen",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Gimelshein",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Antiga",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Desmaison",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Köpf",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Devito",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Raison",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Tejani",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Chilamkurthy",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Steiner",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Chintala",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "December 2019"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Scalable Diffusion Models with Transformers",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Peebles",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "SDXL: Improving Latent Diffusion Models for High-Resolution Image Synthesis",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Podell",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "English",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lacey",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Dockhorn",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Müller",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Penna",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Learning Transferable Visual Models From Natural Language Supervision",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "W"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Hallacy",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Goh",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Krueger",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "February 2021"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Raffel",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Roberts",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Narang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Matena",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "J"
+          ],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "SAM 2: Segment Anything in Images and Videos",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Ravi",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Gabeur",
+          "suffix": ""
+        },
+        {
+          "first": "Y.-T",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Ryali",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Khedr",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Rädle",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rolland",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Gustafson",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Mintun",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "V"
+          ],
+          "last": "Alwala",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Carion",
+          "suffix": ""
+        },
+        {
+          "first": "C.-Y",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Feichtenhofer",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "October 2024"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "High-Resolution Image Synthesis with Latent Diffusion Models",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Ommer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "U-Net: Convolutional Networks for Biomedical Image Segmentation",
+      "authors": [
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Ronneberger",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Brox",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "R"
+          ],
+          "last": "Selvaraju",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Cogswell",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Vedantam",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Parikh",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Grad-CAM: Visual Explanations from Deep Networks via Gradient-based Localization",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "R"
+          ],
+          "last": "Selvaraju",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Cogswell",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Vedantam",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Parikh",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Journal of Computer Vision"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "CLIP as RNN: Segment Countless Visual Concepts without Training Endeavor",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Torr",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "What the DAAM: Interpreting Stable Diffusion Using Cross Attention",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Pandey",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Stenetorp",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Ture",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Attend, and Segment: Unsupervised Zero-Shot Segmentation using Stable Diffusion",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Aggarwal",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Colaco",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Kira",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Gonzalez-Franco",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Diffuse",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Diffusion Models Learn Low-Dimensional Distributions via Subspace Clustering",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Qu",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "December 2024"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Understanding and Improving Layer Normalization",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "November 2019"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "CogVideoX: Textto-Video Diffusion Models with An Expert Transformer",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Teng",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF51",
+      "title": "iBOT: Image BERT Pre-Training with Online Tokenizer",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Yuille",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    }
+  ]
+}

@@ -1,0 +1,2384 @@
+{
+  "paper_id": "Cross-the-Gap",
+  "title": "CROSS THE GAP: EXPOSING THE INTRA-MODAL MISALIGNMENT IN CLIP VIA MODALITY INVERSION",
+  "authors": [
+    {
+      "first": "Marco",
+      "middle": [],
+      "last": "Mistretta",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Florence",
+        "location": {
+          "country": "Italy"
+        }
+      }
+    },
+    {
+      "first": "Alberto",
+      "middle": [],
+      "last": "Baldrati",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Florence",
+        "location": {
+          "country": "Italy"
+        }
+      }
+    },
+    {
+      "first": "Lorenzo",
+      "middle": [],
+      "last": "Agnolucci",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Florence",
+        "location": {
+          "country": "Italy"
+        }
+      }
+    },
+    {
+      "first": "Marco",
+      "middle": [],
+      "last": "Bertini",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Florence",
+        "location": {
+          "country": "Italy"
+        }
+      }
+    },
+    {
+      "first": "Andrew",
+      "middle": [
+        "D"
+      ],
+      "last": "Bagdanov",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Florence",
+        "location": {
+          "country": "Italy"
+        }
+      }
+    }
+  ],
+  "abstract": "Pre-trained multi-modal Vision-Language Models like CLIP are widely used offthe-shelf for a variety of applications. In this paper, we show that the common practice of individually exploiting the text or image encoders of these powerful multi-modal models is highly suboptimal for intra-modal tasks like imageto-image retrieval. We argue that this is inherently due to the CLIP-style intermodal contrastive loss that does not enforce any intra-modal constraints, leading to what we call intra-modal misalignment. To demonstrate this, we leverage two optimization-based modality inversion techniques that map representations from their input modality to the complementary one without any need for auxiliary data or additional trained adapters. We empirically show that, in the intra-modal tasks of image-to-image and text-to-text retrieval, approaching these tasks inter-modally significantly improves performance with respect to intramodal baselines on more than fifteen datasets. Additionally, we demonstrate that approaching a native inter-modal task (e.g. zero-shot image classification) intra-modally decreases performance, further validating our findings. Finally, we show that incorporating an intra-modal term in the pre-training objective or narrowing the modality gap between the text and image feature embedding spaces helps reduce the intra-modal misalignment. The code is publicly available at: https://github.com/miccunifi/Cross-the-Gap.",
+  "body": {
+    "1_INTRODUCTION": "In recent years the availability of massive, pre-trained Vision-Language Models (VLMs) has enabled a wide variety of applications ranging from zero-shot image segmentation (Zhou et al., 2022a; Lüddecke & Ecker, 2022) to visual question answering (Song et al., 2022; Parelli et al., 2023) . These models are typically composed of independent image and text encoders which are simultaneously trained on massive corpora of image-text pairs to align the text and image embeddings of associated inputs. For example, the Contrastive Language-Image Pre-training (CLIP) model is trained on a corpus of 400M image-text pairs to map inputs from both modalities into a shared embedding space (Radford et al., 2021) . CLIP is trained with an inter-modal contrastive loss that aims to maximize the similarity of corresponding image-text samples while minimizing the similarity with all the other examples within a batch. Despite CLIP's shared embedding space, visual and textual features lie in distinct regions. This phenomenon, known as the modality gap (Liang et al., 2022), originates from model initialization, and the inter-modal contrastive loss preserves and worsens it during training. Moreover, we note that CLIP's contrastive training strategy focuses on inter-modal (i.e. image-text) similarities between paired samples and disregards intra-modal (i.e. image-image and text-text) similarities. Consequently, the intra-image and intra-text similarities between CLIP representations might not faithfully correspond to those of the actual images or texts, as depicted in the left section of Fig. 1 . We refer to this issue as intra-modal misalignment. A simple experiment aimed at quantifying this problem is presented in Appendix B.",
+    "3_CLIP_PRELIMINARIES": "CLIP is a vision-language model trained to align images and textual captions in a shared embedding space (Radford et al., 2021) . It consists of an image encoder f θ and a text encoder g ϕ . Given an image I, the image encoder extracts its feature representation f θ (I) ∈ R d , where d is the size of the shared embedding space. Likewise, for a given textual caption Y , first a word embedding layer E v maps each tokenized word to the token embedding space V.\nThen, the text encoder g ϕ generates the textual feature representation g ϕ (E v (Y )) ∈ R d . When using a Vision Transformer (ViT) (Dosovitskiy et al., 2020) as the visual encoder f θ , the encoding process begins by splitting the image into U fixed-size non-overlapping patches. Each patch is then transformed into a corresponding patch embedding {w 1 , w 2 , . . . , w U } through a linear projection by the patch embedding layer E w , where each w i resides in the patch embedding space W. A learnable class (CLS) token c is concatenated with the patch embeddings, resulting in the input to the vision transformer being Ī = {c, w 1 , w 2 , . . . , w U }. Finally, the CLS token of the final transformer layer is projected into the shared embedding space via a linear projection to obtain the final representation f θ ([c, E w (I))] = f θ ( Ī) ∈ R d . For brevity, when unnecessary we will omit both the patch embedding layer E w and the token embedding layer E v , and use the simplified notations f θ (I) instead of f θ ([c, E w (I)]) and g ϕ\n(Y ) instead of g ϕ (E v (Y )).\nGiven a batch of image-caption pairs B = {(I n , Y n )} N n=1 , CLIP aims to maximize the cosine similarity for the N correct pairs while minimizing it for the N 2 -N other pairs. This is achieved by optimizing a symmetric, multi-class N-pair contrastive loss (Sohn, 2016) . Let ψ n I = f θ (I n ) and\nψ n T = g ϕ (E v (Y n ))\ndenote the image and text embeddings, respectively. The CLIP loss is:\nEQUATION\nwhere c(•, •) denotes the cosine similarity, and τ is a temperature parameter. As shown by Liang et al. (2022), Eq. ( 1) leads to a measurable separation between embeddings of the different modalities, creating what is known as the modality gap. This gap is significantly affected by the temperature τ , with a larger gap occurring as the temperature decreases.\nNote that CLIP's training loss focuses exclusively on inter-modal similarities between paired samples while neglecting intra-modal similarities. For example, consider an image feature anchor ψ I and two distinct text features ψ 1 T and ψ 2 T expressing the same concept. The loss enforces both ψ 1 T and ψ 2 T to be at a cosine distance r from ψ I , where the cosine distance is defined as d(ψ A , ψ B ) = 1 -c(ψ A , ψ B ). This is equivalent to d(ψ I , ψ 1 T ) = d(ψ I , ψ 2 T ) = r, meaning the text embeddings lie on a hypersphere of radius r centered at ψ I . The absence of intra-modal constraints leaves the alignment between ψ 1\nT and ψ 2 T remains uncalibrated; thus, we have 0 ≤ d(ψ 1 T , ψ 2 T ) ≤ 2r. This indicates that, while both text features are equidistant from the image feature, their intra-modal similarity is not constrained in any way, leading to intra-modal misalignment. We argue that such a misalignment must either be mitigated via additional intra-modal losses during pre-training or must be compensated by tackling intra-modal tasks inter-modally.",
+    "4_FROM_INTRA-MODAL_TO_INTER-MODAL_VIA_MODALITY_INVERSION": {
+      "4.1_OPTIMIZATION-BASED_TEXTUAL_INVERSION_(OTI)": "Starting from an image I, OTI involves iteratively optimizing a set of R pseudo-tokens v * = {v * 1 , v * 2 , . . . , v * R }, with v * i ∈ V for i ∈ {1, . . . , R}, for a given number of optimization steps S. We refer to v * as pseudo-tokens since they belong to the token embedding space V but are not associated with any existing words. Algorithm 1 in Appendix A shows the pseudo-code of OTI.\nThe pseudo-tokens v * are randomly initialized and concatenated with the template sentence \"a photo of\" to form\nY v * = [E v (\"a photo of\"), v * ] input into the CLIP text encoder g ϕ to obtain ψ T = g ϕ (Y v * ).\nThen we extract the features of the image I with the CLIP image encoder f θ , resulting in ψ I = f θ (I). Since we aim to obtain a textual feature representation ψ T that captures the informative content of I, we minimize the gap between image and text features via a cosine loss:\nEQUATION\nNote that while we adapt OTI from Baldrati et al. (2023) our goal is significantly different. Their work focuses on deriving a single pseudo-token that captures the informative content of the image I and can interact with existing words to form meaningful sentences (e.g., \"a photo of v * that is running . . . \"), thus they use OTI for combining inputs from both modalities. In contrast, we use OTI purely as a mapping technique from visual to textual features. We do not focus on the pseudotokens themselves but aim to obtain a final representation that effectively captures the content of the image I. Additionally, the original OTI technique employs a regularization loss that exploits an auxiliary vocabulary to constrain the pseudo-token to reside in CLIP's token embedding space. However we are not interested in using the learned v * in different contexts -and more importantly, we aim to avoid influencing the inversion process with external data. For this reason we do not use a regularization loss.",
+      "4.2_OPTIMIZATION-BASED_VISUAL_INVERSION_(OVI)": "We propose the OVI approach to map text features from the CLIP text embedding space to the visual embedding space. Note that since OVI learns vectors of trainable parameters in the patch embedding space W, it can be applied only to ViT-based image encoders.\nGiven a sentence Y , we first extract its text features ψ T = g ϕ (E v (Y )). OVI then optimizes a set of P randomly initialized pseudo-patches w * = {w * 1 , . . . , w * P }, where each w * i ∈ W. This optimization is performed for a fixed number of optimization steps S. Similarly to the terminology introduced in Sec. 4.1, we refer to w * as pseudo-patches since they belong to the patch embedding space W but are not associated with any existing image. Algorithm 2 in Appendix A illustrates the pseudo-code of the OVI method.\nSince the ViT employs learned positional embeddings, the number of input patches U to the image encoder is fixed. Consequently, when P < U directly using w * as input is impossible. In such cases, we apply nearest-neighbor interpolation to repeat the pseudo-patches and match the required number of U patches.\nSpecifically, given the pre-trained CLS token c, the input to the ViT is given by:\nĪw * = {c, w * 1 , w * 1 , . . . ,\nw * 1 H1 times , w * 2 , w * 2 , . . . , w * 2 H2 times , . . . , w * P , w * P , . . . , w * P H P times },\nwhere H 1 , . . . , H P represent the number of times each pseudo-patch is repeated, and H 1 + . . . + H P = U . The specific values are given by the nearest-neighbor interpolation. Finally, the input Īw * is passed through CLIP's image encoder to obtain the features ψ I = f θ ( Īw * ). To obtain a visual feature representation ψ I that captures the informative content of Y , we minimize the gap between the image and text features using the same cosine-based loss in Eq. ( 2).",
+      "4.3_CROSSING_THE_MODALITY_GAP_WITH_OTI_AND_OVI": "The goal of OTI and OVI is to map features from the native modality into corresponding features in the complementary modality. We observe that in cases where the loss L cos approaches zero, the complementary features converge to the native ones, thus drifting into the native modality embedding manifold. This undermines the goal of leveraging CLIP's image-text alignment.\nFor OTI, in our experiments the loss never approaches zero -within a reasonable number of optimization steps -when considering a single pseudo-token (i.e. R = 1). We argue that this stems from the strong inductive biases of the frozen encoders and the modality gap, making it challenging for a single pseudo-token to bridge the distance between image and text representations. Nevertheless, the OTI-inverted features retain the informative content of the corresponding image. As a result, the potential drift related to L cos does not pose a significant issue, and inter-modal alignment is preserved. In all experiments we use R = 1 unless stated otherwise.\nAlso for OVI we observe that the loss only approaches zero when the number of pseudo patches P is relatively large. Unlike OTI, we find that for some experiments a single pseudo-patch (i.e. P = 1) is insufficient for embedding the informative content of the corresponding text. We believe that this discrepancy stems from the inherent differences between images and texts. Specifically, in textual inputs a single word (or pseudo-token) can significantly alter the meaning of a sentence. For instance, the sentences \"a photo of a building\" and \"a photo of a dog\" convey completely different meanings, despite differing by only one word. In contrast, a single (pseudo-)patch has less influence on the overall semantic content of an image. Therefore, while a single pseudo-token is enough for an effective modality inversion with OTI, more pseudo-patches may be necessary when applying OVI. Consequently, in our experiments, we employ a number of pseudo-patches P ranging from 1 to 4, based on the considered model (see Appendix D for more details). For such values, the pseudo-patches effectively embed the informative content of the input text. Moreover, the intermodal alignment is maintained and the drift does not constitute a significant problem.",
+      "_text": "Due to the modality gap, images and text features lie in distinct regions in CLIP's shared embedding space. Previous work introduced modality inversion techniques to map features from the native modality to the complementary one (Ramesh et Our goal is to demonstrate that tackling intra-modal tasks in an inter-modal way outperforms intramodal baselines. To this end, we propose to employ a modality inversion strategy to derive representations that exploit both native and complementary modality encoders. However, existing modality inversion techniques rely on external data or the training of a mapping network, making the inversion process dependent on external factors (Ramesh et al., 2022; Patel et al., 2024; Li et al., 2023) .\nTo minimize the impact of external biases in our analysis, we choose to rely on two modality inversion strategies that operate at a single-feature level, i.e. that map each individual feature to its complementary modality without the need for any external resources. Specifically, we adapt Optimization-based Textual Inversion (OTI) (Baldrati et al., 2023; Agnolucci et al., 2024) and we introduce Optimization-based Visual Inversion (OVI) to map an image to the text embedding space and vice versa while keeping the encoders frozen. Both are iterative and optimization-based approaches. The core concept behind OTI and OVI is to learn vectors of trainable parameters that are passed through the encoder of the complementary modality to yield features aligned with the representations of the native modality encoder. By optimizing these input vectors while keeping the encoder weights fixed, we ensure that the output features retain the pre-training alignment. In the following we define OTI and OVI for CLIP, but they can be applied to any VLM that maps images and texts into a shared embedding space. To make our analysis more comprehensive, in Appendix G we present two additional experiments in which modality inversion is performed using a pre-trained captioner or an adapter."
+    },
+    "5_EXPERIMENTAL_RESULTS": {
+      "5.1_IMAGE-TO-IMAGE_RETRIEVAL": "Pre-trained CLIP image encoders are often used to extract features for image-to-image similarity comparisons. For this reason, we study the image-to-image retrieval task.\nExperiment design. The objective is to retrieve images from a gallery that are visually similar to a given query image. We consider a total of 15 datasets commonly employed for image-to-image retrieval and image classification. We consider two strategies. In the first, which we call intramodal, we directly compare the features of the query image with those of the gallery. In the second, we transform the intra-modal image-to-image retrieval task into an inter-modal one by applying OTI to the query image. Then, we use the resulting OTI-inverted features to query the gallery.\nResults. We report the results in Tab. 1. Approaching the task inter-modally using the OTI-inverted features outperforms the intra-modal baseline, achieving an average absolute improvement ranging from 2% to 3%. Specifically, we observe that the performance gain is obtained across a large variety of datasets with different class granularity and diverse domains, spanning from birds (CUB) to monuments (RParis). Moreover, we notice that the intra-modal misalignment phenomenon is independent of the pre-training dataset (CLIP vs. OpenCLIP) and pre-training contrastive loss (CLIP/OpenCLIP vs. SigLIP) since the performance improvement is consistent across all the considered VLMs. Finally, we note that OTI-inverted features cannot contain more informative content than the native ones -used by the intra-modal baseline -since they are obtained simply by mapping them to the complementary modality at a single-feature level and without using any external resources. Thus, the observed improvement is solely attributable to inter-modal alignment rather than to a more enriched representation.",
+      "5.2_TEXT-TO-TEXT_RETRIEVAL": "Although text features from pre-trained CLIP models are not commonly used for text-to-text tasks, we believe that it is important to show that our findings also apply to text-to-text comparisons.\nExperiment design. Using the CLIP text encoder for text-only tasks presents several challenges. Specifically, the CLIP text encoder is trained on short, descriptive texts. As a result, using it for tasks such as sentiment analysis or text classification, which involve longer texts and abstract concepts, results in a mismatch with the pre-training data. Moreover, VLMs have a limited input token capacity (e.g. 77 tokens for CLIP), which makes them unsuitable for longer texts. To avoid these problems, we formulate an intra-modal text-to-text retrieval task using image captioning datasets. Specifically, we select datasets in which each sample consists of an image and multiple associated captions (e.g. Flickr30K (Plummer et al., 2015)). These captions are comparable to those used in VLM training and are short enough to avoid token limit issues. We ignore the images and use the first caption associated with each image as the query text. The goal is to retrieve the other captions related to the same image from a gallery of all captions in the dataset. In Appendix G, we also report experimental results on purely textual text-to-text retrieval datasets. To address the issue of texts exceeding the input token limit of VLMs, we use an LLM to summarize the texts. As in the image-to-image retrieval experiments detailed in Sec. 5.1, we consider two strategies. In the former, we use the query text features to retrieve from the gallery. In the latter, we approach the task inter-modally by applying OVI to each query to obtain the complementary features.\nResults. Table 2 (left) shows the results. Analogously to image-to-image retrieval, using the OVIinverted features outperforms the intra-modal baseline. Specifically, the absolute performance gains range from 1% to 5% across all datasets, backbones, and VLMs. This outcome proves that intramodal similarity comparisons lead to suboptimal performance independently from the considered modality. Hence, the intra-modal misalignment phenomenon involves both the image and text embedding spaces.",
+      "5.3_ZERO-SHOT_IMAGE_CLASSIFICATION": "We evaluate the performance of modality inversion on inter-modal tasks, such as zero-shot image classification and image-text retrieval. We expect that transforming inter-modal tasks to intra-modal ones hinders performance due to intra-modal misalignment. Here we consider zero-shot image classification, while we report experiments on image-text retrieval in the supplementary material.\nExperiment design. CLIP-like models perform zero-shot image classification by predicting the output class based on the similarity between the input image and a set of textual prompts in the form of \"a photo of a [CLASS]\", where CLASS represents each class name, such as \"cat\" or \"dog\". Following Zhou et al. (2022b), we take into account 11 datasets (see the supplementary material for more details). We consider three strategies. The first is the inter-modal baseline, which compares the features of the input image and the set of prompts. In the second, we apply OTI to the input image. In the third, OVI is applied to each textual prompt.\nResults. In Tab. 2 (right) we report the performance of the first two strategies described above.\nResults for the third strategy are given in Appendix G. As expected, using modality inversion consistently leads to performance degradation across different VLMs and backbones. Note that the datasets used in zero-shot image classification are also employed for image-to-image retrieval in Sec. 5.1. This allows us to reuse the same OTI-inverted features for both tasks. Interestingly, the results are opposite: performance improves in image-to-image retrieval but decreases in zero-shot image classification. This contrast arises because, in the former, we transform an intra-modal task into an inter-modal one, while in the latter, we do the reverse. This experiment demonstrates that modality inversion does not inherently improve performance, as the same OTI-inverted features can either enhance or hinder results depending on the nature of the task.",
+      "5.4_ANALYZING_MODALITY_INVERSION": "In this section we study how and why transforming native modality features into complementary ones via modality inversion leads to performance improvement on intra-modal tasks. For brevity, we consider only OTI, but we find that the same considerations apply to OVI. We consider the Cars dataset (Krause et al., 2013) and the CLIP ViT-B/32 model. In Figs. 2(a ) and 2(b) we investigate how the values of the loss L cos and the image-to-image retrieval performance vary based on the number of optimization steps and pseudo-tokens R. First, we notice that with a single pseudo-token (i.e. R = 1) the loss does not reach zero within a reasonable number of optimization steps. Conversely, as R increases (i.e. the number of trainable parameters grows) the loss decreases more rapidly and approaches zero. As discussed in Sec. 4.3, as the loss decreases the OTI-inverted features shift away from the text manifold towards the image manifold, approaching the original native image features. This phenomenon is reflected in the image retrieval performance shown in Fig. 2(b) , since for enough optimization steps and pseudo-tokens the performance approaches those obtained by the native image features. Moreover, we observe that, regardless of the value of R, the best performance corresponds to a relatively low number of optimization steps.\nWe argue that, in proximity to the performance peak observed during the optimization process, the OTI-inverted features capture the informative content of the corresponding image while retaining the inter-modal alignment. To support this claim, we compute cosine similarities for image-image, text-image, and OTI-image feature pairs. Specifically, we analyze the OTI-inverted features using four pseudo-tokens (R = 4) at two distinct optimization steps: the performance peak (step 17) and the final step (step 1000), where performance approaches the intra-modal baseline. In Fig. 2(c ) we plot the distribution of these pairwise similarities. We observe that, at the performance peak, the similarity distribution of OTI-image matches the text-image similarity distribution, while at the final step it aligns with the image-image similarity distribution, confirming the drift of the OTI-inverted features toward the image manifold. This suggests that OTI-inverted features perform best when aligned with image features in the same way as text features, confirming our hypothesis that the performance improvement obtained by OTI stems from leveraging CLIP's inter-modal alignment.\nFinally, we notice that R = 1 is not the optimal choice to achieve the best performance when using OTI. Still, we use R = 1 in the experiments as the associated OTI-inverted features are less prone to drift towards the native image features, thus being more robust to the number of optimization steps. Moreover, the main objective of this work is not to achieve the best results on the downstream tasks but rather show that using VLMs intra-modally is suboptimal.",
+      "5.5_THE_ROLE_OF_INTRA-MODAL_CONSTRAINTS": "We investigate whether incorporating an intra-modal loss term during image-text contrastive pretraining effectively mitigates the issue of intra-modal misalignment. To this end, we consider SLIP (Mu et al., 2022) , which adds a self-supervised intra-modal loss based on SimCLR (Chen et al., 2020) to the standard CLIP inter-modal contrastive loss L CLIP (see Appendix C for more details). Such intra-modal loss encourages the model to produce similar representations for two augmentations of the same image, aiming to improve the intra-modal alignment within the image embedding space.\nTo verify this, we perform an image-to-image retrieval experiment following the evaluation protocol from Sec. 5.1. We report the results in Tab. 3 . Notably, the OTI-inverted features achieve comparable performance to the native image ones. This contrasts with results from VLMs trained solely with an inter-modal contrastive loss (see Tab. 1 ), in which OTI led to a substantial performance boost. This experiment proves that SLIP's intra-modal loss effectively reduces intra-modal misalignment and suggests the importance of including such a loss when pre-training VLMs. We reproduce our image-to-image retrieval experiments using these fine-tuned models and report results in Tab. 4. In the absence of the modality gap (τ = 1) tackling intra-modal tasks inter-modally does not improve performance. This shows that closing the modality gap reduces the intra-modal misalignment. The results of the reference model (τ = 0.01) prove that this outcome does not stem from the fine-tuning strategy. As also observed by Liang et al. (2022), we note that using higher temperature values during training leads to an overall performance decrease in downstream tasks, despite reducing the modality gap. For this reason, we argue that -in practice -simply increasing the temperature value in Eq. ( 1) does not represent a viable strategy to address intramodal misalignment.",
+      "_text": "Here we report on a broad range of experiments supporting our claims. We first evaluate two intramodal tasks: image-to-image and text-to-text retrieval. We show that transforming intra-modal tasks into inter-modal ones via OTI and OVI consistently improves performance by better aligning with the original CLIP training objective. To confirm that this outcome does not stem from the modality inversion process itself, we evaluate a natively inter-modal task -zero-shot image classification -and show that making it intra-modal hinders the performance. Finally, we analyze the behavior of modality inversion techniques, and we study how adding intra-modal loss terms during VLM pre-training or narrowing the modality gap affects intra-modal misalignment. In the following, we denote as inter-modal approaches those involving inter-modal similarity comparisons, i.e. similarity comparisons between features of two different modalities (such as image-text, OTI-image, and OVI-text). Conversely, intra-modal approaches refer to methods that employ intra-modal similarity comparisons (such as image-image, text-text, OTI-OTI, and OVI-OVI).\nTo ensure a comprehensive analysis, we experiment using multiple CLIP models with different backbones and pre-training datasets. We also consider SigLIP to prove that our observations are not specific to the CLIP loss but generalize to other inter-modal contrastive losses. Specifically, we use OpenAI CLIP with ViT-B/32 and ViT-L/14 backbones, OpenCLIP (OPEN) pre-trained on the DataComp dataset (Gadre et al., 2024) with the same backbones, and SigLIP-B/16. Implementation details and description of all datasets used are given in Appendices A and F. Sig LIP B/16 X 39.4 49.9 50.6 73.9 65.7 56.5 87.0 37.9 39.9 52.4 56.3 42.8 87.3 56.7 35.9 55.5 ✓ 41.8 53.0 55.2 79.1 71.8 64.2 89.7 37.6 43.3 52.9 59.0 43.6 88.9 54.9 38.8 58.3"
+    },
+    "6_CONCLUSIONS": "In this work we show that relying on intra-modal similarities computed with off-the-shelf VLMs is suboptimal for intra-modal tasks like image-to-image and text-to-text retrieval. This stems from the inter-modal contrastive loss employed for pre-training these models that leads to a modality gap and intra-modal misalignment. We propose to transform intra-modal tasks to inter-modal ones via two single-feature level modality inversion techniques. We demonstrate that this strategy improves performance as it exploits the inter-modal alignment of VLMs. Finally, we show that employing an intra-modal loss component during VLM pre-training or reducing the modality gap alleviates the impact of intra-modal misalignment.\nLimitations. Our analyses demonstrate the significance of intra-modal misalignment when exploiting pre-trained CLIP models, but fall short of offering practical alternatives. The modality inversion techniques we propose are computationally expensive. They are based on iterative optimization of learnable input parameters (150 optimization steps for OTI and 1000 for OVI in our experiments). This limits their practical applicability and future work should concentrate on efficient methods to mitigate the intra-modal misalignment.\nAlgorithm 1 Optimization-based Textual Inversion (OTI) 1: Input: Image I, number of pseudo-tokens R, number of optimization steps S 2: Initialize v * = {v * 1 , v * 2 , . . . , v * R } 3: Extract image features: ψ I = f θ (I) 4: for s = 1 to S do 5: Form Y v * = [Ev(\"a photo of\"), v * ] 6: Extract text features: ψ T = g ϕ (Y v * ) 7: Compute loss: Lcos = 1 -cos (ψ I , ψ T ) 8: Update v * to minimize Lcos 9: end for 10: Output: OTI-inverted features ψ T = g ϕ (Y v * ) Algorithm 2 Optimization-based Visual Inversion (OVI) 1: Input: Text Y , number of pseudo-patches P , number of optimization steps S 2: Initialize w * = {w * 1 , w * 2 , . . . , w * P } 3: Extract text features: ψ T = g ϕ (Ev(Y )) 4: for s = 1 to S do 5: Form input Īw * using Eq. (3) 6: Extract image features: ψ I = f θ ( Īw * ) 7: Compute loss: Lcos = 1 -cos (ψ I , ψ T ) 8: Update w * to minimize Lcos 9: end for 10: Output: OVI-inverted features ψ I = f θ ( Īw * ) Algorithms 1 and 2. Left: OTI maps an image into the textual embedding space by optimizing pseudo-tokens. Right: OVI maps a text into the visual embedding space by optimizing pseudopatches. Both approaches iteratively minimize the cosine distance between the feature representations of the native and complementary modality. APPENDIX A IMPLEMENTATION DETAILS OTI and OVI. We report the pseudo-code of Optimization-based Textual Inversion (OTI) and Optimization-based Visual Inversion (OVI) in Algorithm 1 and Algorithm 2, respectively. Unless stated otherwise, we use the same hyperparameters for OTI and OVI. We employ the AdamW Loshchilov & Hutter ( 2019) optimizer with learning rate equal to 0.02, β 1 = 0.9, β 2 = 0.999, and weight decay 0.01. We perform 150 optimization steps for OTI and 1000 steps for OVI. For OTI, we consistently use a single pseudo-token (R = 1). In contrast, for OVI, we employ a number of pseudo-patches P ranging from 1 to 4, depending on the considered model (see Sec. D for more details). On average, when using the CLIP ViT/B-32 model, OTI takes approximately 0.2 seconds per image, while OVI takes around 0.5 seconds per text prompt on a single A100 GPU (40GBs) with a batch size of 2048. The memory usage scales linearly with the batch size. Specifically, when using the CLIP ViT-B/32 model, OTI requires approximately 1,878 MiB plus 18.6 MiB per sample in the batch. For example, with a batch size of 128, the memory consumption is about 4,260 MiB. For OVI, the memory usage is approximately 2,218 MiB plus 16.2 MiB per sample, resulting in about 4,290 MiB with the same batch size. We use mixed precision to save memory and increase computational efficiency. In downstream tasks all the features are normalized to have a unit L 2 -norm."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "iSEARLE: Improving Textual Inversion for Zero-Shot Composed Image Retrieval",
+      "authors": [
+        {
+          "first": "Lorenzo",
+          "middle": [],
+          "last": "Agnolucci",
+          "suffix": ""
+        },
+        {
+          "first": "Alberto",
+          "middle": [],
+          "last": "Baldrati",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Bertini",
+          "suffix": ""
+        },
+        {
+          "first": "Alberto",
+          "middle": [
+            "Del"
+          ],
+          "last": "Bimbo",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "nocaps: novel object captioning at scale",
+      "authors": [
+        {
+          "first": "Harsh",
+          "middle": [],
+          "last": "Agrawal",
+          "suffix": ""
+        },
+        {
+          "first": "Karan",
+          "middle": [],
+          "last": "Desai",
+          "suffix": ""
+        },
+        {
+          "first": "Yufei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinlei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Rishabh",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "Dhruv",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "Devi",
+          "middle": [],
+          "last": "Parikh",
+          "suffix": ""
+        },
+        {
+          "first": "Stefan",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Anderson",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the IEEE International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Zero-Shot Composed Image Retrieval with Textual Inversion",
+      "authors": [
+        {
+          "first": "Alberto",
+          "middle": [],
+          "last": "Baldrati",
+          "suffix": ""
+        },
+        {
+          "first": "Lorenzo",
+          "middle": [],
+          "last": "Agnolucci",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Bertini",
+          "suffix": ""
+        },
+        {
+          "first": "Alberto",
+          "middle": [
+            "Del"
+          ],
+          "last": "Bimbo",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Food-101-mining discriminative components with random forests",
+      "authors": [
+        {
+          "first": "Lukas",
+          "middle": [],
+          "last": "Bossard",
+          "suffix": ""
+        },
+        {
+          "first": "Matthieu",
+          "middle": [],
+          "last": "Guillaumin",
+          "suffix": ""
+        },
+        {
+          "first": "Luc",
+          "middle": [],
+          "last": "Van Gool",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Computer Vision-ECCV 2014: 13th European Conference"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "A simple framework for contrastive learning of visual representations",
+      "authors": [
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Kornblith",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Norouzi",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Describing textures in the wild",
+      "authors": [
+        {
+          "first": "Mircea",
+          "middle": [],
+          "last": "Cimpoi",
+          "suffix": ""
+        },
+        {
+          "first": "Subhransu",
+          "middle": [],
+          "last": "Maji",
+          "suffix": ""
+        },
+        {
+          "first": "Iasonas",
+          "middle": [],
+          "last": "Kokkinos",
+          "suffix": ""
+        },
+        {
+          "first": "Sammy",
+          "middle": [],
+          "last": "Mohamed",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [],
+          "last": "Vedaldi",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Imagenet: A large-scale hierarchical image database",
+      "authors": [
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        },
+        {
+          "first": "Li-Jia",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "An image is worth 16x16 words: Transformers for image recognition at scale",
+      "authors": [
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "Dirk",
+          "middle": [],
+          "last": "Weissenborn",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "Mostafa",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Minderer",
+          "suffix": ""
+        },
+        {
+          "first": "Georg",
+          "middle": [],
+          "last": "Heigold",
+          "suffix": ""
+        },
+        {
+          "first": "Sylvain",
+          "middle": [],
+          "last": "Gelly",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "The llama 3 herd of models",
+      "authors": [
+        {
+          "first": "Abhimanyu",
+          "middle": [],
+          "last": "Dubey",
+          "suffix": ""
+        },
+        {
+          "first": "Abhinav",
+          "middle": [],
+          "last": "Jauhri",
+          "suffix": ""
+        },
+        {
+          "first": "Abhinav",
+          "middle": [],
+          "last": "Pandey",
+          "suffix": ""
+        },
+        {
+          "first": "Abhishek",
+          "middle": [],
+          "last": "Kadian",
+          "suffix": ""
+        },
+        {
+          "first": "Ahmad",
+          "middle": [],
+          "last": "Al-Dahle",
+          "suffix": ""
+        },
+        {
+          "first": "Aiesha",
+          "middle": [],
+          "last": "Letman",
+          "suffix": ""
+        },
+        {
+          "first": "Akhil",
+          "middle": [],
+          "last": "Mathur",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [],
+          "last": "Schelten",
+          "suffix": ""
+        },
+        {
+          "first": "Amy",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Angela",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Asirra: a captcha that exploits interestaligned manual image categorization",
+      "authors": [
+        {
+          "first": "Jeremy",
+          "middle": [],
+          "last": "Elson",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [
+            "R"
+          ],
+          "last": "Douceur",
+          "suffix": ""
+        },
+        {
+          "first": "Jon",
+          "middle": [],
+          "last": "Howell",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [],
+          "last": "Saul",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "CCS"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Structure and content-guided video synthesis with diffusion models",
+      "authors": [
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "Johnathan",
+          "middle": [],
+          "last": "Chiu",
+          "suffix": ""
+        },
+        {
+          "first": "Parmida",
+          "middle": [],
+          "last": "Atighehchian",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Granskog",
+          "suffix": ""
+        },
+        {
+          "first": "Anastasis",
+          "middle": [],
+          "last": "Germanidis",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Learning generative visual models from few training examples: An incremental bayesian approach tested on 101 object categories",
+      "authors": [
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        },
+        {
+          "first": "Rob",
+          "middle": [],
+          "last": "Fergus",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Perona",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": "2004 conference on computer vision and pattern recognition workshop"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Datacomp: In search of the next generation of multimodal datasets",
+      "authors": [
+        {
+          "first": "Yitzhak",
+          "middle": [],
+          "last": "Samir",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Gadre",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Ilharco",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Georgios",
+          "middle": [],
+          "last": "Hayase",
+          "suffix": ""
+        },
+        {
+          "first": "Thao",
+          "middle": [],
+          "last": "Smyrnis",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "Mitchell",
+          "middle": [],
+          "last": "Marten",
+          "suffix": ""
+        },
+        {
+          "first": "Dhruba",
+          "middle": [],
+          "last": "Wortsman",
+          "suffix": ""
+        },
+        {
+          "first": "Jieyu",
+          "middle": [],
+          "last": "Ghosh",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "An image is worth one word: Personalizing text-to-image generation using textual inversion",
+      "authors": [
+        {
+          "first": "Rinon",
+          "middle": [],
+          "last": "Gal",
+          "suffix": ""
+        },
+        {
+          "first": "Yuval",
+          "middle": [],
+          "last": "Alaluf",
+          "suffix": ""
+        },
+        {
+          "first": "Yuval",
+          "middle": [],
+          "last": "Atzmon",
+          "suffix": ""
+        },
+        {
+          "first": "Or",
+          "middle": [],
+          "last": "Patashnik",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Amit",
+          "suffix": ""
+        },
+        {
+          "first": "Gal",
+          "middle": [],
+          "last": "Bermano",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Chechik",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Cohen-Or",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Towards flexible perception with visual memory",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Geirhos",
+          "suffix": ""
+        },
+        {
+          "first": "Priyank",
+          "middle": [],
+          "last": "Jaini",
+          "suffix": ""
+        },
+        {
+          "first": "Austin",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "Sourabh",
+          "middle": [],
+          "last": "Medapati",
+          "suffix": ""
+        },
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "Yi",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Toderici",
+          "suffix": ""
+        },
+        {
+          "first": "Abhijit",
+          "middle": [],
+          "last": "Ogale",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathon",
+          "middle": [],
+          "last": "Shlens",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Eurosat: A novel dataset and deep learning benchmark for land use and land cover classification",
+      "authors": [
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Helber",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Bischke",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Dengel",
+          "suffix": ""
+        },
+        {
+          "first": "Damian",
+          "middle": [],
+          "last": "Borth",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Scaling up visual and vision-language representation learning with noisy text supervision",
+      "authors": [
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Yinfei",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Ye",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "Yi-Ting",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Zarana",
+          "middle": [],
+          "last": "Parekh",
+          "suffix": ""
+        },
+        {
+          "first": "Hieu",
+          "middle": [],
+          "last": "Pham",
+          "suffix": ""
+        },
+        {
+          "first": "Quoc",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "Yun-Hsuan",
+          "middle": [],
+          "last": "Sung",
+          "suffix": ""
+        },
+        {
+          "first": "Zhen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Duerig",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Deep visual-semantic alignments for generating image descriptions",
+      "authors": [
+        {
+          "first": "Andrej",
+          "middle": [],
+          "last": "Karpathy",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "3d object representations for fine-grained categorization",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Krause",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Stark",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Proceedings of the IEEE international conference on computer vision workshops"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Newsweeder: Learning to filter netnews",
+      "authors": [
+        {
+          "first": "Ken",
+          "middle": [],
+          "last": "Lang",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "Machine learning proceedings"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Decap: Decoding CLIP latents for zero-shot captioning via text-only training",
+      "authors": [
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Linchao",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Longyin",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Supervision exists everywhere: A data efficient contrastive language-image pretraining paradigm",
+      "authors": [
+        {
+          "first": "Yangguang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Lichen",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Yufeng",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        },
+        {
+          "first": "Wanli",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Jing",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        },
+        {
+          "first": "Fengwei",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Junjie",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Mind the Gap: Understanding the Modality Gap in Multi-Modal Contrastive Representation Learning",
+      "authors": [
+        {
+          "first": "Yuhui",
+          "middle": [],
+          "last": "Victor Weixin Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Yongchan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Serena",
+          "middle": [],
+          "last": "Kwon",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [
+            "Y"
+          ],
+          "last": "Yeung",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Microsoft coco: Common objects in context",
+      "authors": [
+        {
+          "first": "Tsung-Yi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Maire",
+          "suffix": ""
+        },
+        {
+          "first": "Serge",
+          "middle": [],
+          "last": "Belongie",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Hays",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Perona",
+          "suffix": ""
+        },
+        {
+          "first": "Deva",
+          "middle": [],
+          "last": "Ramanan",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lawrence",
+          "suffix": ""
+        },
+        {
+          "first": "Zitnick",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Computer Vision-ECCV 2014: 13th European Conference"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Visual instruction tuning",
+      "authors": [
+        {
+          "first": "Haotian",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chunyuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Qingyang",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yong Jae",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Decoupled weight decay regularization",
+      "authors": [
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Loshchilov",
+          "suffix": ""
+        },
+        {
+          "first": "Frank",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Image segmentation using text and image prompts",
+      "authors": [
+        {
+          "first": "Timo",
+          "middle": [],
+          "last": "Lüddecke",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Ecker",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Learning word vectors for sentiment analysis",
+      "authors": [
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Maas",
+          "suffix": ""
+        },
+        {
+          "first": "Raymond",
+          "middle": [
+            "E"
+          ],
+          "last": "Daly",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "T"
+          ],
+          "last": "Pham",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "Y"
+          ],
+          "last": "Ng",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Potts",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Proceedings of the 49th annual meeting of the association for computational linguistics: Human language technologies"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Fine-grained visual classification of aircraft",
+      "authors": [
+        {
+          "first": "Subhransu",
+          "middle": [],
+          "last": "Maji",
+          "suffix": ""
+        },
+        {
+          "first": "Esa",
+          "middle": [],
+          "last": "Rahtu",
+          "suffix": ""
+        },
+        {
+          "first": "Juho",
+          "middle": [],
+          "last": "Kannala",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Blaschko",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [],
+          "last": "Vedaldi",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Slip: Self-supervision meets language-image pre-training",
+      "authors": [
+        {
+          "first": "Norman",
+          "middle": [],
+          "last": "Mu",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kirillov",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Wagner",
+          "suffix": ""
+        },
+        {
+          "first": "Saining",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "European conference on computer vision"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Automated flower classification over a large number of classes",
+      "authors": [
+        {
+          "first": "Maria-Elena",
+          "middle": [],
+          "last": "Nilsback",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Sixth Indian conference on computer vision, graphics & image processing"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Deep metric learning via lifted structured feature embedding",
+      "authors": [
+        {
+          "first": "Hyun Oh",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Xiang",
+          "suffix": ""
+        },
+        {
+          "first": "Stefanie",
+          "middle": [],
+          "last": "Jegelka",
+          "suffix": ""
+        },
+        {
+          "first": "Silvio",
+          "middle": [],
+          "last": "Savarese",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Clip-guided vision-language pre-training for question answering in 3d scenes",
+      "authors": [
+        {
+          "first": "Maria",
+          "middle": [],
+          "last": "Parelli",
+          "suffix": ""
+        },
+        {
+          "first": "Alexandros",
+          "middle": [],
+          "last": "Delitzas",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolas",
+          "middle": [],
+          "last": "Hars",
+          "suffix": ""
+        },
+        {
+          "first": "Georgios",
+          "middle": [],
+          "last": "Vlassis",
+          "suffix": ""
+        },
+        {
+          "first": "Sotirios",
+          "middle": [],
+          "last": "Anagnostidis",
+          "suffix": ""
+        },
+        {
+          "first": "Gregor",
+          "middle": [],
+          "last": "Bachmann",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Hofmann",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Cats and dogs",
+      "authors": [
+        {
+          "first": "Andrea",
+          "middle": [],
+          "last": "Omkar M Parkhi",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Vedaldi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Jawahar",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Eclipse: A resource-efficient text-to-image prior for image generations",
+      "authors": [
+        {
+          "first": "Maitreya",
+          "middle": [],
+          "last": "Patel",
+          "suffix": ""
+        },
+        {
+          "first": "Changhoon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Sheng",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Chitta",
+          "middle": [],
+          "last": "Baral",
+          "suffix": ""
+        },
+        {
+          "first": "Yezhou",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Flickr30k entities: Collecting region-to-phrase correspondences for richer imageto-sentence models",
+      "authors": [
+        {
+          "first": "Liwei",
+          "middle": [],
+          "last": "Bryan A Plummer",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [
+            "M"
+          ],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Juan",
+          "middle": [
+            "C"
+          ],
+          "last": "Cervantes",
+          "suffix": ""
+        },
+        {
+          "first": "Julia",
+          "middle": [],
+          "last": "Caicedo",
+          "suffix": ""
+        },
+        {
+          "first": "Svetlana",
+          "middle": [],
+          "last": "Hockenmaier",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Lazebnik",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Proceedings of the IEEE international conference on computer vision"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Revisiting oxford and paris: Large-scale image retrieval benchmarking",
+      "authors": [
+        {
+          "first": "Filip",
+          "middle": [],
+          "last": "Radenović",
+          "suffix": ""
+        },
+        {
+          "first": "Ahmet",
+          "middle": [],
+          "last": "Iscen",
+          "suffix": ""
+        },
+        {
+          "first": "Giorgos",
+          "middle": [],
+          "last": "Tolias",
+          "suffix": ""
+        },
+        {
+          "first": "Yannis",
+          "middle": [],
+          "last": "Avrithis",
+          "suffix": ""
+        },
+        {
+          "first": "Ondřej",
+          "middle": [],
+          "last": "Chum",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Learning Transferable Visual Models From Natural Language Supervision",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Jong",
+          "middle": [
+            "Wook"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Hallacy",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Goh",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Hierarchical textconditional image generation with clip latents",
+      "authors": [
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Nichol",
+          "suffix": ""
+        },
+        {
+          "first": "Casey",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Dreambooth: Fine tuning text-to-image diffusion models for subject-driven generation",
+      "authors": [
+        {
+          "first": "Nataniel",
+          "middle": [],
+          "last": "Ruiz",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Varun",
+          "middle": [],
+          "last": "Jampani",
+          "suffix": ""
+        },
+        {
+          "first": "Yael",
+          "middle": [],
+          "last": "Pritch",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Rubinstein",
+          "suffix": ""
+        },
+        {
+          "first": "Kfir",
+          "middle": [],
+          "last": "Aberman",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Two Effects, One Trigger: On the Modality Gap, Object Bias, and Information Imbalance in Contrastive Vision-Language Representation Learning",
+      "authors": [
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Schrodi",
+          "suffix": ""
+        },
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "David T Hoffmann",
+          "suffix": ""
+        },
+        {
+          "first": "Volker",
+          "middle": [],
+          "last": "Argus",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Brox",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Laion-5b: An open large-scale dataset for training next generation image-text models",
+      "authors": [
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Schuhmann",
+          "suffix": ""
+        },
+        {
+          "first": "Romain",
+          "middle": [],
+          "last": "Beaumont",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Vencu",
+          "suffix": ""
+        },
+        {
+          "first": "Cade",
+          "middle": [],
+          "last": "Gordon",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Wightman",
+          "suffix": ""
+        },
+        {
+          "first": "Mehdi",
+          "middle": [],
+          "last": "Cherti",
+          "suffix": ""
+        },
+        {
+          "first": "Theo",
+          "middle": [],
+          "last": "Coombes",
+          "suffix": ""
+        },
+        {
+          "first": "Aarush",
+          "middle": [],
+          "last": "Katta",
+          "suffix": ""
+        },
+        {
+          "first": "Clayton",
+          "middle": [],
+          "last": "Mullis",
+          "suffix": ""
+        },
+        {
+          "first": "Mitchell",
+          "middle": [],
+          "last": "Wortsman",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Conceptual captions: A cleaned, hypernymed, image alt-text dataset for automatic image captioning",
+      "authors": [
+        {
+          "first": "Piyush",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "Nan",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Goodman",
+          "suffix": ""
+        },
+        {
+          "first": "Radu",
+          "middle": [],
+          "last": "Soricut",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Towards Understanding the Modality Gap in CLIP",
+      "authors": [
+        {
+          "first": "Peiyang",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Mårten",
+          "middle": [],
+          "last": "Michael C Welle",
+          "suffix": ""
+        },
+        {
+          "first": "Danica",
+          "middle": [],
+          "last": "Björkman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kragic",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICLR 2023 Workshop on Multimodal Representation Learning: Perks and Pitfalls"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Improved deep metric learning with multi-class n-pair loss objective",
+      "authors": [
+        {
+          "first": "Kihyuk",
+          "middle": [],
+          "last": "Sohn",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Clip models are few-shot learners: Empirical studies on vqa and visual entailment",
+      "authors": [
+        {
+          "first": "Haoyu",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Wei-Nan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Furu",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Ucf101: A dataset of 101 human actions classes from videos in the wild",
+      "authors": [
+        {
+          "first": "Khurram",
+          "middle": [],
+          "last": "Soomro",
+          "suffix": ""
+        },
+        {
+          "first": "Mubarak",
+          "middle": [],
+          "last": "Amir Roshan Zamir",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Shah",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "SuS-X: Training-Free Name-Only Transfer of Vision-Language Models",
+      "authors": [
+        {
+          "first": "Vishaal",
+          "middle": [],
+          "last": "Udandarao",
+          "suffix": ""
+        },
+        {
+          "first": "Ankush",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Albanie",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "The caltech-ucsd birds-200-2011 dataset",
+      "authors": [
+        {
+          "first": "Catherine",
+          "middle": [],
+          "last": "Wah",
+          "suffix": ""
+        },
+        {
+          "first": "Steve",
+          "middle": [],
+          "last": "Branson",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Welinder",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Perona",
+          "suffix": ""
+        },
+        {
+          "first": "Serge",
+          "middle": [],
+          "last": "Belongie",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Leveraging Cross-Modal Neighbor Representation for Improved CLIP Classification",
+      "authors": [
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Yi",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Han-Jia",
+          "middle": [],
+          "last": "De-Chuan Zhan",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Coca: Contrastive captioners are image-text foundation models",
+      "authors": [
+        {
+          "first": "Jiahui",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Zirui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Vijay",
+          "middle": [],
+          "last": "Vasudevan",
+          "suffix": ""
+        },
+        {
+          "first": "Legg",
+          "middle": [],
+          "last": "Yeung",
+          "suffix": ""
+        },
+        {
+          "first": "Mojtaba",
+          "middle": [],
+          "last": "Seyedhosseini",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghui",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Transactions on Machine Learning Research"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Lit: Zero-shot transfer with locked-image text tuning",
+      "authors": [
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Xiao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Basil",
+          "middle": [],
+          "last": "Mustafa",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Steiner",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Keysers",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Sigmoid loss for language image pre-training",
+      "authors": [
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Basil",
+          "middle": [],
+          "last": "Mustafa",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Diagnosing and Rectifying Vision Models using Language",
+      "authors": [
+        {
+          "first": "Yuhui",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [
+            "Z"
+          ],
+          "last": "Haochen",
+          "suffix": ""
+        },
+        {
+          "first": "Shih-Cheng",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Kuan-Chieh",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "Serena",
+          "middle": [],
+          "last": "Yeung",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Avid: Any-length video inpainting with diffusion model",
+      "authors": [
+        {
+          "first": "Zhixing",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Bichen",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoyan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yaqiao",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Luxin",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yinan",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Vajda",
+          "suffix": ""
+        },
+        {
+          "first": "Dimitris",
+          "middle": [],
+          "last": "Metaxas",
+          "suffix": ""
+        },
+        {
+          "first": "Licheng",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Extract free dense labels from clip",
+      "authors": [
+        {
+          "first": "Chong",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [
+            "Change"
+          ],
+          "last": "Loy",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "European Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Learning to prompt for visionlanguage models",
+      "authors": [
+        {
+          "first": "Kaiyang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Jingkang",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [
+            "Change"
+          ],
+          "last": "Loy",
+          "suffix": ""
+        },
+        {
+          "first": "Ziwei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Journal of Computer Vision"
+    }
+  ]
+}

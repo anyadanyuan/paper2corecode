@@ -1,0 +1,3108 @@
+{
+  "paper_id": "BI-DiffSR",
+  "title": "Binarized Diffusion Model for Image Super-Resolution",
+  "authors": [
+    {
+      "first": "Zheng",
+      "middle": [],
+      "last": "Chen",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Shanghai Jiao Tong University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Haotong",
+      "middle": [],
+      "last": "Qin",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zürich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yong",
+      "middle": [],
+      "last": "Guo",
+      "affiliation": {}
+    },
+    {
+      "first": "Xiongfei",
+      "middle": [],
+      "last": "Su",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Westlake University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Xin",
+      "middle": [],
+      "last": "Yuan",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Westlake University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Linghe",
+      "middle": [],
+      "last": "Kong",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Shanghai Jiao Tong University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yulun",
+      "middle": [],
+      "last": "Zhang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Shanghai Jiao Tong University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Advanced diffusion models (DMs) perform impressively in image super-resolution (SR), but the high memory and computational costs hinder their deployment. Binarization, an ultra-compression algorithm, offers the potential for effectively accelerating DMs. Nonetheless, due to the model structure and the multi-step iterative attribute of DMs, existing binarization methods result in significant performance degradation. In this paper, we introduce a novel binarized diffusion model, BI-DiffSR, for image SR. First, for the model structure, we design a UNet architecture optimized for binarization. We propose the consistent-pixel-downsample (CP-Down) and consistent-pixel-upsample (CP-Up) to maintain dimension consistent and facilitate the full-precision information transfer. Meanwhile, we design the channel-shuffle-fusion (CS-Fusion) to enhance feature fusion in skip connection. Second, for the activation difference across timestep, we design the timestep-aware redistribution (TaR) and activation function (TaA). The TaR and TaA dynamically adjust the distribution of activations based on different timesteps, improving the flexibility and representation alability of the binarized module. Comprehensive experiments demonstrate that our BI-DiffSR outperforms existing binarization methods. Code is released at: https://github.com/zhengchen1999/BI-DiffSR.",
+  "body": {
+    "1_Introduction": "Image super-resolution (SR) is a fundamental task in low-level vision and image processing. It aims to reconstruct high-resolution (HR) images from low-resolution (LR) counterparts. Currently, the mainstream methods for this task are deep neural networks, which employ learning-based techniques to map LR images to HR images [10, 70, 31, 54, 6, 68] . Among these methods, generative models [62, 9, 44] have garnered widespread attention for their ability to restore more realism results.\nEspecially, the diffusion model (DM) [16, 58, 52] , a newly proposed generative model, exhibits impressive performance. With its superior generation quality and more stable training, diffusion model is widely used in various image tasks, including image SR [54, 63] . Specifically, the diffusion model transforms a standard Gaussian distribution into a high-quality image through a stochastic iterative denoising process. In image SR, it further constrains the generation scope by conditioning on the LR image to produce the targeted HR image.\nHowever, to produce high-quality results, diffusion models require thousands of iterative steps, leading to slow inference processes and high computational costs. Some methods [58, 40, 37] implement faster sampling strategies via learning sample trajectories, effectively reducing the number of iterations to tens. Yet, a single inference step still demands substantial memory usage and floatingpoint computations, especially for SR tasks involving high-resolution images. Meanwhile, most edge devices (e.g., mobile and IoT devices), have limited storage and computational resources. This hampers the deployment of diffusion models on these platforms and limits their application. Therefore, it is essential to compress diffusion models to accelerate inference speed and reduce computational costs while maintaining model performance. Urban100: img_074 HR Bicubic SR3 (FP) [54] BNN [19] DoReFa [71] XNOR [50] IRNet [48] ReActNet [38] BBCU [66] BI-DiffSR (ours)\nFigure 1 : Visual comparison (×4) of binarization methods. Some methods (e.g., BNN [19] ) cannot work on diffusion models. Several methods (e.g., BBCU [66] ) suffer from blurring and artifacts. In contrast, our proposed BI-DiffSR outperforms other methods with accurate results.\nCommon compression approaches include pruning [11] , distillation [61] , and quantization [45, 66, 26] . Among these, 1-bit quantization (i.e., binarization) stands out for its effectiveness. As the most aggressive form of bit-width reduction, binarization significantly reduces memory and computational costs by quantizing the weights and activations of full-precision (32-bit) models to 1-bit.\nNonetheless, existing binarization research primarily deals with higher-level tasks (e.g., classification) and end-to-end models [49, 19, 39] . Applying existing binarization methods directly to current diffusion model architectures results in a significant performance drop. This is primarily due to two aspects: (1) Model Structure. Diffusion models typically apply the UNet architecture [53] for noise estimation, which is not easy to binarize directly. I. Dimension Mismatch: The identity shortcut is crucial for the binarized SR model, since it facilitates the transfer of full-precision (FP) information, compensating for the binarized model [66] . However, in UNet, the feature dimensions change since downsampling/upsampling. The dimension mismatch prevents the usage of shortcuts, cutting off the full-precision propagation. II. Fusion Difficulty: The UNet structure uses skip connections to transfer information from encoder to decoder. However, the typical fusion method, concatenation, leads to the dimension mismatch. Alternatively, other methods (e.g., addition) also struggle to achieve effective fusion due to significant differences in value ranges between encoder and decoder features.\n(2) Activation Distribution. Due to the multi-step iterative nature of diffusion models, the activation distribution dramatically changes with timesteps. Furthermore, the activation binarization will even amplify activation differences [50] . The difference increases the learning challenges for binarized modules (e.g., binarized convolution), thereby hindering the effective representation of features. Consequently, the SR performance of the binarized diffusion model is limited.\nBased on the above analysis, we propose a novel binarized diffusion model, BI-DiffSR, to achieve effective image SR. Our design comprises two main aspects: structure and activation. (1) Structure. We develop a simple yet effective convolutional UNet architecture, which is suitable for binarization.",
+    "2.1_Image_Super-Resolution": "Since the advent of SRCNN [10] , deep neural networks have gradually become the mainstream for image SR. Numerous architectures [33, 70, 46, 31, 5] are designed to advance reconstruction accuracy. Concurrently, generative methods are widely applied to improve the quality of restored image details. This includes autoregressive model [23, 9] , normalizing flow [51, 41, 32] , and generative adversarial network (GAN) [13, 24] . For instance, SRFlow [41] utilizes normalizing flows to transform a Gaussian distribution into the HR image space. Meanwhile, SRGAN [24] employs GAN as supervision loss and combines it with perceptual loss to produce visually pleasing results. Subsequent methods [62, 4] further refine the network and loss to yield more natural results. Recently, the diffusion model (DM) [16, 8] has been introduced into SR, displaying impressive performance, especially regarding perception. Thereby, DM has been attracting widespread attention [54, 25, 65] .",
+    "2.2_Diffusion_Model": "Through the Markov chain, the diffusion model (DM) generates images from the Gaussian distribution [16] . It has demonstrated exceptional performance in various tasks [3, 17, 52, 7, 14, 30, 29, 36, 35, 28, 15] . Naturally, DM has also been extensively researched in the field of image SR [54, 21, 63, 34, 65] . For instance, SR3 [54] achieves conditional diffusion by concatenating the resized LR image with the noise image as the input of the noise estimation network. Meanwhile, some methods, e.g., DDNM [63] , utilize an unconditional pre-trained diffusion model as a prior for zeroshot SR. Additionally, some approaches [34, 65] employ text-to-image diffusion models to achieve realistic and controllable SR. Despite promising results, these methods require hundreds or thousands of sampling steps to generate HR images. Although some acceleration algorithms [58, 37, 28] reduce the inference steps to tens, each denoising step still demands substantial resources. The high memory and computational costs hinder the practical application of DMs on resource-limited platforms (e.g., mobile devices). To address this issue, we design a practical binarized SR diffusion model.",
+    "2.3_Binarization": "Binarization is a popular model compression approach [49] . As an extreme case of quantization, it reduces the weights and activations of a full-precision neural network to 1-bit. This significantly decreases the model size and computational complexity, making it widely used in both high-level [19, 39, 48, 38, 67] and low-level [20, 66, 66, 69] vision tasks. For example, BNN [19] directly binarizes weights and activations during forward and backward processes. IRNet [48] retains information accurately through the proposed information retention network. ReActNet [38] proposes the RSign and RPReLU to enable explicit distribution reshape and shift of activations. Meanwhile, in the image SR field, BBCU [66] introduces a meticulously designed basic binary conv unit, which removes batch normalization (BN) in the binarized model. However, for DM, though some methods realize low-bit (e.g., 4 or 8) quantization [55, 26, 27] , implementing binarization remains challenging. Due to the structure of the noise estimation network and the multi-step iterative attribute, existing binarization methods often result in significant SR performance degradation.",
+    "3_Method": {
+      "3.1_Model_Structure": "Overall. We employ a convolutional UNet [53] as the noise estimation network. Details of the diffusion model for SR are provided in the supplementary materials. As the common choice within DMs, using UNet as the backbone for binarization offers generalizability. Moreover, for binarized models, the design should be compact and well-defined. Compared to the non-local self-attention operations, convolution is simpler and easier to implement. Our architecture is shown in Fig. 2a , featuring an encoder-bottleneck-decoder (E-B-D) design.\nGroup Norm Swish BI-Conv Block Group Norm Swish BI-Conv Block ! !\" Linear Reshape Linear Linear Swish \" !\" # Positional Encoding Concatenation\nC Element-wise Addition (b) ResBlock (c) TE CP-Up Res Block Res Block",
+      "3.2_Activation_Distribution": "Basic Binarized Convolutional Block. We first introduce the basic binarized module, as illustrated in Fig. 5a . For the full-precision activation x f ∈R H×W ×C , we initially shift its distribution and binarize the shifted activation to 1-bit activations with sign function Sign(•). The process is:\nEQUATION\nwhere b∈R C is a learnable parameter; x b ∈R H×W ×C is the 1-bit activation. Meanwhile, for the binarized convolution, the full-precision weight w f ∈R Cout×Cin×K h ×Kw is also binarized to 1-bit weight w b ∈R Cout×Cin×K h ×Kw . To compensate for the differences between binary and full-precision weights, we scale w b using the mean absolute value of w f [50] . The total operation is:\nEQUATION\n)\nwhere n is the number of w f values. Subsequently, the floating-point matrix multiplication in full-precision convolution can be replaced by logical XNOR and bit-counting operations as:\nEQUATION\nwhere * means the convolutional operation; x b out ∈R H×W ×C is the output of 1-bit convolution. Then, we adjust x b out with the activation function RPReLU [38] , resulting in x b act ∈R H×W ×C . Finally, we combine x b act with full-precision activation x f via an identity shortcut to get the final output x out ∈R H×W ×C . Moreover, since the sign function Sign(•) is non-differentiable, we use the straight-through estimator (STE) [1] for backpropagation to train binarized models.",
+      "_text": "In this section, we introduce our proposed BI-DiffSR. First, we describe the structural designs suitable for binarization: consistent-pixel-downsample (CP-Down), consistent-pixel-upsample (CP-Up), and channel-shuffle-fusion module (CS-Fusion). The CP-Down and CP-Up achieve dimension adjustment and ensure the transfer of full-precision information. The CS-Fusion effectively integrates different features within the skip connection. Secondly, we present the dynamic designs tailored for varying activations: timestep-aware redistribution (TaR) and activation function (TaA). The TaR and TaA enhance the representational learning of the binarized modules across multiple timesteps."
+    },
+    "4.1_Experimental_Settings": "Data and Evaluation. We take DIV2K [59] and Flickr2K [33] as the training dataset. Meanwhile, we evaluate the models with four benchmark datasets: Set5 [2] , B100 [42] , Urban100 [18] , and Manga109 [43] . Experiments are conducted under two upscale factors: ×2 and ×4. The LR images are generated from HR images through bicubic downsampling degradation. We apply two distortionbased metrics, PSNR and SSIM [64] , which are calculated on the Y channel (i.e., luminance) of the YCbCr space. We also use the perceptual metrics: LPIPS [12] . Following previous work [66, 49] Implementation Details. For the noise estimation network, we set the encoder and decoder level to 4. In each level of the encoder, we use 2 Residual Blocks (ResBlocks), while in the decoder, we apply 3 ResBlocks. The number of channels C is set to 64. We set the number of bias and RPReLU in TaR and TaA as K=5. For the diffusion model, we set the total number of timesteps to T =2,000. During the inference phase, we employ the DDIM sampler with 50 timesteps.\nTraining Settings. We train models with the L 1 loss. We employ the Adam optimizer [22] with β 1 =0.9 and β 2 =0.99, and a learning rate of 1×10 -4 . The batch size is set to 16, with a total of 1,000K iterations. Input LR images are randomly cropped to size 64×64. Random rotations of 90 • , 180 • , and 270 • and horizontal flips are used for data augmentation. Our model is implemented based on PyTorch [47] with two Nvidia A100-80G GPUs.",
+    "4.2_Ablation_Study": "In this section, we conduct all experiments on the ×2 scale factor. We apply DIV2K [59] and Flickr2K [33] as the training dataset, and Manga109 [43] as the testing dataset. The training iterations are set to 500K. Other settings are the same as defined in Sec. 4.1. We test the computational complexity (i.e., OPs) of one single sampling step on the output size 3×256×256. Break Down. We first execute a break-down ablation on different components of our method. The results are listed in Tab. 1a. The baseline is established by using binarized convolution (BI-Conv) and Pixel-(Un)Shuffle for dimension scaling in the downsample, upsample, and fusion (skip connection) modules of the UNet. Meanwhile, the basic BI-Conv block (Fig. 5 ) is employed without the identity shortcut. The baseline performance is poor, with the PSNR of 27.66 dB. Then, we add identity shortcut, consistent-pixel-downsample (CP-Down) and upsample (CP-Up), channel-shuffle-fusion module (CS-Fusion), and timestep-aware redistribution (TaR) and activation function (TaA) in sequence. We can find that the performance gradually increases. Ultimately, the final model achieves gains of 5 dB in PSNR and 0.0580 in LPIPS, compared to the baseline.",
+    "4.3_Comparison_with_State-of-the-Art_Methods": "We compare our proposed BI-DiffSR with recent binarization methods, including BNN [19] , DoReFa [71] , XNOR [50] , IRNet [48] , ReActNet [38] , and BBCU [66] . To ensure a fair comparison, we set the parameters (Params) and complexity (OPs) of all binarization methods to be similar. We also compare our BI-DiffSR with the full-precision (FP) model, SR3 [54] . Quantitative Results. We provide the quantitative comparisons in Tab. 2. We test OPs of single-step sampling on the output size 3×256×256. Compared to other binarization methods, our BI-DiffSR achieves the best performance. Specifically, on Urban100 and Manga109 (×2), BI-DiffSR surpasses the second-best method, BBCU, with a PSNR gain of 0.92 and 1.11 dB, respectively. Moreover, compared to the full-precision model, SR3, our method achieves comparable or even better perceptual performance with only 8.3% Params and 20.8% OPs. For instance, BI-DiffSR achieves 93.6% LPIPS results of SR3 on Manga109. These results demonstrate the superiority of our method.\nVisual Results. We present visual comparisons (×4) in Fig. 8 . Previous binarization methods struggle to recover image details in challenging cases. In contrast, our method can restore clearer results with more texture details. Meanwhile, the difference between our BI-DiffSR and the full-precision model results is small. More visual results are provided in the supplementary material.",
+    "5_Conclusion": "In this paper, we propose the BI-DiffSR, a novel binarized diffusion model for image SR. Specifically, we first design the UNet structure suitable for binarization. To ensure dimension consistency and fullprecision information transfer, we design the consistent-pixel-downsample (CP-Down) and upsample (CP-Up). Meanwhile, we develop the channel-shuffle-fusion (CS-Fusion) to enhance information fusion within the skip connection. Furthermore, in response to the multi-step mechanism of diffusion models, we design the timestep-aware redistribution (TaR) and activation functions (TaA) to adapt to the varying activation distributions. The TaR and TaA enhance the representational capabilities of the binarized modules under multiple timesteps. Extensive experiments indicate that our method outperforms current binarization methods, and achieves comparable perceptual performance to the full-precision model, demonstrating substantial potential."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Estimating or propagating gradients through stochastic neurons for conditional computation",
+      "authors": [
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Léonard",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Low-complexity single-image super-resolution based on nonnegative neighbor embedding",
+      "authors": [
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Bevilacqua",
+          "suffix": ""
+        },
+        {
+          "first": "Aline",
+          "middle": [],
+          "last": "Roumy",
+          "suffix": ""
+        },
+        {
+          "first": "Christine",
+          "middle": [],
+          "last": "Guillemot",
+          "suffix": ""
+        },
+        {
+          "first": "Marie",
+          "middle": [
+            "Line"
+          ],
+          "last": "Alberi-Morel",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "BMVC"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Wavegrad: Estimating gradients for waveform generation",
+      "authors": [
+        {
+          "first": "Nanxin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Heiga",
+          "middle": [],
+          "last": "Zen",
+          "suffix": ""
+        },
+        {
+          "first": "Ron",
+          "middle": [
+            "J"
+          ],
+          "last": "Weiss",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Norouzi",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Hierarchical generative adversarial networks for single image super-resolution",
+      "authors": [
+        {
+          "first": "Weimin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yuqing",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Xianglong",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Dual aggregation transformer for image super-resolution",
+      "authors": [
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yulun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jinjin",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Linghe",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaokang",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Fisher",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Cross aggregation transformer for image restoration",
+      "authors": [
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yulun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jinjin",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Yongbing",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Linghe",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Hierarchical integration diffusion model for realistic image deblurring",
+      "authors": [
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yulun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ding",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "Jinjin",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Linghe",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Diffusion models in vision: A survey",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Florinel-Alin",
+          "suffix": ""
+        },
+        {
+          "first": "Vlad",
+          "middle": [],
+          "last": "Croitoru",
+          "suffix": ""
+        },
+        {
+          "first": "Radu",
+          "middle": [],
+          "last": "Hondru",
+          "suffix": ""
+        },
+        {
+          "first": "Tudor",
+          "middle": [],
+          "last": "Ionescu",
+          "suffix": ""
+        },
+        {
+          "first": "Mubarak",
+          "middle": [],
+          "last": "Shah",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "TPAMI"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Pixel recursive super resolution",
+      "authors": [
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Dahl",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Norouzi",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathon",
+          "middle": [],
+          "last": "Shlens",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Image super-resolution using deep convolutional networks",
+      "authors": [
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [
+            "Change"
+          ],
+          "last": "Loy",
+          "suffix": ""
+        },
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoou",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "TPAMI"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Structural pruning for diffusion models",
+      "authors": [
+        {
+          "first": "Gongfan",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyin",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Xinchao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Shift-tolerant perceptual similarity metric",
+      "authors": [
+        {
+          "first": "Abhijay",
+          "middle": [],
+          "last": "Ghildyal",
+          "suffix": ""
+        },
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Generative adversarial nets",
+      "authors": [
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "Jean",
+          "middle": [],
+          "last": "Pouget-Abadie",
+          "suffix": ""
+        },
+        {
+          "first": "Mehdi",
+          "middle": [],
+          "last": "Mirza",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Warde-Farley",
+          "suffix": ""
+        },
+        {
+          "first": "Sherjil",
+          "middle": [],
+          "last": "Ozair",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Reti-diff: Illumination degradation image restoration with retinex-based latent diffusion model",
+      "authors": [
+        {
+          "first": "Chunming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Chengyu",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Yulun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Longxiang",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Chenyu",
+          "middle": [],
+          "last": "You",
+          "suffix": ""
+        },
+        {
+          "first": "Fengyang",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenhua",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Xiu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Diffusion models in low-level vision: A survey",
+      "authors": [
+        {
+          "first": "Chunming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Yuqi",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Chengyu",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Fengyang",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Longxiang",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Yulun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Wangmeng",
+          "middle": [],
+          "last": "Zuo",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenhua",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Xiu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Denoising diffusion probabilistic models",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Ajay",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "St-p3: End-to-end vision-based autonomous driving via spatial-temporal feature learning",
+      "authors": [
+        {
+          "first": "Shengchao",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Penghao",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Hongyang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Junchi",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Dacheng",
+          "middle": [],
+          "last": "Tao",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Single image super-resolution from transformed self-exemplars",
+      "authors": [
+        {
+          "first": "Jia-Bin",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Abhishek",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "Narendra",
+          "middle": [],
+          "last": "Ahuja",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Binarized neural networks",
+      "authors": [
+        {
+          "first": "Itay",
+          "middle": [],
+          "last": "Hubara",
+          "suffix": ""
+        },
+        {
+          "first": "Matthieu",
+          "middle": [],
+          "last": "Courbariaux",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Soudry",
+          "suffix": ""
+        },
+        {
+          "first": "Ran",
+          "middle": [],
+          "last": "El-Yaniv",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Training binary neural network without batch normalization for image super-resolution",
+      "authors": [
+        {
+          "first": "Xinrui",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Nannan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jingwei",
+          "middle": [],
+          "last": "Xin",
+          "suffix": ""
+        },
+        {
+          "first": "Keyu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinbo",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "AAAI"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Jpeg artifact correction using denoising diffusion restoration models",
+      "authors": [
+        {
+          "first": "Bahjat",
+          "middle": [],
+          "last": "Kawar",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Elad",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "NeurIPS Workshop"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Adam: A method for stochastic optimization",
+      "authors": [
+        {
+          "first": "Diederik",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "Jimmy",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Auto-encoding variational bayes",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Diederik",
+          "suffix": ""
+        },
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Photo-realistic single image super-resolution using a generative adversarial network",
+      "authors": [
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Ledig",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Theis",
+          "suffix": ""
+        },
+        {
+          "first": "Ferenc",
+          "middle": [],
+          "last": "Huszár",
+          "suffix": ""
+        },
+        {
+          "first": "Jose",
+          "middle": [],
+          "last": "Caballero",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Cunningham",
+          "suffix": ""
+        },
+        {
+          "first": "Alejandro",
+          "middle": [],
+          "last": "Acosta",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Aitken",
+          "suffix": ""
+        },
+        {
+          "first": "Alykhan",
+          "middle": [],
+          "last": "Tejani",
+          "suffix": ""
+        },
+        {
+          "first": "Johannes",
+          "middle": [],
+          "last": "Totz",
+          "suffix": ""
+        },
+        {
+          "first": "Zehan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenzhe",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Srdiff: Single image super-resolution with diffusion probabilistic models",
+      "authors": [
+        {
+          "first": "Haoying",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yifan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Meng",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Shiqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Huajun",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Zhihai",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yueting",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Neurocomputing"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Q-diffusion: Quantizing diffusion models",
+      "authors": [
+        {
+          "first": "Xiuyu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yijiang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Lian",
+          "suffix": ""
+        },
+        {
+          "first": "Huanrui",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhen",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Kang",
+          "suffix": ""
+        },
+        {
+          "first": "Shanghang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Kurt",
+          "middle": [],
+          "last": "Keutzer",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Q-dm: An efficient low-bit quantized diffusion model",
+      "authors": [
+        {
+          "first": "Yanjing",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Sheng",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Xianbin",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Xiao",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Baochang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Snapfusion: Text-to-image diffusion model on mobile devices within two seconds",
+      "authors": [
+        {
+          "first": "Yanyu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Huan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Qing",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Ju",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Pavlo",
+          "middle": [],
+          "last": "Chemerys",
+          "suffix": ""
+        },
+        {
+          "first": "Yun",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Yanzhi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Tulyakov",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Mpgraf: a modular and pre-trained graphformer for learning to rank at web-scale",
+      "authors": [
+        {
+          "first": "Yuchen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Haoyi",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Linghe",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Zeyi",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Hongyang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Shuaiqiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Dawei",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICDM"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Mhrr: Moocs recommender service with meta hierarchical reinforced ranking",
+      "authors": [
+        {
+          "first": "Yuchen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Haoyi",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Linghe",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Fanqin",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Guihai",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Minglu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "TSC"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Swinir: Image restoration using swin transformer",
+      "authors": [
+        {
+          "first": "Jingyun",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiezhang",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Guolei",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Luc",
+          "middle": [],
+          "last": "Van Gool",
+          "suffix": ""
+        },
+        {
+          "first": "Radu",
+          "middle": [],
+          "last": "Timofte",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICCVW"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Hierarchical conditional flow: A unified framework for image super-resolution and image rescaling",
+      "authors": [
+        {
+          "first": "Jingyun",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Lugmayr",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Danelljan",
+          "suffix": ""
+        },
+        {
+          "first": "Luc",
+          "middle": [],
+          "last": "Van Gool",
+          "suffix": ""
+        },
+        {
+          "first": "Radu",
+          "middle": [],
+          "last": "Timofte",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Enhanced deep residual networks for single image super-resolution",
+      "authors": [
+        {
+          "first": "Bee",
+          "middle": [],
+          "last": "Lim",
+          "suffix": ""
+        },
+        {
+          "first": "Sanghyun",
+          "middle": [],
+          "last": "Son",
+          "suffix": ""
+        },
+        {
+          "first": "Heewon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Seungjun",
+          "middle": [],
+          "last": "Nah",
+          "suffix": ""
+        },
+        {
+          "first": "Kyoung",
+          "middle": [],
+          "last": "Mu",
+          "suffix": ""
+        },
+        {
+          "first": "Lee",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "CVPRW"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Diffbir: Towards blind image restoration with generative diffusion prior",
+      "authors": [
+        {
+          "first": "Xinqi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Jingwen",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Ziyan",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaoyang",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Fei",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Wanli",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        },
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Intelligent grimm-open-ended visual storytelling via latent diffusion models",
+      "authors": [
+        {
+          "first": "Chang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Haoning",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yujie",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoyun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yanfeng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Weidi",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Intelligent grimm-open-ended visual storytelling via latent diffusion models",
+      "authors": [
+        {
+          "first": "Chang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Haoning",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yujie",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoyun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Weidi",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Pseudo numerical methods for diffusion models on manifolds",
+      "authors": [
+        {
+          "first": "Luping",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Zhijie",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhou",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Reactnet: Towards precise binary neural network with generalized activation functions",
+      "authors": [
+        {
+          "first": "Zechun",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiqiang",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Marios",
+          "middle": [],
+          "last": "Savvides",
+          "suffix": ""
+        },
+        {
+          "first": "Kwang-Ting",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Bi-real net: Enhancing the performance of 1-bit cnns with improved representational capability and advanced training algorithm",
+      "authors": [
+        {
+          "first": "Zechun",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Baoyuan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Wenhan",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Kwang-Ting",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Dpm-solver: A fast ode solver for diffusion probabilistic model sampling in around 10 steps",
+      "authors": [
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhao",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Jianfei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Chongxuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Srflow: Learning the superresolution space with normalizing flow",
+      "authors": [
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Lugmayr",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Danelljan",
+          "suffix": ""
+        },
+        {
+          "first": "Luc",
+          "middle": [],
+          "last": "Van Gool",
+          "suffix": ""
+        },
+        {
+          "first": "Radu",
+          "middle": [],
+          "last": "Timofte",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "A database of human segmented natural images and its application to evaluating segmentation algorithms and measuring ecological statistics",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "Charless",
+          "middle": [],
+          "last": "Fowlkes",
+          "suffix": ""
+        },
+        {
+          "first": "Doron",
+          "middle": [],
+          "last": "Tal",
+          "suffix": ""
+        },
+        {
+          "first": "Jitendra",
+          "middle": [],
+          "last": "Malik",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Sketch-based manga retrieval using manga109 dataset",
+      "authors": [
+        {
+          "first": "Yusuke",
+          "middle": [],
+          "last": "Matsui",
+          "suffix": ""
+        },
+        {
+          "first": "Kota",
+          "middle": [],
+          "last": "Ito",
+          "suffix": ""
+        },
+        {
+          "first": "Yuji",
+          "middle": [],
+          "last": "Aramaki",
+          "suffix": ""
+        },
+        {
+          "first": "Azuma",
+          "middle": [],
+          "last": "Fujimoto",
+          "suffix": ""
+        },
+        {
+          "first": "Toru",
+          "middle": [],
+          "last": "Ogawa",
+          "suffix": ""
+        },
+        {
+          "first": "Toshihiko",
+          "middle": [],
+          "last": "Yamasaki",
+          "suffix": ""
+        },
+        {
+          "first": "Kiyoharu",
+          "middle": [],
+          "last": "Aizawa",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "MTAP"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Pulse: Self-supervised photo upsampling via latent space exploration of generative models",
+      "authors": [
+        {
+          "first": "Sachit",
+          "middle": [],
+          "last": "Menon",
+          "suffix": ""
+        },
+        {
+          "first": "Alexandru",
+          "middle": [],
+          "last": "Damian",
+          "suffix": ""
+        },
+        {
+          "first": "Shijia",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Nikhil",
+          "middle": [],
+          "last": "Ravi",
+          "suffix": ""
+        },
+        {
+          "first": "Cynthia",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "A white paper on neural network quantization",
+      "authors": [
+        {
+          "first": "Markus",
+          "middle": [],
+          "last": "Nagel",
+          "suffix": ""
+        },
+        {
+          "first": "Marios",
+          "middle": [],
+          "last": "Fournarakis",
+          "suffix": ""
+        },
+        {
+          "first": "Rana",
+          "middle": [],
+          "last": "Ali Amjad",
+          "suffix": ""
+        },
+        {
+          "first": "Yelysei",
+          "middle": [],
+          "last": "Bondarenko",
+          "suffix": ""
+        },
+        {
+          "first": "Mart",
+          "middle": [],
+          "last": "Van Baalen",
+          "suffix": ""
+        },
+        {
+          "first": "Tijmen",
+          "middle": [],
+          "last": "Blankevoort",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Single image super-resolution via a holistic attention network",
+      "authors": [
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Niu",
+          "suffix": ""
+        },
+        {
+          "first": "Weilei",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "Wenqi",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangde",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Lianping",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuzhen",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Kaihao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaochun",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Haifeng",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Pytorch: An imperative style, high-performance deep learning library",
+      "authors": [
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Paszke",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Gross",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Lerer",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "Gregory",
+          "middle": [],
+          "last": "Chanan",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Killeen",
+          "suffix": ""
+        },
+        {
+          "first": "Zeming",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Natalia",
+          "middle": [],
+          "last": "Gimelshein",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Antiga",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Forward and backward information retention for accurate binary neural networks",
+      "authors": [
+        {
+          "first": "Ruihao",
+          "middle": [],
+          "last": "Haotong Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Xianglong",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Mingzhu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Ziran",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Fengwei",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Jingkuan",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Bibench: Benchmarking and analyzing network binarization",
+      "authors": [
+        {
+          "first": "Mingyuan",
+          "middle": [],
+          "last": "Haotong Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Yifu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Aoyu",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Zhongang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Ziwei",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Fisher",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xianglong",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Xnor-net: Imagenet classification using binary convolutional neural networks",
+      "authors": [
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Rastegari",
+          "suffix": ""
+        },
+        {
+          "first": "Vicente",
+          "middle": [],
+          "last": "Ordonez",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Redmon",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Variational inference with normalizing flows",
+      "authors": [
+        {
+          "first": "Danilo",
+          "middle": [],
+          "last": "Rezende",
+          "suffix": ""
+        },
+        {
+          "first": "Shakir",
+          "middle": [],
+          "last": "Mohamed",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "High-resolution image synthesis with latent diffusion models",
+      "authors": [
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "Dominik",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "Björn",
+          "middle": [],
+          "last": "Ommer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "U-net: Convolutional networks for biomedical image segmentation",
+      "authors": [
+        {
+          "first": "Olaf",
+          "middle": [],
+          "last": "Ronneberger",
+          "suffix": ""
+        },
+        {
+          "first": "Philipp",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Brox",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "MICCAI"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Image super-resolution via iterative refinement",
+      "authors": [
+        {
+          "first": "Chitwan",
+          "middle": [],
+          "last": "Saharia",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "J"
+          ],
+          "last": "Fleet",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Norouzi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "TPAMI"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Post-training quantization on diffusion models",
+      "authors": [
+        {
+          "first": "Yuzhang",
+          "middle": [],
+          "last": "Shang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhihang",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Bingzhe",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yan",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Outrageously large neural networks: The sparsely-gated mixture-of-experts layer",
+      "authors": [
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Azalia",
+          "middle": [],
+          "last": "Mirhoseini",
+          "suffix": ""
+        },
+        {
+          "first": "Krzysztof",
+          "middle": [],
+          "last": "Maziarz",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Davis",
+          "suffix": ""
+        },
+        {
+          "first": "Quoc",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Dean",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Real-time single image and video super-resolution using an efficient sub-pixel convolutional neural network",
+      "authors": [
+        {
+          "first": "Wenzhe",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Jose",
+          "middle": [],
+          "last": "Caballero",
+          "suffix": ""
+        },
+        {
+          "first": "Ferenc",
+          "middle": [],
+          "last": "Huszár",
+          "suffix": ""
+        },
+        {
+          "first": "Johannes",
+          "middle": [],
+          "last": "Totz",
+          "suffix": ""
+        },
+        {
+          "first": "Rob",
+          "middle": [],
+          "last": "Andrew P Aitken",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Bishop",
+          "suffix": ""
+        },
+        {
+          "first": "Zehan",
+          "middle": [],
+          "last": "Rueckert",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Denoising diffusion implicit models",
+      "authors": [
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Chenlin",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Ntire 2017 challenge on single image super-resolution: Methods and results",
+      "authors": [
+        {
+          "first": "Radu",
+          "middle": [],
+          "last": "Timofte",
+          "suffix": ""
+        },
+        {
+          "first": "Eirikur",
+          "middle": [],
+          "last": "Agustsson",
+          "suffix": ""
+        },
+        {
+          "first": "Luc",
+          "middle": [],
+          "last": "Van Gool",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Hsuan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Bee",
+          "middle": [],
+          "last": "Lim",
+          "suffix": ""
+        },
+        {
+          "first": "Sanghyun",
+          "middle": [],
+          "last": "Son",
+          "suffix": ""
+        },
+        {
+          "first": "Heewon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Seungjun",
+          "middle": [],
+          "last": "Nah",
+          "suffix": ""
+        },
+        {
+          "first": "Kyoung",
+          "middle": [],
+          "last": "Mu Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "CVPRW"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Niki",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Llion",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Łukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Illia",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "What makes a\" good\" data augmentation in knowledge distillation-a statistical perspective",
+      "authors": [
+        {
+          "first": "Huan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Suhas",
+          "middle": [],
+          "last": "Lohit",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "N"
+          ],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Yun",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Esrgan: Enhanced super-resolution generative adversarial networks",
+      "authors": [
+        {
+          "first": "Xintao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Ke",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Shixiang",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Jinjin",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Yihao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [
+            "Change"
+          ],
+          "last": "Loy",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "ECCVW"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Zero-shot image restoration using denoising diffusion null-space model",
+      "authors": [
+        {
+          "first": "Yinhuai",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiwen",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Image quality assessment: from error visibility to structural similarity",
+      "authors": [
+        {
+          "first": "Zhou",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [
+            "C"
+          ],
+          "last": "Bovik",
+          "suffix": ""
+        },
+        {
+          "first": "Hamid",
+          "middle": [
+            "R"
+          ],
+          "last": "Sheikh",
+          "suffix": ""
+        },
+        {
+          "first": "Eero",
+          "middle": [
+            "P"
+          ],
+          "last": "Simoncelli",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": "TIP"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Seesr: Towards semantics-aware real-world image super-resolution",
+      "authors": [
+        {
+          "first": "Rongyuan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Lingchen",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengqiang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Basic binary convolution unit for binarized image restoration network",
+      "authors": [
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "Yulun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yitong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yapeng",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "Wenming",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Radu",
+          "middle": [],
+          "last": "Timofte",
+          "suffix": ""
+        },
+        {
+          "first": "Luc",
+          "middle": [],
+          "last": "Van Gool",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Learning frequency domain approximation for binary neural networks",
+      "authors": [
+        {
+          "first": "Yixing",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Chang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Yehui",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Chunjing",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Yunhe",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF67",
+      "title": "See more details: Efficient image super-resolution by experts mining",
+      "authors": [
+        {
+          "first": "Eduard",
+          "middle": [],
+          "last": "Zamfir",
+          "suffix": ""
+        },
+        {
+          "first": "Zongwei",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Nancy",
+          "middle": [],
+          "last": "Mehta",
+          "suffix": ""
+        },
+        {
+          "first": "Yulun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Radu",
+          "middle": [],
+          "last": "Timofte",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Flexible residual binarization for image super-resolution",
+      "authors": [
+        {
+          "first": "Yulun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Haotong",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Zixiang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Xianglong",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Danelljan",
+          "suffix": ""
+        },
+        {
+          "first": "Fisher",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Residual dense network for image super-resolution",
+      "authors": [
+        {
+          "first": "Yulun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yapeng",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Bineng",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Yun",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Dorefa-net: Training low bitwidth convolutional neural networks with low bitwidth gradients",
+      "authors": [
+        {
+          "first": "Shuchang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxin",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Zekun",
+          "middle": [],
+          "last": "Ni",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyu",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "He",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "Yuheng",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "ICLR"
+    }
+  ]
+}

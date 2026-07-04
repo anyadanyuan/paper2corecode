@@ -1,0 +1,2119 @@
+{
+  "paper_id": "INTR",
+  "title": "A SIMPLE INTERPRETABLE TRANSFORMER FOR FINE-GRAINED IMAGE CLASSIFICATION AND ANALYSIS",
+  "authors": [
+    {
+      "first": "Dipanjyoti",
+      "middle": [],
+      "last": "Paul",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Ohio State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Arpita",
+      "middle": [],
+      "last": "Chowdhury",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Ohio State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Xinqi",
+      "middle": [],
+      "last": "Xiong",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Ohio State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Feng-Ju",
+      "middle": [],
+      "last": "Chang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Amazon Alexa",
+        "location": {}
+      }
+    },
+    {
+      "first": "David",
+      "middle": [],
+      "last": "Carlyn",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Ohio State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Samuel",
+      "middle": [],
+      "last": "Stevens",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Ohio State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Kaiya",
+      "middle": [
+        "L"
+      ],
+      "last": "Provost",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Ohio State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Anuj",
+      "middle": [],
+      "last": "Karpatne",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Virginia Tech",
+        "location": {}
+      }
+    },
+    {
+      "first": "Bryan",
+      "middle": [],
+      "last": "Carstens",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Ohio State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Daniel",
+      "middle": [],
+      "last": "Rubenstein",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Princeton University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Charles",
+      "middle": [],
+      "last": "Stewart",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Rensselaer Polytechnic Institute",
+        "location": {}
+      }
+    },
+    {
+      "first": "Tanya",
+      "middle": [],
+      "last": "Berger-Wolf",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Ohio State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yu",
+      "middle": [],
+      "last": "Su",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Ohio State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Wei-Lun",
+      "middle": [],
+      "last": "Chao",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "The Ohio State University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "We present a novel usage of Transformers to make image classification interpretable. Unlike mainstream classifiers that wait until the last fully connected layer to incorporate class information to make predictions, we investigate a proactive approach, asking each class to search for itself in an image. We realize this idea via a Transformer encoder-decoder inspired by DEtection TRansformer (DETR). We learn \"class-specific\" queries (one for each class) as input to the decoder, enabling each class to localize its patterns in an image via cross-attention. We name our approach INterpretable TRansformer (INTR), which is fairly easy to implement and exhibits several compelling properties. We show that INTR intrinsically encourages each class to attend distinctively; the cross-attention weights thus provide a faithful interpretation of the prediction. Interestingly, via \"multi-head\" cross-attention, INTR could identify different \"attributes\" of a class, making it particularly suitable for fine-grained classification and analysis, which we demonstrate on eight datasets.",
+  "body": {
+    "1_INTRODUCTION": "Mainstream neural networks for image classification (He et al., 2016; Simonyan & Zisserman, 2015; Krizhevsky et al., 2017; Huang et al., 2019; Szegedy et al., 2015; Dosovitskiy et al., 2021; Liu et al., 2021) typically allocate most of their model capacity to extract \"class-agnostic\" feature vectors from images, followed by a fully connected layer that compares image feature vectors with \"class-specific\" vectors to make predictions. While these models have achieved groundbreaking accuracy, their model design cannot directly explain where a model looks for predicting a particular class.\nIn this paper, we investigate a proactive approach to classification, asking each class to look for itself in an image. We hypothesize that this \"class-specific\" search process would reveal where the model looks, offering a built-in interpretation of the prediction.\nAt first glance, implementing this idea may need a significant model architecture design and a complex training process. However, we show that a novel usage of the Transformer encoder-decoder (Vaswani et al., 2017) inspired by DEtection TRansformer (DETR) (Carion et al., 2020 ) can essentially realize this idea, making our model fairly easy to reproduce and extend.\nConcretely, the DETR encoder extracts patch-wise features from the image, and the decoder attends to them based on learnable queries. We propose to learn \"class-specific\" queries (one for each class) as input to the decoder, enabling the model to obtain \"class-specific\" image features via self-attention and cross-attention -self-attention encodes the contextual information among candidate classes, determining the patterns necessary to distinguish between classes; cross-attention then allows each class to look for the distinctive patterns in the image. The resulting \"class-specific\" image feature vectors (one for each class) are then compared with a shared \"class-agnostic\" vector to predict the label of the image. We name our model INterpretable TRansformer (INTR). Figure 2 illustrates the model architecture. In the training phase, we learn INTR by minimizing the cross-entropy loss. In the inference phase, INTR allows us to visualize the cross-attention maps triggered by different \"class-specific\" queries to understand why the model predicts or does not predict a particular class.\nOn the surface, INTR may fall into the debate of whether attention is interpretable (Jain & Wallace, 2019; Wiegreffe & Pinter, 2019; Bibal et al., 2022) . However, we mathematically show that INTR offers faithful attention to distinguish between classes. In short, INTR computes logits by performing inner products between class-specific feature vectors and the shared class-agnostic vector. To classify an image correctly, the ground-truth class must obtain distinctive class-specific image features to claim the highest logit against other classes, which is possible only through distinct cross-attention weights. Minimizing the training loss thus encourages each class-specific query to produce distinct cross-attention weights. Manipulating the cross-attention weights in inference, as done in adversarial attacks to attention-based interpretation (Serrano & Smith, 2019) , would alter the prediction notably.\nWe extensively analyze INTR, especially in cross-attention. We find that the \"multiple heads\" in cross-attention could learn to identify different \"attributes\" of a class and consistently localize them in images, making INTR particularly well-suited for fine-grained classification. We validate this on multiple datasets, including CUB-200-2011 (Wah et al., 2011) , Birds-525 (Piosenka, 2023) , Oxford Pet (Parkhi et al., 2012) , Stanford Dogs (Khosla et al., 2011) , Stanford Cars (Krause et al., 2013) , FGVC-Aircraft (Maji et al., 2013 ), iNaturalist-2021 (Van Horn et al., 2021) , and Cambridge butterfly (Montejo-Kovacevich et al., 2020) . Interestingly, by concentrating the decoder's input on visually similar classes (e.g., the mimicry in butterflies), INTR could attend to the nuances of patterns, even matching those found by biologists, suggesting its potential benefits to scientific discovery.\nIt is worth reiterating that INTR is built upon a widely-used Transformer encoder-decoder architecture and can be easily trained end-to-end. What makes it interpretable is the novel usage -incorporating class-specific information at the decoder's input rather than output. We view these as key strengths and contributions. They make INTR easily applicable, reproducible, and extendable.",
+    "2.1_WHAT_KIND_OF_INTERPRETATIONS_ARE_WE_LOOKING_FOR?": "As surveyed in (Zhang & Zhu, 2018; Burkart & Huber, 2021; Carvalho et al., 2019; Das & Rad, 2020; Buhrmester et al., 2021; Linardatos et al., 2020) , various ways exist to explain or interpret a model's prediction (see Appendix A for more details). Among them, the most popular is localizing where the model looks for predicting a particular class. We follow this notion and focus on fine-grained classification (e.g., bird and butterfly species). That is, not only do we want to localize the coarsegrained objects (e.g., birds and butterflies), but we also want to identify the \"attributes\" (e.g., wing patterns) that are useful to distinguish between fine-grained classes. We note that an attribute can be decomposed into \"object part\" (e.g., head, tail, wing, etc.) and \"property\" (e.g., patterns on the wings), in which the former is commonly shared across all classes (Wah et al., 2011) . We thus expect that our approach could identify the differences within a part between classes, not just localize parts.",
+    "2.2_BACKGROUND_AND_NOTATION": "We denote an image and its ground-truth label by I and y, respectively. To perform classification over C classes, mainstream neural networks learn a feature extractor f θ to obtain a feature map X = f θ (I) ∈ R D×H×W . Here, θ denotes the parameters; D denotes the number of channels; H and W denote the number of grids in the height and width dimensions. For instance, ResNet (He et al., 2016) realizes f θ by a convolutional neural network (ConvNet) with residual links; Vision Transformer (ViT) (Dosovitskiy et al., 2021) realizes it by a Transformer encoder. Normally, this feature map is reshaped and/or pooled into a feature vector denoted by x = Vect(X), which then undergoes inner products with C class-specific vectors {w c } C c=1 . The class with the largest inner product is outputted as the predicted label, ŷ = arg max c∈[C] w ⊤ c x.\n(1)",
+    "2.3_RELATED_WORK_ON_POST-HOC_EXPLANATION_AND_SELF-INTERPRETABLE_METHODS": "Since this classification process does not explicitly localize where the model looks to make predictions, the model is often considered a black box. To explain the prediction, a post-hoc mechanism is needed (Ribeiro et al., 2016; Koh & Liang, 2017; Yuan et al., 2021; Qiang et al., 2022; Zhou et al., 2015) . For instance, CAM (Zhou et al., 2016) and Grad-CAM (Selvaraju et al., 2017) obtain class activation maps (CAM) by back-propagating class-specific gradients to the feature map. RISE (Petsiuk et al., 2018) iteratively masks out image contents to identify essential regions for classification. These methods have been widely used. However, they are often low-resolution (e.g., blurred or indistinguishable across classes), computation-heavy, and not necessarily aligned with how models make predictions.\nTo address these drawbacks, another branch of work designs models with interpretable prediction processes, incorporating explicit mechanisms that allow for a direct understanding of the predictions (Wang et al., 2021; Donnelly et al., 2022; Rigotti et al., 2021; Kim et al., 2022; Bau et al., 2017; Zhou et al., 2018) . For example, ProtoPNet (Chen et al., 2019) compares the feature map X to \"learnable prototypes\" of each class, resulting in a feature vector x whose elements are semantically meaningful: the d-th dimension corresponds to a prototypical part of a certain class and x[d] indicates its activation in the image. By reading x and visualizing the activated prototypes, one could better understand the model's decision. Inspired by ProtoPNet, ProtoTree (Nauta et al., 2021) arranges the comparison to prototypes in a tree structure to mimic human reasoning; ProtoPFormer (Xue et al., 2022) presents a Transformer-based realization of ProtoPNet, which was originally based on ConvNets. Along with these interpretable decision processes, however, come specifically tailored architecture designs and increased complexity of the training process, often making them hard to reproduce, adapt, or extend. For instance, ProtoPNet requires a multi-stage training strategy, each stage taking care of a portion of the learnable parameters including the prototypes.",
+    "3.1_MOTIVATION_AND_BIG_PICTURE": "Taking into account the pros and cons of the above two paradigms, we ask, Can we obtain interpretability via standard neural network architectures and standard learning algorithms?\nTo respond to \"interpretability\", we investigate a proactive approach to classification, asking each class to search for its presence and distinctive patterns in an image. Denote by S the set of candidate classes; we propose a new classification rule,\nEQUATION\nwhere g ϕ (f θ (I), c, S) represents the image feature vector extracted specifically for class c in the context of S, and w denotes a binary classifier determining whether class c is present in the image I. Compared to Equation 1, the new classification rule in Equation 2 incorporates class-specific information in the feature extraction stage, not in the final fully connected layer. As will be shown in subsection 3.4, this design is the key to generating faithful attention for interpretation.\nTo respond to \"standard neural network architectures\", we find that the Transformer encoder-decoder (Vaswani et al., 2017) , which is widely used in object detection (Carion et al., 2020; Zhu et al., 2021) and natural language processing (Wolf et al., 2020) , could essentially realize Equation 2. Specifically, the encoder extracts the image feature map X = f θ (I). For the decoder, we propose to learn C class-specific queries {z (c) in } C c=1 as input, enabling it to extract the feature vector g ϕ (f θ (I), z\nin , S) for class c via cross-attention.\nTo ease the description, let us first focus on cross-attention, the key building block in Transformer decoders in subsection 3.2. We then introduce our full model in subsection 3.3.",
+    "3.2_INTERPRETABLE_CLASSIFICATION_VIA_CROSS-ATTENTION": "Cross-attention. Cross-attention can be seen as a (soft) retrieval process. Given an input query vector z in ∈ R D , it finds similar vectors from a vector pool and combines them via weighted average. In our application, this pool corresponds to the feature map X. Without loss of generality, let us reshape the feature map\nX ∈ R D×H×W to X = [x 1 , • • • , x N ] ∈ R D×N . That is, X contains N = H × W feature vectors representing each spatial grid in an image; each vector x n is D-dimensional.\nWith z in and X, cross-attention performs the following sequence of operations. First, it projects z in and X to a common embedding space such that they can be compared, and separately projects X to another space to emphasize the information to be combined,\nEQUATION\nThen, it performs an inner product between q and K, followed by Softmax, to compute the similarities between z in and vectors in X, and uses the similarities as weights to combine vectors in V linearly,\nEQUATION\nwhere √ D is a scaling factor based on the dimensionality of features. In other words, the output of cross-attention is a vector z out that aggregates information in X according to the input query z in .\nClass-specific queries. Inspired by the inner workings of cross-attention, we propose to learn C \"class-specific\" query vectors\nZ in = [z (1) in , • • • , z (C)\nin ] ∈ R D×C , one for each class. We expect each of these queries to look for the \"class-specific\" distinctive patterns in X. The output vectors Z out = [z (1) out , • • • , z (C) out ] ∈ R D×C thus should encode whether each class finds itself in the image,\nEQUATION\nWe note that the Softmax is taken over elements of each column; i.e., in Equation 5, each column in Z in attends to X independently. We use superscript/subscript to index columns in Z/X.\nClassification rule. We compare each vector in Z out to a learnable \"presence\" vector w ∈ R D to determine whether each class is found in the image. The predicted class is thus\nEQUATION\nTraining. As each class obtains a logit w ⊤ z (c) out , we employ the cross-entropy loss,\nEQUATION\ncoupled with stochastic gradient descent (SGD) to optimize the learnable parameters, including Z in , w, and the projection matrices W q , W k , and W v in Equation 3. This design responds to the final piece of question in subsection 3.1, \"standard learning algorithms\".\nInference and interpretation. We follow Equation 6 to make predictions. Meanwhile, each column of the cross-attention weights Softmax( K ⊤ Q √ D ) in Equation 5reveals where each class looks to find itself, enabling us to understand why the model predicts or does not predict a class. We note that this built-in interpretation does not incur additional computation costs like post-hoc explanation.\nMulti-head attention. It is worth noting that a standard cross-attention block has multiple heads. It learns multiple sets of matrices\n(W q, r , W k, r , W v, r ) in Equation 3, r ∈ {1, • • • , R}, to look for different patterns in X, resulting in multiple Softmax( K ⊤ r Qr √ D\n) and Z out, r in Equation 5. This enables the model to identify different \"attributes\" of a class and allows us to visualize them.\nIn training and inference, {Z out, r } R r=1 are concatenated row-wise, followed by another learnable matrix W o to obtain a single Z out as in Equation 5,\nEQUATION\nAs such, Equation 7and Equation 6 are still applicable to optimize the model and make predictions.",
+    "3.3_OVERALL_MODEL_ARCHITECTURE_(SEE_FIGURE_2_FOR_AN_ILLUSTRATION)": "We implement our full INterpretable TRansformer (INTR) model (cf. Equation 2) using a Transformer decoder (Vaswani et al., 2017) on top of a feature extractor f θ that produces a feature map X. Without loss of generality, we use the DEtection TRansformer (DETR) (Carion et al., 2020) as the backbone. DETR uses a Transformer decoder of multiple layers; each contains a cross-attention block. The output vectors of one layer become the input vectors of the next layer. In DETR, the input to the decoder (at its first layer) is a set of object proposal queries, and we replace it with our learnable \"class-specific\" query vectors\nZ in = [z (1) in , • • • , z (C) in ] ∈ R D×C .\nThe Transformer decoder then outputs the \"class-specific\" feature vectors Z out that will be fed into Equation 6. Using a Transformer decoder rather than a single cross-attention block has several advantages. First, with multiple decoder layers, the learned queries Z in can improve over layers by grounding themselves on the image. Second, the self-attention block in each decoder layer allows class-specific queries to exchange information to encode the context. (See Appendix C for details.) As shown in Figure 15 , the cross-attention blocks in later layers can attend to more distinctive patterns.\nTraining. INTR has three sets of learnable parameters: a) the parameters in the DETR backbone, including f θ ; b) the class-specific input queries Z in ∈ R D×C to the decoder; and c) the class-agnostic vector w. We train all these parameters end-to-end via SGD, using the loss in Equation 7.",
+    "3.4_HOW_DOES_INTR_LEARN_TO_PRODUCE_INTERPRETABLE_CROSS-ATTENTION_WEIGHTS?": "We analyze how INTR offers interpretability. For brevity, we focus on the model in subsection 3.2.\nAttention vs. interpretation. There has been an ongoing debate on whether attention offers faithful interpretation (Wiegreffe & Pinter, 2019; Jain & Wallace, 2019; Serrano & Smith, 2019; Bibal et al., 2022) . Specifically, Serrano & Smith (2019) showed that significantly manipulating the attention weights at inference time does not necessarily change the model's prediction. Here, we provide a mathematical explanation for why INTR may not suffer from the same problem. The key is in our classification rule. In Equation 6, we obtain the logit for class c by w ⊤ z Unveiling the inner workings. We dig deeper to understand what INTR learns. For class c to obtain a high logit in Equation 6, z (c) out must have a large inner product with the class-agnostic w. We note that z 4), and V is obtained by applying a projection matrix W v to the feature map\n(c) out is a linear combination of V = [v 1 , • • • , v N ] ∈ R D×N (cf. Equation\nX = [x 1 , • • • , x N ] ∈ R D×N (cf. Equation 3). Let q (c) = W q z (c) in and let α (c) = Softmax( K ⊤ q (c) √ D ) ∈ R N , the logit w ⊤ z (c)\nout can be rewritten as\nw ⊤ z (c) out = w ⊤ V α (c) ∝[w ⊤ v 1 , • • • , w ⊤ v N ] exp(K ⊤ q (c) ) ∝[w ⊤ W v x 1 , • • • , w ⊤ W v x N ] exp (W k X) ⊤ q (c) (9) ∝[s 1 , • • • , s N ] exp([q (c) ⊤ W k x 1 , • • • , q (c) ⊤ W k x N ] ⊤ ) = n s n × α (c) [n],\nwhere\ns n = w ⊤ W v x n and α (c) [n] ∝ exp(q (c) ⊤ W k x n ). We note that s n does not depend on the class-specific query z (c)\nin . It only depends on the input image I, or more specifically, the feature map X and how it aligns with the vector w. In other words, we can view s n as an \"image-specific\" salient score for patch n. In contrast, α (c) [n] depends on the class-specific query z\n(c) in ; its value will be high if class c finds the distinctive patterns in patch n. Building on this insight and Equation 9, if class c is the ground-truth class, what its query z (c)\nin needs to do is putting its attention weights α (c) on those high-score patches. Namely, class c must find its distinctive patterns in the salient image regions. Putting things together, we can view the roles of W v and W k as \"disentanglement\". They disentangle the information in x n into \"image-specific\" and \"classification-specific\" components -the former highlights \"whether a patch should be looked at\"; the latter highlights \"what distinctive patterns it contains\". When multi-head cross-attention is used, each pair of (W v , W k ) can learn to highlight an object \"part\" and the distinctive \"property\" in it. These offer the opportunity to localize the \"attributes\" of a class. See Appendix B for more details.",
+    "3.5_COMPARISON_TO_CLOSELY_RELATED_WORK": "ProtoPNet (Chen et al., 2019) and Concept Transformers (CT) (Rigotti et al., 2021) . INTR is fundamentally different in two aspects. First, both methods aim to represent image patches by a set of learnable vectors (e.g., prototypes in ProtoPNet; concepts in CTfoot_0 ). The resulting features for image patches are then pooled into a vector x and undergo a fully connected layer for classification. In other words, their classification rules still follow Equation 1. In contrast, INTR extracts classspecific features from the image (one per class) and uses a new classification rule to make predictions (cf. Equation 6). Second, both methods require specifically designed training strategies or signals. For example, CT needs human annotations to learn the concepts. In contrast, INTR is based on a standard model architecture and training algorithm and requires no additional human supervision. DINO-v1 (Caron et al., 2021) . DINO-v1 shows that the \"[CLS]\" token of a pre-trained ViT (Dosovitskiy et al., 2021) can attend to different \"parts\" of objects via multi-head attention. While this shares some similarities with our findings in INTR, what INTR attends to are \"attributes\" that can be used to distinguish between fine-grained classes, not just \"parts\" that are shared among classes. 4 EXPERIMENTS Dataset. We consider eight fine-grained datasets from various domains, including Birds-525 (Bird) (Piosenka, 2023) , CUB-200-2011 Birds (CUB) (Wah et al., 2011) , Cambridge butterfly (BF) (Montejo-Kovacevich et al., 2020), iNaturalist-2021-Fish (Fish) (Van Horn et al., 2021) , Stanford Dogs (Dog) (Khosla et al., 2011) , Stanford Cars (Car) (Krause et al., 2013) , Oxford Pet (Pet) (Parkhi et al., 2012) , and FGVC Aircraft (Craft) (Maji et al., 2013) . We create the BF dataset by considering the species-level labels from (Montejo-Kovacevich et al., 2020) . For the Fish dataset, we extract species from the taxonomical Class named Animalia Chordata Actinopterygii in iNaturalist-2021. Table 1 provides the dataset statistics. See Appendix D for additional details.\nModel. We implement INTR on top of the DETR backbone (Carion et al., 2020) . DETR stacks a Transformer encoder on top of a ResNet as the feature extractor. We use its DETR-ResNet-50 version, in which the ResNet-50 (He et al., 2016) was pre-trained on ImageNet-1K (Russakovsky et al., 2015; Deng et al., 2009) and the whole model including the Transformer encoder-decoder (Vaswani et al., 2017) was further trained on MSCOCO (Lin et al., 2014) foot_1 . We remove its prediction heads located on top of the decoder and add our class-agnostic vector w; we remove its object proposal queries and add our C learnable class-specific queries (e.g., for CUB, C = 200). See Figure 2 for an illustration and subsection 3.3 for more details. We further remove the positional encoding that was injected into the cross-attention keys in the DETR decoder: we find this information adversely restricts our queries to look at particular grid locations and leads to artifacts. We note that DETR sets its feature map size D × H × W (at the encoder output) as 256 × H0 32 × W0 32 , where H 0 and W 0 are the height and width resolutions of the input image. For example, a typical CUB image is of a resolution roughly 800 × 1200; thus, the resolution of the feature map and cross-attention map is roughly 25 × 38. We investigate other encoders and the number of attention heads and decoder layers in Appendix F.\nVisualization. We visualize the last (i.e., sixth) decoder layer, whose cross-attention block has eight heads. We superimpose the cross-attention weight (maps) on the input images.\nTraining detail. The hyper-parameter details such as epochs, learning rate, and batch size for training INTR are reported in Appendix E. We use the Adam optimizer (Kingma & Ba, 2014) with its default hyper-parameters. We train INTR using the StepLR scheduler with a learning rate drop at 80 epochs. The rest of the hyper-parameters follow DETR.\nBaseline. We consider two sets of baseline methods. First, we use a ResNet-50 (He et al., 2016) pre-trained on ImageNet-1K and fine-tune it on each dataset. We then use Grad-CAM (Selvaraju et al., 2017) and RISE Petsiuk et al. (2018) to construct post-hoc saliency maps: the results are kept in Appendix F. Second, we compare to models designed for interpretability, such as ProtoPNet (Chen et al., 2019) , ProtoTree (Nauta et al., 2021) , and ProtoPFormer (Xue et al., 2022) . We understand that these are by no means a comprehensive set of existing works. Our purpose in including them is to treat them as references for what kind of interpretability INTR can offer with its simple design.\nEvaluation. We reiterate that achieving a high classification accuracy is not the goal of this paper. The goal is to demonstrate the interpretability. We thus focus our evaluation on qualitative results.",
+    "5_CONCLUSION": "We present Interpretable Transformer (INTR), a simple yet effective interpretable classifier building upon standard Transformer encoder-decoder architectures. INTR makes merely two changes: learning class-specific queries (one for each class) as input to the decoder and learning a class-agnostic vector on top of the decoder output to determine whether a class is present in the image. As such, INTR can be easily trained end-to-end. During inference, the cross-attention weights triggered by the winning class-specific query indicate where the model looks to make the prediction. We conduct extensive experiments and analyses to demonstrate the effectiveness of INTR in interpretation. Specifically, we show that INTR can localize not only object parts like bird heads but also attributes (like patterns around eyes) that distinguish one bird species from others. In addition, we present a mathematical explanation of why INTR can learn to produce interpretable cross-attention for each class without ad-hoc model design, complex training strategies, and auxiliary supervision. We hope that our study can offer a new way of thinking about interpretable machine learning."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Network dissection: Quantifying interpretability of deep visual representations",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Bau",
+          "suffix": ""
+        },
+        {
+          "first": "Bolei",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Khosla",
+          "suffix": ""
+        },
+        {
+          "first": "Aude",
+          "middle": [],
+          "last": "Oliva",
+          "suffix": ""
+        },
+        {
+          "first": "Antonio",
+          "middle": [],
+          "last": "Torralba",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Is attention explanation? an introduction to the debate",
+      "authors": [
+        {
+          "first": "Adrien",
+          "middle": [],
+          "last": "Bibal",
+          "suffix": ""
+        },
+        {
+          "first": "Rémi",
+          "middle": [],
+          "last": "Cardon",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Alfter",
+          "suffix": ""
+        },
+        {
+          "first": "Rodrigo",
+          "middle": [],
+          "last": "Wilkens",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoou",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "François",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Watrin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the 60th annual meeting of the association for computational linguistics"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Analysis of explainers of black box deep neural networks for computer vision: A survey",
+      "authors": [
+        {
+          "first": "Vanessa",
+          "middle": [],
+          "last": "Buhrmester",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Münch",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Arens",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Machine Learning and Knowledge Extraction"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "A survey on the explainability of supervised machine learning",
+      "authors": [
+        {
+          "first": "Nadia",
+          "middle": [],
+          "last": "Burkart",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [
+            "F"
+          ],
+          "last": "Huber",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Journal of Artificial Intelligence Research"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "End-to-end object detection with transformers",
+      "authors": [
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Carion",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Synnaeve",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Usunier",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kirillov",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Zagoruyko",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "European conference on computer vision"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Emerging properties in self-supervised vision transformers",
+      "authors": [
+        {
+          "first": "Mathilde",
+          "middle": [],
+          "last": "Caron",
+          "suffix": ""
+        },
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Ishan",
+          "middle": [],
+          "last": "Misra",
+          "suffix": ""
+        },
+        {
+          "first": "Hervé",
+          "middle": [],
+          "last": "Jégou",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Mairal",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Bojanowski",
+          "suffix": ""
+        },
+        {
+          "first": "Armand",
+          "middle": [],
+          "last": "Joulin",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF international conference on computer vision"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Machine learning interpretability: A survey on methods and metrics",
+      "authors": [
+        {
+          "first": "Eduardo",
+          "middle": [
+            "M"
+          ],
+          "last": "Diogo V Carvalho",
+          "suffix": ""
+        },
+        {
+          "first": "Jaime",
+          "middle": [
+            "S"
+          ],
+          "last": "Pereira",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Cardoso",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Electronics"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "This looks like that: deep learning for interpretable image recognition",
+      "authors": [
+        {
+          "first": "Chaofan",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Oscar",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Tao",
+          "suffix": ""
+        },
+        {
+          "first": "Alina",
+          "middle": [],
+          "last": "Barnett",
+          "suffix": ""
+        },
+        {
+          "first": "Cynthia",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [
+            "K"
+          ],
+          "last": "Su",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Opportunities and challenges in explainable artificial intelligence (xai): A survey",
+      "authors": [
+        {
+          "first": "Arun",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Rad",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Imagenet: A large-scale hierarchical image database",
+      "authors": [
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        },
+        {
+          "first": "Li-Jia",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Deformable protopnet: An interpretable image classifier using deformable prototypes",
+      "authors": [
+        {
+          "first": "Jon",
+          "middle": [],
+          "last": "Donnelly",
+          "suffix": ""
+        },
+        {
+          "first": "Alina",
+          "middle": [
+            "Jade"
+          ],
+          "last": "Barnett",
+          "suffix": ""
+        },
+        {
+          "first": "Chaofan",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "An image is worth 16x16 words: Transformers for image recognition at scale",
+      "authors": [
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "Dirk",
+          "middle": [],
+          "last": "Weissenborn",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "Mostafa",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Minderer",
+          "suffix": ""
+        },
+        {
+          "first": "Georg",
+          "middle": [],
+          "last": "Heigold",
+          "suffix": ""
+        },
+        {
+          "first": "Sylvain",
+          "middle": [],
+          "last": "Gelly",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International conference on learning representations"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Deep residual learning for image recognition",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shaoqing",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Convolutional networks with dense connectivity",
+      "authors": [
+        {
+          "first": "Gao",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Geoff",
+          "middle": [],
+          "last": "Pleiss",
+          "suffix": ""
+        },
+        {
+          "first": "Laurens",
+          "middle": [],
+          "last": "Van Der Maaten",
+          "suffix": ""
+        },
+        {
+          "first": "Kilian",
+          "middle": [
+            "Q"
+          ],
+          "last": "Weinberger",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "IEEE transactions on pattern analysis and machine intelligence"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Attention is not explanation",
+      "authors": [
+        {
+          "first": "Sarthak",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Byron",
+          "middle": [
+            "C"
+          ],
+          "last": "Wallace",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 2019 annual conference of the north american chapter of the association for computational linguistics"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Novel dataset for fine-grained image categorization: Stanford dogs",
+      "authors": [
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Khosla",
+          "suffix": ""
+        },
+        {
+          "first": "Nityananda",
+          "middle": [],
+          "last": "Jayadevaprakash",
+          "suffix": ""
+        },
+        {
+          "first": "Bangpeng",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Fei-Fei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Proceedings CVPR workshop on fine-grained visual categorization (FGVC)"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Vit-net: Interpretable vision transformers with neural tree decoder",
+      "authors": [
+        {
+          "first": "Sangwon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Jaeyeal",
+          "middle": [],
+          "last": "Nam",
+          "suffix": ""
+        },
+        {
+          "first": "Byoung Chul",
+          "middle": [],
+          "last": "Ko",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Adam: A method for stochastic optimization",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Diederik",
+          "suffix": ""
+        },
+        {
+          "first": "Jimmy",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Understanding black-box predictions via influence functions",
+      "authors": [
+        {
+          "first": "Pang",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Koh",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Percy",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "3d object representations for fine-grained categorization",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Krause",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Stark",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Proceedings of the IEEE international conference on computer vision workshops"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Imagenet classification with deep convolutional neural networks",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Krizhevsky",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Communications of the ACM"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Microsoft coco: Common objects in context",
+      "authors": [
+        {
+          "first": "Tsung-Yi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Maire",
+          "suffix": ""
+        },
+        {
+          "first": "Serge",
+          "middle": [],
+          "last": "Belongie",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Hays",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Perona",
+          "suffix": ""
+        },
+        {
+          "first": "Deva",
+          "middle": [],
+          "last": "Ramanan",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lawrence",
+          "suffix": ""
+        },
+        {
+          "first": "Zitnick",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "European Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Explainable ai: A review of machine learning interpretability methods",
+      "authors": [
+        {
+          "first": "Pantelis",
+          "middle": [],
+          "last": "Linardatos",
+          "suffix": ""
+        },
+        {
+          "first": "Vasilis",
+          "middle": [],
+          "last": "Papastefanopoulos",
+          "suffix": ""
+        },
+        {
+          "first": "Sotiris",
+          "middle": [],
+          "last": "Kotsiantis",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Entropy"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Swin transformer: Hierarchical vision transformer using shifted windows",
+      "authors": [
+        {
+          "first": "Ze",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yutong",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Yue",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Yixuan",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Baining",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF international conference on computer vision"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Fine-grained visual classification of aircraft",
+      "authors": [
+        {
+          "first": "Subhransu",
+          "middle": [],
+          "last": "Maji",
+          "suffix": ""
+        },
+        {
+          "first": "Esa",
+          "middle": [],
+          "last": "Rahtu",
+          "suffix": ""
+        },
+        {
+          "first": "Juho",
+          "middle": [],
+          "last": "Kannala",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Blaschko",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [],
+          "last": "Vedaldi",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Cambridge butterfly wing collection batch 10",
+      "authors": [
+        {
+          "first": "Gabriela",
+          "middle": [],
+          "last": "Montejo-Kovacevich",
+          "suffix": ""
+        },
+        {
+          "first": "Eva",
+          "middle": [],
+          "last": "Van Der Heijden",
+          "suffix": ""
+        },
+        {
+          "first": "Nicola",
+          "middle": [],
+          "last": "Nadeau",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Jiggins",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Neural prototype trees for interpretable fine-grained image recognition",
+      "authors": [
+        {
+          "first": "Meike",
+          "middle": [],
+          "last": "Nauta",
+          "suffix": ""
+        },
+        {
+          "first": "Ron",
+          "middle": [],
+          "last": "Van Bree",
+          "suffix": ""
+        },
+        {
+          "first": "Christin",
+          "middle": [],
+          "last": "Seifert",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Cats and dogs",
+      "authors": [
+        {
+          "first": "Andrea",
+          "middle": [],
+          "last": "Omkar M Parkhi",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Vedaldi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Jawahar",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "A field guide to the birds: eastern and central North America",
+      "authors": [
+        {
+          "first": "Tory",
+          "middle": [],
+          "last": "Roger",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Peterson",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Rise: Randomized input sampling for explanation of black-box models",
+      "authors": [
+        {
+          "first": "Abir",
+          "middle": [],
+          "last": "Vitali Petsiuk",
+          "suffix": ""
+        },
+        {
+          "first": "Kate",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Saenko",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Birds 525 species -image classification",
+      "authors": [
+        {
+          "first": "Gerald",
+          "middle": [],
+          "last": "Piosenka",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Attcat: Explaining transformers via attentive class activation tokens",
+      "authors": [
+        {
+          "first": "Yao",
+          "middle": [],
+          "last": "Qiang",
+          "suffix": ""
+        },
+        {
+          "first": "Deng",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "Chengyin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Rhongho",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "Dongxiao",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "why should i trust you?\" explaining the predictions of any classifier",
+      "authors": [
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Tulio Ribeiro",
+          "suffix": ""
+        },
+        {
+          "first": "Sameer",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "Carlos",
+          "middle": [],
+          "last": "Guestrin",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the 22nd ACM SIGKDD international conference on knowledge discovery and data mining"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Attention-based interpretability with concept transformers",
+      "authors": [
+        {
+          "first": "Mattia",
+          "middle": [],
+          "last": "Rigotti",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Miksovic",
+          "suffix": ""
+        },
+        {
+          "first": "Ioana",
+          "middle": [],
+          "last": "Giurgiu",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Gschwind",
+          "suffix": ""
+        },
+        {
+          "first": "Paolo",
+          "middle": [],
+          "last": "Scotton",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International conference on learning representations"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Imagenet large scale visual recognition challenge",
+      "authors": [
+        {
+          "first": "Olga",
+          "middle": [],
+          "last": "Russakovsky",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Krause",
+          "suffix": ""
+        },
+        {
+          "first": "Sanjeev",
+          "middle": [],
+          "last": "Satheesh",
+          "suffix": ""
+        },
+        {
+          "first": "Sean",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiheng",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Andrej",
+          "middle": [],
+          "last": "Karpathy",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Khosla",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Bernstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International journal of computer vision"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Grad-cam: Visual explanations from deep networks via gradient-based localization",
+      "authors": [
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Ramprasaath R Selvaraju",
+          "suffix": ""
+        },
+        {
+          "first": "Abhishek",
+          "middle": [],
+          "last": "Cogswell",
+          "suffix": ""
+        },
+        {
+          "first": "Ramakrishna",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "Devi",
+          "middle": [],
+          "last": "Vedantam",
+          "suffix": ""
+        },
+        {
+          "first": "Dhruv",
+          "middle": [],
+          "last": "Parikh",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the IEEE international conference on computer vision"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Is attention interpretable?",
+      "authors": [
+        {
+          "first": "Sofia",
+          "middle": [],
+          "last": "Serrano",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the annual meeting of the association for computational linguistics"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Very deep convolutional networks for large-scale image recognition",
+      "authors": [
+        {
+          "first": "Karen",
+          "middle": [],
+          "last": "Simonyan",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International conference on learning representations"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Going deeper with convolutions",
+      "authors": [
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Szegedy",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yangqing",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Pierre",
+          "middle": [],
+          "last": "Sermanet",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Reed",
+          "suffix": ""
+        },
+        {
+          "first": "Dragomir",
+          "middle": [],
+          "last": "Anguelov",
+          "suffix": ""
+        },
+        {
+          "first": "Dumitru",
+          "middle": [],
+          "last": "Erhan",
+          "suffix": ""
+        },
+        {
+          "first": "Vincent",
+          "middle": [],
+          "last": "Vanhoucke",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Rabinovich",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Training data-efficient image transformers & distillation through attention",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Matthieu",
+          "middle": [],
+          "last": "Cord",
+          "suffix": ""
+        },
+        {
+          "first": "Matthijs",
+          "middle": [],
+          "last": "Douze",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Sablayrolles",
+          "suffix": ""
+        },
+        {
+          "first": "Hervé",
+          "middle": [],
+          "last": "Jégou",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Benchmarking representation learning for natural world image collections",
+      "authors": [
+        {
+          "first": "Grant",
+          "middle": [],
+          "last": "Van Horn",
+          "suffix": ""
+        },
+        {
+          "first": "Elijah",
+          "middle": [],
+          "last": "Cole",
+          "suffix": ""
+        },
+        {
+          "first": "Sara",
+          "middle": [],
+          "last": "Beery",
+          "suffix": ""
+        },
+        {
+          "first": "Kimberly",
+          "middle": [],
+          "last": "Wilber",
+          "suffix": ""
+        },
+        {
+          "first": "Serge",
+          "middle": [],
+          "last": "Belongie",
+          "suffix": ""
+        },
+        {
+          "first": "Oisin",
+          "middle": [],
+          "last": "Mac",
+          "suffix": ""
+        },
+        {
+          "first": "Aodha",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Niki",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Llion",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Łukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Illia",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "The caltech-ucsd birds-200-2011 dataset",
+      "authors": [
+        {
+          "first": "Catherine",
+          "middle": [],
+          "last": "Wah",
+          "suffix": ""
+        },
+        {
+          "first": "Steve",
+          "middle": [],
+          "last": "Branson",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Welinder",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Perona",
+          "suffix": ""
+        },
+        {
+          "first": "Serge",
+          "middle": [],
+          "last": "Belongie",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Interpretable image recognition by constructing transparent embedding space",
+      "authors": [
+        {
+          "first": "Jiaqi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Huafeng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyue",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Liping",
+          "middle": [],
+          "last": "Jing",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF international conference on computer vision"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Attention is not not explanation",
+      "authors": [
+        {
+          "first": "Sarah",
+          "middle": [],
+          "last": "Wiegreffe",
+          "suffix": ""
+        },
+        {
+          "first": "Yuval",
+          "middle": [],
+          "last": "Pinter",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Transformers: State-of-the-art natural language processing",
+      "authors": [
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Wolf",
+          "suffix": ""
+        },
+        {
+          "first": "Lysandre",
+          "middle": [],
+          "last": "Debut",
+          "suffix": ""
+        },
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Sanh",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Chaumond",
+          "suffix": ""
+        },
+        {
+          "first": "Clement",
+          "middle": [],
+          "last": "Delangue",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Moi",
+          "suffix": ""
+        },
+        {
+          "first": "Pierric",
+          "middle": [],
+          "last": "Cistac",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Rault",
+          "suffix": ""
+        },
+        {
+          "first": "Rémi",
+          "middle": [],
+          "last": "Louf",
+          "suffix": ""
+        },
+        {
+          "first": "Morgan",
+          "middle": [],
+          "last": "Funtowicz",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the 2020 conference on empirical methods in natural language processing: system demonstrations"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Protopformer: Concentrating on prototypical parts in vision transformers for interpretable image recognition",
+      "authors": [
+        {
+          "first": "Mengqi",
+          "middle": [],
+          "last": "Xue",
+          "suffix": ""
+        },
+        {
+          "first": "Qihan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Haofei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Lechao",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Minghui",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Mingli",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Explaining information flow inside vision transformers using markov chain",
+      "authors": [
+        {
+          "first": "Tingyi",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Xuhong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Haoyi",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Hui",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Dejing",
+          "middle": [],
+          "last": "Dou",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "eXplainable AI approaches for debugging and diagnosis"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Visual interpretability for deep learning: a survey",
+      "authors": [
+        {
+          "first": "Quan-Shi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Song-Chun",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Frontiers of Information Technology & Electronic Engineering"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Object detectors emerge in deep scene cnns",
+      "authors": [
+        {
+          "first": "Bolei",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Khosla",
+          "suffix": ""
+        },
+        {
+          "first": "Agata",
+          "middle": [],
+          "last": "Lapedriza",
+          "suffix": ""
+        },
+        {
+          "first": "Aude",
+          "middle": [],
+          "last": "Oliva",
+          "suffix": ""
+        },
+        {
+          "first": "Antonio",
+          "middle": [],
+          "last": "Torralba",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International conference on learning representations"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Learning deep features for discriminative localization",
+      "authors": [
+        {
+          "first": "Bolei",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Khosla",
+          "suffix": ""
+        },
+        {
+          "first": "Agata",
+          "middle": [],
+          "last": "Lapedriza",
+          "suffix": ""
+        },
+        {
+          "first": "Aude",
+          "middle": [],
+          "last": "Oliva",
+          "suffix": ""
+        },
+        {
+          "first": "Antonio",
+          "middle": [],
+          "last": "Torralba",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Interpreting deep visual representations via network dissection",
+      "authors": [
+        {
+          "first": "Bolei",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Bau",
+          "suffix": ""
+        },
+        {
+          "first": "Aude",
+          "middle": [],
+          "last": "Oliva",
+          "suffix": ""
+        },
+        {
+          "first": "Antonio",
+          "middle": [],
+          "last": "Torralba",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "IEEE transactions on pattern analysis and machine intelligence"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Deformable detr: Deformable transformers for end-to-end object detection",
+      "authors": [
+        {
+          "first": "Xizhou",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Weijie",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Lewei",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaogang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jifeng",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International conference on learning representations"
+    }
+  ]
+}

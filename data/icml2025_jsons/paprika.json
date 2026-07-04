@@ -1,0 +1,4695 @@
+{
+  "paper_id": "paprika",
+  "title": "Training a Generally Curious Agent",
+  "authors": [
+    {
+      "first": "Fahim",
+      "middle": [],
+      "last": "Tajwar",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "North Carolina State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yiding",
+      "middle": [],
+      "last": "Jiang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "North Carolina State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Abitha",
+      "middle": [],
+      "last": "Thankaraj",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "North Carolina State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Sumaita",
+      "middle": [
+        "Sadia"
+      ],
+      "last": "Rahman",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "North Carolina State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "J",
+      "middle": [
+        "Zico"
+      ],
+      "last": "Kolter",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "North Carolina State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Jeff",
+      "middle": [],
+      "last": "Schneider",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "North Carolina State University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Russ",
+      "middle": [],
+      "last": "Salakhutdinov",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "North Carolina State University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Efficient exploration is essential for intelligent systems interacting with their environment, but existing language models often fall short in scenarios that require strategic information gathering. In this paper, we present PAPRIKA, a fine-tuning approach that enables language models to develop general decision-making capabilities that are not confined to particular environments. By training on synthetic interaction data from different tasks that require diverse strategies, PAPRIKA teaches models to explore and adapt their behavior on a new task based on environment feedback incontext without more gradient updates. Experimental results show that models fine-tuned with PAPRIKA can effectively transfer their learned decision-making capabilities to entirely unseen tasks without additional training. Unlike traditional training, our approach's primary bottleneck lies in sampling useful interaction data instead of model updates. To improve sample efficiency, we propose a curriculum learning strategy that prioritizes sampling trajectories from tasks with high learning potential. These results suggest a promising path towards AI systems that can autonomously solve novel sequential decisionmaking problems that require interactions with the external world.",
+  "body": {
+    "4.1._Analysis": "PAPRIKA improves LLMs' task efficiency. In this section, we want to analyze the sequential decision-making abilities learned by PAPRIKA beyond just success rate on individual task groups. Note that our tasks are designed in a way such that an agent capable of better strategic exploration would solve them faster, eg., an agent capable of asking better yes/no questions would guess the secret topic using fewer number of turns. We leverage this property of our tasks and conduct both quantitative and qualitative analysis on the behaviors of the regular instruct model and PAPRIKA -(1) Figure 7 shows that PAPRIKA reduces the average number of turns it takes for the agent to solve tasks, implying that PAPRIKA is choosing more optimal actions at intermediate steps, (2) Appendix K shows qualitative difference between the behavior of the regular instruct model and PAPRIKA on twenty questions and wordle, with PAPRIKA generally generating more sensible responses.\nPAPRIKA does not hurt LLMs' regular capabilities. We have demonstrated the efficacy of PAPRIKA in instilling decision making capabilities into LLMs efficiently. However, to scale up PAPRIKA, one would potentially use online reinforcement learning on such decision making tasks, and an important question is whether PAPRIKA fine-tuning would hurt the LLM's regular capabilities which would hinder scaling it up. To study this question, we run a set of standard evaluations (see Appendix I.12) on our PAPRIKA fine-tuned model and compare its performance against Llama-3.1-8B-Instruct. Table 2 shows our findings: PAPRIKA does not result in any noticeable performance degradation.\n5. Related Works LLM alignment. Alignment or post-training is a crucial step for creating helpful LLM assistant. Existing posttraining pipeline typically involves instruction tuning and then reinforcement learning from human feedback (Christiano et al., 2017, RLHF) where one either performs RL against a reward model trained on human preference data via Proximal Policy Optimization (Schulman et al., 2017, PPO) or sidesteps reward model training via Direct Preference Optimization (Rafailov et al., 2024b, DPO) . Most methods focus on single-turn interactions where the model generates a single response to a query. We focus on the multi-turn setting where the agent has to interact with an environment iteratively, similar to Rafailov et al. (2024a) . There are a few existing environments and datasets that focus on multiturn interactions (Abdulhai et al., 2023; Sun et al., 2023; Kwan et al., 2024; Wang et al., 2024b) . LMRL-Gym (Abdulhai et al., 2023) implements a suite of textual RL environment, some of which we build on. Concurrent work such as Narayanan et al. (2024) has designed environments based on scientific tasks (such as molecule cloning and protein stability) for LLMs to interact with and showed that behavior cloning and expert iteration (Anthony et al., 2017; 2019; Havrilla et al., 2024) can improve an LLM's multiturn interaction capabilities on these tasks. Most of these environments focus on interactions with humans. Rather than any particular task, we focus on evaluating LLMs' general ability to solve sequential decision making problems where the agent needs to explore and exploit.\nIn-context reinforcement learning. In-context learning (ICL) is the ability where LLMs can learn a new task from a small number of demonstrations without any gradient update (Brown et al., 2020) . Existing ICL usually focuses on a single-turn interaction. We focus on in-context reinforcement learning (Laskin et al., 2022; Raparthy et al., 2023; Lee et al., 2024; Lin et al., 2024) instead. Existing work in this field has focused on environments where RL is conventionally applied (e.g., grid world, bandits, and maze) (Monea et al., 2025) , and the training data are generated by either random policies or pre-existing RL algorithms. In comparison, we focus on diverse environments and study how well the decision making abilities generalize to completely new environments. Concurrent work has also studied improving LLMs' information seeking abilities (Li et al., 2025) for medical reasoning, whereas we work on general information seeking abilities applicable to a diverse range of tasks. Moreover, Harris & Slivkins (2025) has studied using an LLM to assist a decision-making agent navigate explorationexploitation tradeoff, whereas we use an LLM directly as the decision making agent and teach it this capability.\nCurriculum learning in RL. Curriculum learning (Bengio et al., 2009) shows the data to the model in a nonuniform order. This idea is inspired by the fact that humans tend to learn skills in a sequential order (Skinner, 1958) , and is particularly appealing for RL because learning easier tasks first could build scaffold toward solving difficult tasks that the agent could not solve otherwise (Andrychowicz et al., 2017; Florensa et al., 2017; Fang et al., 2019; Portelas et al., 2020a) . Concurrent work such as Foster & Foerster (2025) has studied curriculum learning for training LLMs to improve their reasoning capabilities. While their work requires generating rollouts per each example to determine the learnability, we show that given access to some grouping metadata, one can design an effective curriculum using only a constant number of rollouts generated from each task group. Another related line of work is environment design, where a second process controls the distribution over different environments or directly generates environments in a procedural manner to maximize various notions of learning progress (Wang et al., 2019; Dennis et al., 2020; Jiang et al., 2021b; a; Bruce et al., 2024) . Since this is a field of extensive existing literature, we refer the interested reader to Portelas et al. (2020b) for a comprehensive survey.",
+    "3.1._Task_Design": "The first component of PAPRIKA is to design a set of task groups that we can evaluate and train LLMs on. The task groups we want should have the following desired properties: (1) they are purely text based, (2) they require multiturn interaction, where the agents have to both understand prior history in its context and choose actions that maximize the probability of success in the future, (3) they are partially observable, i.e., the observations do not capture the full state or hidden information, so the agents must simultaneously explore to reveal more information and exploit to solve the task efficiently, (4) they are diverse and require different strategies to succeed.\nWith these requirements in mind, we design 10 task groups in our paper. On all of them, we employ an LLM as the agent that is given a task it needs to solve through sequential interaction with the task-specific environment, which provides both observations for intermediate timesteps given the agent's actions and also a task reward at the end of an episode. For tasks requiring general knowledge about the world to generate intermediate observations, we employ another LLM (typically GPT-4o-mini) as the environment. For tasks that have rule-based observations and rewards, we find that using hardcoded programs as the verifier/observation generator is more reliable than LLMs, similar to DeepSeek-AI et al. (2025) . In order to prevent reward hacking, we also use either another LLM or a hardcoded program as a judge to filter out unsuccessful trajectories that got incorrectly labeled as successful by the task environment (see Appendix D for more on environment hacking). We also find that for task groups requiring complex reasoning, letting the agent think using chain-of-thought (COT) prompting (Wei et al., 2022; Kojima et al., 2022) before generating a final answer improves its performance significantly, similar to ReAct (Yao et al., 2023) . We provide a brief description of our task groups here, please refer to Table 1 for their summary and Appendix B for more details.\nFollowing prior work (Abdulhai et al., 2023) , we include classic guessing games like twenty questions and guess my city in our list of task groups. They require guessing a secret topic as quickly as possible by asking a sequence of questions and observing the answers. We also employ Wordle and Mastermind, where the agent needs to guess a secret 5letter word and 4-digit code respectively. The environments for these task groups provide feedback in terms of similarity between the guess and the target word/code, and the agent needs to refine their guesses in future turns to maximize information gathering. We design customer service and murder mystery as dynamic text-based task groups: an LLM plays the role of the task environment, which is provided with the criterion for task success and generates dynamic intermediate observations based on this criterion.\nA desirable capability in LLMs is to code and refine based on interpreter feedback. To simulate this process with a toy case, we design Cellular Automata, where the agent needs to make inferences about the transition rule in 1D elementary cellular automata (Wolfram, 1983; Cook et al., 2004 ) by observing inputs and outputs. The agent receives the outputs generated from their predicted transition rule and they have to refine their predictions based on it. Next, we incorporate Minesweeper and Battleship based on classical games, which require the agent to interact with 2D grids to find hidden items within a fixed number of turns and refine their guesses based on per-turn observations.\nFinally, we incorporate a modified version of the multiarmed bandit (Slivkins, 2024) task group from prior works (Krishnamurthy et al., 2024; Nie et al., 2024) with the following distinctions: (1) we let the agent employ chainof-thought reasoning before choosing arms so that they can transfer good strategies learned from other tasks, (2) we let the agent interact with the task environment in a multiturn way, (3) instead of reducing regret, we work on the bandit best arm selection (Audibert & Bubeck, 2010; Wang et al., 2024a) problem, where we let the agent choose arms and observe rewards for a fixed number of turns and then measure its accuracy in deciding the arm with the highest reward. This is done to reduce computational cost over generating COTs for a large number of turns, since the difference in regret between different models is not meaningful when the number of turns is not large enough.",
+    "3._PAPRIKA": "The goal of our paper is to develop a scalable method to instill better strategic exploration and sequential decisionmaking capabilities into LLMs. Prior works (Krishnamurthy et al., 2024) have shown that LLMs can perform poorly on even the simple decision making task of multi-armed bandits. Nie et al. (2024) has since then demonstrated that LLMs can be taught to perform better on bandits after finetuning them on synthetic trajectories generated by known algorithms such as UCB. However, this idea is limited in scope for three reasons: (1) we want LLMs to perform strategic exploration and decision making in more complex settings, (2) for most tasks, there is no known algorithm like UCB to generate good synthetic trajectories from, (3) it can be infeasible to collect data for all tasks that we care about.\nWe aim to solve these issues using our method, PAPRIKA. First, we design a suite of complex decision-making tasks that require strategic information gathering to succeed. Next, we show that in the absence of known good algorithms, existing LLMs can generate trajectories with better decision making behaviors through diversity-encouraging sampling.\nWe then finetune the LLMs to prefer higher performing trajectories (in a fashion similar to STaR (Zelikman et al., 2022) ) and show that this leads to better decision making abilities at test-time. More importantly, these behaviors often generalize to unseen task groups without additional training. Finally, we propose a general curriculum learning algorithm that can dynamically choose which subset of tasks to train on next to improve data efficiency of such training methods. We next describe each component of PAPRIKA.\nA revealed cell shows a number between 1 and 8, and '*' if it has no mines and none of its neighbors also has mines. The number represents how many mines are adjacent to that cell (including diagonals).",
+    "2._Preliminary": "Many decision making problems can be formalized as a partially observable Markov decision process (POMDP). We assume each task, τ , is a POMDP although we will not draw on the details of the POMDP formalism in this work.\nAs a concrete example, guessing the word \"apple\" would be a task in 20 questions. We will use group (or task group, used interchangeably), G = {τ 1 , τ 2 , . . . , τ |G| }, to refer to a high-level grouping of different tasks (e.g., the game 20 questions would be a group). Tasks in a group should share similar strategies but it is not always true that they share the same optimal policy as such constraints may be overly stringent. From the agent's perspective, each task is a black box function that takes in the agent's action a t (and possibly the whole interaction history) and outputs an observation o t . Both a t and o t are strings. In a game of 20 questions, a t could be \"Is the word an animal?\" and the o t could be \"No.\". In other words, each task employs an environment that the agent interacts with to obtain intermediate observations.\nAn episode contains the agent's interaction trajectory within a single task. Unlike the conventional RL structure, we will assume that the transition-level reward is either 0 or must be inferred from o t , and that the individual tasks can flexibly implement different observation spaces and termination conditions. An episode terminates when the agent achieves the objective of the task or when the maximum number of interactions allowed within the task is reached. We will use h = (o 0 , a 0 , . . . , o H , a H ) to denote an episode of length H, h t = (o t , a t ) to denote a single step of h, and h p:q = (o p , a p , . . . , o q , a q ) to denote a slice of h similar to array slicing. At the end of an episode, the environment emits a single score, r(h), that evaluates the performance of the agent. Let π denote the LLM agent and h ∼ π • τ denote sampling a trajectory from task τ using policy π. The performance of a policy on a group would be:\nPerf(G) = 1 |G| τ ∈G E h∼π•τ [r(h)].\nThe agent is trained on a finite set of groups, G train , and the goal is to perform well on unseen groups, G test . \nThe agent selects a cell to reveal. If the cell contains a mine, the game ends. The first cell the agent chooses to reveal has no mines, and mines are only placed randomly along the grid after the first cell has been chosen by the agent to be revealed, excluding the first chosen cell. If the cell is empty, it displays a number indicating the count of mines in its 8 adjacent cells (or '*' if the number is 0).",
+    "3.3._Optimization": "Supervised fine-tuning. If we take the winning episodes as the expert behavior, then we can discard the losing episode and maximize the likelihood of winning episodes:\nEQUATION\nwhere D SFT is the dataset used for supervised fine-tuning and |a| is the number of tokens for the agent response (discarding the environment generation). This is akin to rejection sampling fine-tuning (Gulcehre et al., 2023; Dong et al., 2023; Mukobi et al., 2023) seen in prior work.",
+    "3.4._Scalable_Online_Curriculum_Learning": "The core idea of PAPRIKA is to fine-tune the model on a large number of decision making problems to acquire general decision making ability. It is relatively easy to design a large number of tasks, but it is harder to decide which task to train on. A major obstacle is that different tasks may have a large range of difficulty. Unlike pretraining where the model can generally make progress on any given sample (i.e., decrease next-token prediction loss), an RL agent cannot make meaningful progress without collecting good experience. As such, if a task is too difficult for the current model, the model would not generate trajectories with meaningful learning signals. Since generating a trajectory is expensive, it stands to reason that we want to prioritize the tasks where the model can make meaningful progress, which is a form of curriculum learning (Bengio et al., 2009) .\nWithout additional assumptions, the only way to know whether a task would yield good learning signals is to actually perform a rollout in that task, which is expensive. In fact, in this particular scenario, the major cost for training is actually data generation rather than model updates. As such, this naive approach would not save us time or computation. A desideratum for an efficient curriculum is the ability to know whether certain tasks will yield data with learning signals without actually performing the rollout. A natural assumption is that similar tasks would have similar levels of learning signal. These groupings can be obtained through Algorithm 1 Task selection with UCB 1: Input: Number of arms K, number of samples C, number of rounds T , model π 2: Initialize: s k = 0, n k = 0, Buffer 3: for each round t = 1, 2, . . . , T do 4:\nCompute θ k = s k n k + 2 log K k=1 n k n k for each k 5: Select k ⋆ = arg max k θ k 6: Sample τ from group k ⋆ 7:\nSample C trajectories from τ and add to Buffer 8:\nCompute an estimate for νπ (τ ) using Eq 4 9:\nUpdate: s k ⋆ = s k ⋆ + νπ (τ ), n k ⋆ = n k ⋆ + 1 10: end for 11: Construct D from Buffer and train the model π meta data or prior knowledge. 2Measuring learning potential. We will use h ∼ π • τ to denote sampling one episode from the task τ using the policy π. The average performance of\nπ on τ is R π (τ ) = E h∼π•τ [r(h)] and the variance is σ 2 π (τ ) = E h∼π•τ (r(h) -R π (τ )) 2 .\nBased on these, we can define:\nEQUATION\n)\nThis quantity is known as the coefficient of variation in statistics, a dimensionless quantity that measures the population's variability relative to the mean.\nWe argue that this quantity is an ideal measure of the learning potential for a single task. DPO requires a pair of positive and negative samples 3 . Intuitively, the pair should be sufficiently different so the model can tell the two apartfor example, prior work (Pal et al., 2024) has shown that DPO suffers when the edit distance between preferred and dispreferred responses is not large enough. Variance naturally measures the possibility of getting diverse trajectories from sampling. On the other hand, different tasks could have vastly different reward scales. Without loss of generality, if we assume that all rewards are positive, the average reward of each task is a measurement of the reward scale.\nNormalizing the standard deviation with the reward scale allows us to compare different tasks directly.",
+    "6._Discussion": "In this paper, we presented a scalable fine-tuning method to improve multi-turn decision making abilities of LLMs. Moreover, we showed that the strategies learned by the LLM from our method can generalize zero-shot to unseen tasks. There are a few limitations to our approach. Firstly, we use rejection sampling on self-generated data to teach the model better behaviors. In order to get good performance, the starting model need to exhibit good behavior within a reasonable generation budget, so PAPRIKA would perform worse in the absence of a good base model. Next, we use offline preference tuning algorithms to train our models due to the lack of computational resources. A possible future direction for our work is to run online RL on diverse tasks instead: due to its recent success in other domains (DeepSeek-AI et al., 2025) , we expect it will give a larger improvement in LLMs' in-context RL capabilities. Our environments, despite being designed with the help of GPT-4o-mini, required a lot of human effort for implementation. A new axis of improvement can be training an LLM to scalably generate suitable tasks that can then be used to train the agent. Finally, the performance of our curriculum learning algorithm heavily depends on the quality of the task group clusters which is not ideal, and one can study possible improvements of this algorithm. We leave these directions for future work.",
+    "3.2._Dataset_construction": "In order to learn from these task groups, we must first generate data from them. It is crucial that the data we generate are diverse which would allow the model to learn different strategies without the risk of overfitting. We accomplish this by generating a large number of trajectories at a high temperature with Min-p sampling (Nguyen et al., 2024) . Min-p sampling works by using an adaptive threshold p scaled ∝ p max , where p max is the highest probability predicted by the model on the next token, to truncate the vocabulary to tokens that have a probability larger than p scaled and sample from them -this enables us to generate diverse yet coherent trajectories at a higher temperature. We note that training data generation for PAPRIKA could be improved by adopting more advanced methods for guiding exploration such as Murty et al. (2024) ; Yang et al. (2024) ; however, we opt for sampling with high temperature for its simplicity and leave these other options for future work.\nFor each task in a set of chosen tasks (e.g., uniformly sampled), we generate n sample trajectories and then construct a preference pair (h w , h l ) where h w is the highest scoring trajectory (trajectory that succeeds and does so at the fewest number of turns) and h l is randomly sampled from the lower scoring (failed or takes substantially more turns to succeed) trajectories. We choose h l randomly instead of choosing the worst one to increase the diversity of our dataset. We treat h w and h l as proxies for desirable and undesirable\nbehaviors. A dataset D = h w , h l (i) N i=1\nis a collection of such trajectory pairs.",
+    "4._Empirical_Results": "In this section, we will present the results of our empirical study to answer the following research questions: (1) Can training on self-generated trajectories from a diverse range of task groups equip LLMs with sequential decision making capabilities that generalize to unseen task groups without the need to train on them? (2) Can curriculum learning improve the data efficiency of our training mechanism? (3) Finally, does PAPRIKA hurt the model's regular abilities, and can fine-tuning on existing multiturn interaction data that do not have any sequential decision making structure also improve these capabilities? We first describe our experimental setup, and then report our empirical observations.\nIf a revealed cell has a zero, it automatically reveals all adjacent cells. This process continues recursively for adjacent '*' cells. The chain stops when cells with non-zero numbers are reached. We will give an example game-play here to make the rules clearer. Imagine we start with a 5 × 5 grid. The initial board will look like the following:\n# # # # # # # # # # # # # # # # # # # # # # # # #\nNext, the agent chooses to reveal the cell at row 2, column 2 (0-indexed). The task environment then randomly places mines, and produces the following board after executing the reveal mechanism above:\n# # 1 * * 1 1 1 * * * * * * * * 1 1 1 * * 1 # 1 *\nIt is easy to see that the cell at (4, 2) and (0, 1) have mines. So the only cell left without a mine is (0, 0), and if the agent chooses to reveal it, then the task ends with success. If the agent chooses to reveal (4, 2) or (0, 1), then the task ends with failure. If the agent chooses to reveal any other cell, nothing happens and just a turn gets wasted. Now we provide an example instruction prompt given to the agent for this task group, describing the rules of this task:\nMinesweeper Agent Prompt You are a playing the game of Minesweeper. You will be given a two dimensional board that looks like: # # # # # # # # # with each row of the board presented sequentially, and different rows separated by newline. The game board is represented by a grid of characters: (a) '#' indicates a hidden cell; in other words, you do not whether this cell has a mine in it or not, (b) '*' indicates a revealed empty cell, i.e., a cell marked with '*' has been revealed and it does not have any mines, and (c) digits (1 through 8) indicate the count of mines in adjacent cells (for example, if a cell has digit 3 on it, it means 3 out of 8 of its adjacent cells have mines, but it does not tell you if this particular cell has mines or not). You will be given the current board state from a user. Your task is to analyze it, apply standard Minesweeper logic, and suggest the next move(s). The rows and columns in this game use 0-based indexing, i.e., the first row is indexed by 0, the second row is indexed by 1, and so on. Provide step-by-step, short and concise reasoning for how you identify any guaranteed safe cells and guaranteed mines, then propose the final move. If multiple moves are possible, choose the most logical option. Follow these instructions carefully and maintain consistency with the rules of Minesweeper. Your goal is to reveal all the empty cells, without revealing any of the cells that has mines. You should make logical deductions to avoid cells you think can have mines, while choosing the next cell to reveal. You should format your response as follows: <Think> Any step-by-step, short and concise thinking to strategically determine the next guess for the secret word </Think> <Answer> reveal row column </Answer> Here row and col refer to the 0-index row and column that you want to reveal. The game starts now, with the following board:\n# # # # # # # # # # # # # # # # # # # # # # # # # Please make your first move!\nAfter choosing to reveal (2, 2) , the agent receives the following feedback from the task environment:\nMinesweeper Environment Feedback Example # # 1 * * 1 1 1 * * * * * * * * 1 1 1 * * 1 # 1 *\nMake your next move for this game of minesweeper. Please try to be concise. You should format your response as follows: <Think> Any step-by-step, short and concise thinking to strategically determine the next guess for the secret word </Think> <Answer> reveal row column </Answer>\nOther task environment feedback can be designed in a similar way, we omit them here for the sake of brevity.",
+    "1._Introduction": "Large language models (LLMs) are considered to be a promising foundation for autonomous agents, systems capable of achieving goals independently with minimal human supervision or intervention. A crucial requirement for such systems is the ability to interact effectively with external environments and gather the information necessary to achieve their objectives. This capability can be formalized as solving sequential decision-making problems or performing reinforcement learning (RL) with language models as the agent. However, two challenges hinder the development of these interactive capabilities. First, most naturally occurring data lacks the structure and context needed to model interactions. Second, directly deploying models into the real world to collect interaction data can produce critical errors, which is expensive and potentially risky.\nGiven the impracticality of direct deployment in the wild, a natural alternative is to generate interaction data synthetically. Although generating synthetic data for every possible problem is infeasible, LLMs possess the capacity for incontext learning (ICL), which allows them to adapt to new tasks with minimal demonstrations (Brown et al., 2020) . Instead of teaching the model to do all the interaction tasks that we care about, we should instead teach the model incontext reinforcement learning (Laskin et al., 2022) so that the model can solve new problems without being trained on them a priori. It shifts the focus from training the model on particular problems to training it on the general process of solving problems. This paradigm shares similarities with the supervised fine-tuning (SFT) and reinforcement learning from human feedback (RLHF) stages of training a language model (vs pretraining) where only a relatively small number of examples is needed to produce a model that can generate responses to a wide range of queries that they are not trained on. Our approach is also closely related to the principles of meta reinforcement learning (Beck et al., 2023) .\nIn this work, we explore the feasibility of teaching LLMs to perform in-context RL that generalizes across different tasks, with the specific goal of training a curious agent with general information gathering capability. A popular notion of curiosity is intrinsic motivation which has been used to train agents with an exploration bonus not necessarily related to the success of any particular task (Schmidhuber, 1991; 2007) . Our work differs from this notion of curiosity in that we do not leverage intrinsic motivation. Instead, we train our agents to explore and interact with an entirely unseen environment to gather information that is needed for completing the task at hand. PAPRIKA can be thought of as a form of amortized exploration, since our goal is to learn good exploration strategies from trajectories from many different environments to make exploration on a new\n... ... ... Is the topic an animal? You are playing the game 20 questions. [...] No. Is the topic a person? Could you tell me your address? I just moved to a new place and my wifi is not working. 42 Binary Boulevard, Circuit City, APT #314 What is the serial number of your router? Crane You are playing wordle. [...] Bears Construct preference pairs & perform policy optimization Test Phase Training Phase Wordle 20 Questions Customer Service We design a diverse set of tasks where an LLM agent needs strategic information gathering to succeed, then train an LLM on self-generated data to prefer higher performing trajectories. The resulting behavior learned by PAPRIKA can transfer zero-shot to unseen tasks, showcasing its potential to build general decision making agents.\nproblem more efficient (see Appendix A for more details).\nWe begin by designing a diverse suite of textual decisionmaking tasks that require active information gathering and decision-making based on interaction outcomes. Using a base model, we generate interaction trajectories and assign scores based on their success in achieving the tasks' objectives. We then apply a sequential variant of Direct Preference Optimization (Rafailov et al., 2024b, DPO) to increase the relative likelihood of successful trajectories. Unlike traditional training where computational costs are dominated by model updates, our approach's primary bottleneck lies in sampling useful interaction data. To improve sample efficiency, we propose a curriculum learning strategy that prioritizes sampling trajectories from tasks with high learning potential.\nWe refer to the overall framework as PAPRIKAfoot_0 . Our results demonstrate that training on different subsets of these tasks improves the performance of the model on unseen tasks. More broadly, our result highlights the potential of using synthetic data to learn in-context RL which would equip LLMs with the capability to interact with the world and solve different decision-making problems without requiring task-specific fine-tuning."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Lmrl gym: Benchmarks for multi-turn reinforcement learning with language models",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Abdulhai",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "White",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Snell",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Hindsight experience replay",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Andrychowicz",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Wolski",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ray",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schneider",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Fong",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Welinder",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Mcgrew",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tobin",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Pieter Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Zaremba",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Thinking fast and slow with deep learning and tree search",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Anthony",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Barber",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Policy gradient search: Online planning and expert iteration without search trees",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Anthony",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Nishihara",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Moritz",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Best Arm Identification in Multi-Armed Bandits",
+      "authors": [
+        {
+          "first": "J.-Y",
+          "middle": [],
+          "last": "Audibert",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bubeck",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "COLT 2010 -Proceedings"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Using upper confidence bounds for online learning",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Auer",
+          "suffix": ""
+        }
+      ],
+      "year": 2000,
+      "venue": "Proceedings 41st annual symposium on foundations of computer science"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Finite-time analysis of the multiarmed bandit problem",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Auer",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Cesa-Bianchi",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        }
+      ],
+      "year": 2002,
+      "venue": "Machine learning"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "A survey of meta-reinforcement learning",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Beck",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Vuorio",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "Z"
+          ],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zintgraf",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Whiteson",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Curriculum learning",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Louradour",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Collobert",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Weston",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "Proceedings of the 26th annual international conference on machine learning"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Access: Advancing innovation: Nsf's advanced cyberinfrastructure coordination ecosystem: Services & support",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [
+            "J"
+          ],
+          "last": "Boerner",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Deems",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "R"
+          ],
+          "last": "Furlani",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "L"
+          ],
+          "last": "Knuth",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Towns",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Practice and Experience in Advanced Research Computing 2023: Computing for the Common Good, PEARC '23"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Rank analysis of incomplete block designs: I. the method of paired comparisons",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "A"
+          ],
+          "last": "Bradley",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "E"
+          ],
+          "last": "Terry",
+          "suffix": ""
+        }
+      ],
+      "year": 1952,
+      "venue": "Biometrika"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Bridges-2: A platform for rapidly-evolving and data intensive research",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [
+            "T"
+          ],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Buitrago",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hanna",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sanielevici",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Scibek",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Nystrom",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Practice and Experience in Advanced Research Computing 2021: Evolution Across All Dimensions, PEARC '21"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Language models are few-shot learners",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Ryder",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Subbiah",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "D"
+          ],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Neelakantan",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Shyam",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Genie: Generative interactive environments",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bruce",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "D"
+          ],
+          "last": "Dennis",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Edwards",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Parker-Holder",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hughes",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mavalankar",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Steigerwald",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Apps",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Forty-first International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Exploration by random network distillation",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Burda",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Edwards",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Storkey",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Klimov",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Generating millions of instructions from a handful of prompts",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Qadri",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Kirchenbauer",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Goldstein",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Genqa",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Ucb exploration via q-ensembles",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "Y"
+          ],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sidor",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Deep reinforcement learning from human preferences",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [
+            "F"
+          ],
+          "last": "Christiano",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Leike",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Martic",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Legg",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Universality in elementary cellular automata",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Cook",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": "Complex systems"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Textworld: A learning environment for text-based games",
+      "authors": [
+        {
+          "first": "M.-A",
+          "middle": [],
+          "last": "Côté",
+          "suffix": ""
+        },
+        {
+          "first": "Ákos",
+          "middle": [],
+          "last": "Kádár",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Kybartas",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Barnes",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Fine",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Moore",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "Y"
+          ],
+          "last": "Tao",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Hausknecht",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "E"
+          ],
+          "last": "Asri",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Adada",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Tay",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Trischler",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "FlashAttention-2: Faster attention with better parallelism and work partitioning",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "FlashAttention: Fast and memory-efficient exact attention with IO-awareness",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "Y"
+          ],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rudra",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Ré",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning",
+      "authors": [
+        {
+          "first": "Deepseek-Ai",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Emergent complexity and zero-shot transfer via unsupervised environment design",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Dennis",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Jaques",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Vinitsky",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bayen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Russell",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Critch",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "RAFT: Reward ranked finetuning for generative foundation model alignment",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Chow",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Diao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Shum",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Transactions on Machine Learning Research"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Alpacafarm: A simulation framework for methods that learn from human feedback",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Dubois",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Taori",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Gulrajani",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Guestrin",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "B"
+          ],
+          "last": "Hashimoto",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Length-controlled alpacaeval: A simple way to debias automatic evaluators",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Dubois",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Galambosi",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "B"
+          ],
+          "last": "Hashimoto",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Model alignment as prospect theoretic optimization",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Ethayarajh",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Muennighoff",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Jurafsky",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Kiela",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kto",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Diversity is all you need: Learning skills without a reward function",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Eysenbach",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ibarz",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Curriculum-guided hindsight experience replay",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Reverse curriculum generation for reinforcement learning",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Florensa",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Held",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Wulfmeier",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Conference on robot learning"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Learning to reason at the frontier of learnability",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Foster",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Foerster",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Gemma 3 technical report",
+      "authors": [
+        {
+          "first": "Gemma-Team",
+          "middle": [],
+          "last": "Kamath",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ferret",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Pathak",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Vieillard",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Merhej",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Perrin",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Matejovicova",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Ramé",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rivière",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Rouillard",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Mesnard",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Reinforced self-training (rest) for language modeling",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Gulcehre",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "L"
+          ],
+          "last": "Paine",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Srinivasan",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Konyushkova",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Weerts",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Siddhant",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ahern",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Macherey",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Doucet",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Firat",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Freitas",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Should you use your large language model to explore or exploit?",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Harris",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Slivkins",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Interactive fiction games: A colossal adventure",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Hausknecht",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Ammanabrolu",
+          "suffix": ""
+        },
+        {
+          "first": "M.-A",
+          "middle": [],
+          "last": "Côté",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Interactive fiction games: A colossal adventure",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Hausknecht",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Ammanabrolu",
+          "suffix": ""
+        },
+        {
+          "first": "M.-A",
+          "middle": [],
+          "last": "Côté",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Teaching large language models to reason with reinforcement learning",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Havrilla",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "C"
+          ],
+          "last": "Raparthy",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Nalmpantis",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Dwivedi-Yu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zhuravinskyi",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hambro",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sukhbaatar",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Raileanu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Measuring mathematical problem solving with the math dataset",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Burns",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kadavath",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Arora",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Basart",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Gpt-4o system card",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Hurst",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lerer",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "P"
+          ],
+          "last": "Goucher",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Perelman",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ostrow",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Welihinda",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Hayes",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Discoveryworld: A virtual environment for developing and evaluating automated scientific discovery agents",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Jansen",
+          "suffix": ""
+        },
+        {
+          "first": "M.-A",
+          "middle": [],
+          "last": "Côté",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Khot",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Bransom",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "D"
+          ],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "P"
+          ],
+          "last": "Majumder",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Tafjord",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "A systematic survey of text worlds as embodied natural language environments",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [
+            "A"
+          ],
+          "last": "Jansen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Replay-guided adversarial environment design",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Dennis",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Parker-Holder",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Foerster",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Grefenstette",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Rocktäschel",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Prioritized level replay",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Grefenstette",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Rocktäschel",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "On the importance of exploration for generalization in reinforcement learning",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "Z"
+          ],
+          "last": "Kolter",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Raileanu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Large language models are zero-shot reasoners",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Kojima",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "S"
+          ],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Reid",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Matsuo",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Iwasawa",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Can large language models explore incontext?",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Krishnamurthy",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Harris",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "J"
+          ],
+          "last": "Foster",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Slivkins",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Mt-eval: A multiturn capabilities evaluation benchmark for large language models",
+      "authors": [
+        {
+          "first": "W.-C",
+          "middle": [],
+          "last": "Kwan",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Shang",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "K.-F",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF49",
+      "title": "In-context reinforcement learning with algorithm distillation",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Laskin",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Oh",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Parisotto",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Spencer",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Steigerwald",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Strouse",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Hansen",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Filos",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Brooks",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Supervised pretraining can learn in-context reinforcement learning",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Pacchiano",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chandak",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Nachum",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Brunskill",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Aligning llms to ask good questions a case study in clinical reasoning",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [
+            "S"
+          ],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Mun",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Brahman",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "S"
+          ],
+          "last": "Ilgen",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Tsvetkov",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Sap",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Alpacaeval: An automatic evaluator of instruction-following models",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Dubois",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Taori",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Gulrajani",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Guestrin",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "B"
+          ],
+          "last": "Hashimoto",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Transformers as decision makers: Provable in-context reinforcement learning via supervised pretraining",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Mei",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Stochastic gradient descent with warm restarts",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Loshchilov",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Sgdr",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Decoupled weight decay regularization",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Loshchilov",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF56",
+      "title": "The llama 3 herd of models",
+      "authors": [
+        {
+          "first": "Grattafiori",
+          "middle": [],
+          "last": "Metaai",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dubey",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Jauhri",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Pandey",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kadian",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Al-Dahle",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Letman",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mathur",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Llms are in-context bandit reinforcement learners",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Monea",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bosselut",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Brantley",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Artzi",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Supervised iterative learning from human feedback",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Mukobi",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Chatain",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Fong",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Windesheim",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Kutyniok",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Bhatia",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Alberti",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Superhf",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Bootstrapping agents by guiding exploration with language",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Murty",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Shaw",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Joshi",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bagel",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Forty-first International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "training language agents on challenging scientific tasks",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Narayanan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "D"
+          ],
+          "last": "Braza",
+          "suffix": ""
+        },
+        {
+          "first": "R.-R",
+          "middle": [],
+          "last": "Griffiths",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ponnapati",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bou",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Laurent",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Kabeli",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Wellawatte",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Cox",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "G"
+          ],
+          "last": "Rodriques",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "D"
+          ],
+          "last": "White",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Aviary",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Turning up the heat: Min-p sampling for creative and coherent llm outputs",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Baker",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Neo",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Roush",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kirsch",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Shwartz-Ziv",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Evolve: Evaluating and optimizing llms for exploration",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Nie",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "N"
+          ],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "H"
+          ],
+          "last": "Chi",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [
+            "V"
+          ],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Gpt-4 technical report",
+      "authors": [
+        {
+          "first": "Achiam",
+          "middle": [],
+          "last": "Openai",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Adler",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ahmad",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Akkaya",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Aleman",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "L"
+          ],
+          "last": "Almeida",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Altenschmidt",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Openai o1 system card",
+      "authors": [
+        {
+          "first": "Jaech",
+          "middle": [],
+          "last": "Openai",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kalai",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lerer",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Richardson",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "El-Kishky",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Low",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Helyar",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Madry",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Beutel",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Carney",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Deep exploration via bootstrapped dqn",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Osband",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Blundell",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Pritzel",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Van Roy",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Smaug: Fixing failure modes of preference optimisation with dpo-positive",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Pal",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Karkhanis",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Dooley",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Roberts",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Naidu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "White",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Iterative reasoning preference optimization",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "Y"
+          ],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Cho",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sukhbaatar",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Weston",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Curiosity-driven exploration by self-supervised prediction",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Pathak",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Agrawal",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "A"
+          ],
+          "last": "Efros",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Darrell",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Self-supervised exploration via disagreement",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Pathak",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Gandhi",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Teacher algorithms for curriculum learning of deep rl in continuously parameterized environments",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Portelas",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Colas",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Hofmann",
+          "suffix": ""
+        },
+        {
+          "first": "P.-Y",
+          "middle": [],
+          "last": "Oudeyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Conference on Robot Learning"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "Automatic curriculum learning for deep rl: A short survey",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Portelas",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Colas",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Weng",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Hofmann",
+          "suffix": ""
+        },
+        {
+          "first": "P.-Y",
+          "middle": [],
+          "last": "Oudeyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF72",
+      "title": "Qwen2.5 technical report",
+      "authors": [
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Qwen",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Hui",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF73",
+      "title": "From r to q * : Your language model is secretly a q-function",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Rafailov",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hejna",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF74",
+      "title": "Direct preference optimization: Your language model is secretly a reward model",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Rafailov",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Mitchell",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF75",
+      "title": "Generalization to new sequential decision making tasks with in-context learning",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [
+            "C"
+          ],
+          "last": "Raparthy",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hambro",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Kirk",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Henaff",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Raileanu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF76",
+      "title": "Unintentional unalignment: Likelihood displacement in direct preference optimization",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Razin",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Malladi",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bhaskar",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Arora",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Hanin",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF77",
+      "title": "A graduate-level google-proof q&a benchmark",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Rein",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "L"
+          ],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "C"
+          ],
+          "last": "Stickland",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Petty",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "Y"
+          ],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Dirani",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Michael",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "R"
+          ],
+          "last": "Bowman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gpqa",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF78",
+      "title": "Curious model-building control systems",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schmidhuber",
+          "suffix": ""
+        }
+      ],
+      "year": 1991,
+      "venue": "Proc. international joint conference on neural networks"
+    },
+    {
+      "id": "BIBREF79",
+      "title": "Gödel machines: Fully self-referential optimal universal self-improvers",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schmidhuber",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "Artificial general intelligence"
+    },
+    {
+      "id": "BIBREF80",
+      "title": "Proximal policy optimization algorithms",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Wolski",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Klimov",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF81",
+      "title": "Dynamics-aware unsupervised discovery of skills",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Hausman",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF82",
+      "title": "Reinforcement today",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [
+            "F"
+          ],
+          "last": "Skinner",
+          "suffix": ""
+        }
+      ],
+      "year": 1958,
+      "venue": "American Psychologist"
+    },
+    {
+      "id": "BIBREF83",
+      "title": "Introduction to multi-armed bandits",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Slivkins",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF84",
+      "title": "Biometry : the principles and practice of statistics in biological research / robert r. sokal and f. james rohlf",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Sokal",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Rohlf",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF85",
+      "title": "Parrot: Enhancing multi-turn chat models by learning to ask questions",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Gai",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF86",
+      "title": "Reinforcement learning: An introduction",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "S"
+          ],
+          "last": "Sutton",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "G"
+          ],
+          "last": "Barto",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF87",
+      "title": "Preference fine-tuning of llms should leverage suboptimal, on-policy data",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Tajwar",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Rafailov",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schneider",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF88",
+      "title": "On the likelihood that one unknown probability exceeds another in view of the evidence of two samples",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [
+            "R"
+          ],
+          "last": "Thompson",
+          "suffix": ""
+        }
+      ],
+      "year": 1933,
+      "venue": "Biometrika"
+    },
+    {
+      "id": "BIBREF89",
+      "title": "Best arm identification with fixed budget: A large deviation perspective",
+      "authors": [
+        {
+          "first": "P.-A",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "R.-C",
+          "middle": [],
+          "last": "Tzeng",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Proutiere",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF90",
+      "title": "Paired open-ended trailblazer (poet): Endlessly generating increasingly complex and diverse learning environments and their solutions",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lehman",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Clune",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "O"
+          ],
+          "last": "Stanley",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF91",
+      "title": "Scienceworld: Is your agent smarter than a 5th grader?",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Jansen",
+          "suffix": ""
+        },
+        {
+          "first": "M.-A",
+          "middle": [],
+          "last": "Côté",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Ammanabrolu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF92",
+      "title": "Evaluating LLMs in multi-turn interaction with tools and language feedback",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mint",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF93",
+      "title": "Mmlu-pro: A more robust and challenging multitask language understanding benchmark",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ni",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Chandra",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Arulraj",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ku",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Yue",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF94",
+      "title": "Chain-of-thought prompting elicits reasoning in large language models",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Schuurmans",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Bosma",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Chi",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [
+            "V"
+          ],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF95",
+      "title": "Statistical mechanics of cellular automata",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wolfram",
+          "suffix": ""
+        }
+      ],
+      "year": 1983,
+      "venue": "Reviews of modern physics"
+    },
+    {
+      "id": "BIBREF96",
+      "title": "Is dpo superior to ppo for llm alignment? a comprehensive study",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Mei",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF97",
+      "title": "React meets actre: Autonomous annotation of agent trajectories for contrastive self-training",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "First Conference on Language Modeling"
+    },
+    {
+      "id": "BIBREF98",
+      "title": "React: Synergizing reasoning and acting in language models",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Shafran",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Narasimhan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF99",
+      "title": "Bootstrapping reasoning with reasoning",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Zelikman",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Mu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "D"
+          ],
+          "last": "Goodman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Star",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF100",
+      "title": "Wildchat: 1m chatgpt interaction logs in the wild",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hessel",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Cardie",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF101",
+      "title": "Judging llm-as-a-judge with mt-bench and chatbot arena",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "W.-L",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "P"
+          ],
+          "last": "Xing",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "E"
+          ],
+          "last": "Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Stoica",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF102",
+      "title": "Instruction-following evaluation for large language models",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Brahma",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Basu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Luan",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF103",
+      "title": "Public Release of Code, Model and Dataset 1. Our codebase to reproduce the results in this paper can",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF104",
+      "title": "We also release the datasets used to train our models. Our supervised fine-tuning",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF105",
+      "title": "To fascilitate further research, we also release a Llama-3.1-8B-Instruct model checkpoint trained with PAPRIKA",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    }
+  ]
+}

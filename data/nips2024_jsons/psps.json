@@ -1,0 +1,1975 @@
+{
+  "paper_id": "psps",
+  "title": "Task-Agnostic Machine Learning-Assisted Inference",
+  "authors": [
+    {
+      "first": "Jiacheng",
+      "middle": [],
+      "last": "Miao",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Wisconsin-Madison",
+        "location": {}
+      }
+    },
+    {
+      "first": "Qiongshi",
+      "middle": [],
+      "last": "Lu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Wisconsin-Madison",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Machine learning (ML) is playing an increasingly important role in scientific research. In conjunction with classical statistical approaches, ML-assisted analytical strategies have shown great promise in accelerating research findings. This has also opened up a whole new field of methodological research focusing on integrative approaches that leverage both ML and statistics to tackle data science challenges. One type of study that has quickly gained popularity employs ML to predict unobserved outcomes in massive samples and then uses the predicted outcomes in downstream statistical inference. However, existing methods designed to ensure the validity of this type of post-prediction inference are limited to very basic tasks such as linear regression analysis. This is because any extension of these approaches to new, more sophisticated statistical tasks requires task-specific algebraic derivations and software implementations, which ignores the massive library of existing software tools already developed for complex inference tasks and severely constrains the scope of post-prediction inference in real applications. To address this challenge, we propose a novel statistical framework for task-agnostic ML-assisted inference. It provides a post-prediction inference solution that can be easily plugged into almost any established data analysis routine. It delivers valid and efficient inference that is robust to arbitrary choices of ML models, while allowing nearly all existing analytical frameworks to be incorporated into the analysis of ML-predicted outcomes. Through extensive experiments, we showcase the validity, versatility, and superiority of our method compared to existing approaches.",
+  "body": {
+    "1_Introduction": "Leveraging machine learning (ML) techniques to enhance and accelerate research has become increasingly popular in many scientific disciplines (Wang et al., 2023) . For example, sophisticated deep learning frameworks have achieved remarkable success in predicting protein structure and interactions, which has the potential to significantly speed up the research process, save costs, and revolutionize the field of structural biology (Jumper et al., 2021; Abramson et al., 2024; Ahdritz et al., 2024) . However, several recent studies have pointed out that statistical inference using ML-predicted outcomes may lead to invalid scientific discoveries due to the lack of consideration of ML prediction uncertainty in traditional statistical approaches (Wang et al., 2020; Angelopoulos et al., 2023a; Miao et al., 2023b) . To address this, researchers have introduced methods that couple ML prediction on large samples and a small set of individuals with measured outcome data to ensure the validity of ML-assisted statistical inference (Wang et al., 2020; Angelopoulos et al., 2023a; Miao et al., 2023b) .\nDespite these advances, current ML-assisted inference methods can only address basic statistical tasks, including mean estimation, quantile estimation, and linear and logistic regression (Angelopoulos et al., 2023a; Miao et al., 2023b) . While the same mathematical principle behind existing ML-assisted inference methods can be generalized to a broader class of M-estimation problems, specific algebraic derivations and computational implementations are required for each new statistical task. Moreover, many tasks, such as the Wilcoxon rank-sum test, do not fit into the M-estimation framework. These issues pose significant challenges to the broad application of ML-assisted inference across various scientific domains. more powerful compared to classical methods.\nWe first provide some intuition about ML-assisted inference and our proposed protocol using an example.",
+    "2.2_Building_the_intuition_with_mean_estimation": "We consider the mean estimation problem where\nθ * = E[Y i ] ≡ arg min θ E[ 1 2 (Y i -θ) 2 ].\nThe classical method only takes the labeled data Y L as input and yields an unbiased and consistent estimator for θ * :\nθ L = arg min θ 1 n n i=1 1 2 (Y i -θ) 2 = 1 n n i=1 Y i .\nThe imputation-based method only takes the unlabeled data f U as input and returns\nη U = arg min θ 1 N n+N i=n+1 1 2 f i -θ 2 = 1 N n+N i=n+1 f i .\nIt is a biased and inconsistent estimator for E[Y i ] if the ML model f is mis-specified. To address this, the ML-assisted estimator takes both labeled data (Y L , f L ) and unlabeled data f U as input and adds a debiasing term to the loss function to rectify the bias caused by ML imputation:\nθ MLA = arg min θ 1 2            ω 0 1 N n+N i=n+1 f i -θ 2 -ω 0 1 n n i=1 f i -θ 2 - 1 n n i=1 (Y i -θ) 2 Debiasing term            = ω 0 1 N n+N i=n+1 f i -ω 0 1 n n i=1 f i - 1 n n i=1 y i\nDebiasing term\n, where the added debiased loss ensures the consistency of the ML-assisted estimator, and the weight ω 0 =\nCov l [Y, f ]/n Var l [ f ]/n+Varu[ f ]/N\nensures that the ML-assisted estimator is no less efficient than the classical estimator with\narbitrary ML predictions. Var( θ MLA ) = Var( θ L ) - Cov l [Y, f ] n Var l [ f ]+n 2 Varu[ f ]/N ≤ Var( θ L ).\nOur proposed method is motivated by the observation that the sufficient statistics of both the MLassisted estimator θ MLA and its variance Var( θ MLA ) are the following summary statistics:\nθ ss = ( θ L , η L , η U ) ≡ ( 1 n n i=1 y i , 1 n n i=1 f i , 1 N n+N i=n+1 f i ) and Σ ss = Var( θ ss ) ≡    Var l [Y ]/n Cov l [Y, f ]/n 0 Cov l [Y, f ]/n Var l [ f ]/n 0 0 0 Var u [ f ]/N   \nMoreover, they can be easily obtained by applying the same algorithm A (i.e., mean estimation in this example) to:\n• labeled data with observed outcome A(Y L ) → [ θ L , Var( θ L )] = [ 1 n n i=1 y i , Var l [Y ]/n] • labeled data with predicted outcome A( f L ) → [ η L , Var( η L )] = [ 1 n n i=1 f i , Var l [ f ]/n] • unlabeled data with predicted outcome A( f U ) → [ η U , Var( η U )] = [ 1 N n+N i=n+1 f i , Var u [ f ]/N ] • bootstrap samples of labeled data A[(Y L , f L ) q , q = 1, . . . , Q] for estimation of Cov( θ L , η L ) = Cov l [Y, f ]/n.\nHere, (Y L , f L ) q represents the q-th bootstrap of labeled data.",
+    "2.3_Related_work": "Our work is closely related to recent methods developed in the ML-assisted inference literature (Angelopoulos et al., 2023a; Miao et al., 2023b; Wang et al., 2020; Angelopoulos et al., 2023b; Gan and Liang, 2023; Motwani and Witten, 2023; Zrnic and Candès, 2024) , and is also related to methods for handling missing data (Rubin, 1996; Tsiatis, 2006) and semi-supervised inference (Azriel et al., 2022; Zhang and Bradic, 2022; Deng et al., 2023; Zhang et al., 2019) . While current ML-assisted inference methods modify the loss function or the estimating equation, our protocol works directly on the summary statistics. For simple problems such as mean estimation, current methods yield a closed-form solution to the optimization problem. However, for more general statistical tasks, there is no such closed-form solution. Current methods typically require the algebraic form of the loss function, its first and second order derivatives, and the standard error for the estimator, as well as a newly implemented optimization algorithm to obtain the estimator. We use the logistic regression problem as an example. Here,\nθ * = arg min θ E[-Y (θX) T -ψ(Xθ)] and ψ(t) = 1/(1 + exp(-t)). θ MLA = arg min θ 1 N n+N i=n+1 ω[-f i θ T X T i -ψ(X i θ)] - 1 n n i=1 ω[-f i θ T X T i -ψ(X i θ)] - 1 n n i=1 [-Y i θ T X T i -ψ(X i θ)]\nwith asymptotic variance\nA -1 V(ω)A -1 , where A = 1 N +n ( n i=1 ψ ′′ (X i θ) X T i X i + N j=1 ψ ′′ (X i θ) X T i X i ), V(ω) = n N [ω 2 Var n (ψ ′ (X i θ) -f i )X T i + Cov N +n (1 -ω)ψ ′ (X i θ)X T i + (ω f i -Y i )X T i ,\nand ω needs to be obtained by optimization to minimize the asymptotic variance. In contrast, our protocol simply applies logistic regression A to\n• labeled data with observed outcomes (X L , Y L ) to obtain [ θ L , Var( θ L )]\n• labeled data with predicted outcomes (X L , f L ) to obtain [ η L , Var( η L )]\n• unlabeled data with predicted outcomes (\nX U , f U ) to obtain [ η U , Var( η U )] • bootstrap of labeled data (X L , Y L , f L ) q , q = 1, . . . , Q for Cov( θ L , η L ),\nand returns ω T 0 η U -(ω T 0 η L -θ L ), where\nω 0 = (Var( η L ) + n N Var( η U )) -1 Cov( θ L , η L ).\nFor each new statistical task, as long as an existing analysis routine can produce an estimator that is asymptotically normally distributed, our protocol can be applied in a similar manner. Additionally, the current mathematical principles guiding ML-assisted inference are applicable solely to M-estimation (Angelopoulos et al., 2023a; Miao et al., 2023b; Angelopoulos et al., 2023b; Gan and Liang, 2023; Zrnic and Candès, 2024) . However, our protocol extends beyond this limitation, addressing all estimation problems with an asymptotically normally distributed estimator.\nInference relying solely on summary statistics is widely used in the statistical genetics literature for practical reasons. Summary statistics-based methods have been developed for tasks such as variance component inference and polygenic risk prediction (Bulik-Sullivan et al., 2015b,a; Ruan et al., 2022; Miao et al., 2023a; Zhao et al., 2022) . In contrast to our work, these applications do not leverage ML predictions, but instead focus on inference using summary statistics obtained from observed outcomes. An exception is our previous study for valid genome-wide association studies on ML-predicted outcome (Miao et al., 2024) . But our previous work focused only on linear regression modeling with application to genome-wide association studies. The PSPS introduced in this paper aims to extend ML-assisted inference to general statistical tasks.\nOur work is also related to resampling-based inference, zero augmentation, and false discovery rate (FDR) control methods. Our protocol is inspired by the core principle of resampling-based inference, which replaces algebraic derivation with computation (Efron and Tibshirani, 1994) . The main difference is that we focus on how to use ML to support inference, whereas resampling-based inference focuses on bias and variance estimation. The idea of zero augmentation has been used in augmented inverse propensity weighting estimators (Robins et al., 1994) and in handling unmeasured confounders (Yang and Ding, 2019) and missing data for U-statistics (Cannings and Fan, 2022) . These estimators do not incorporate ML, which is fundamental to our work. We also adapt techniques from the FDR literature (Benjamini and Hochberg, 1995; Benjamini and Yekutieli, 2001; Barber and Candès, 2015, 2019) . Our unique contribution is to use ML to support FDR control, thereby increasing its statistical power, in contrast to classical methods that rely solely on labeled data.",
+    "3.1_General_protocol_for_PSPS": "Building on our two examples in section 2, we formalize our protocol in fig. 1 for ML-assisted inference: Algorithm 1 PSPS for ML-assisted inference Input: A pre-trained ML model f , labeled data L = (X L , Y L ), unlabeled data U = X U 1: Use the ML model f to predict the outcome in both labeled and unlabeled data. 2: Apply the algorithm A in the analysis routine to • labeled data (X L , Y L ) and obtain [ θ L , Var( θ L )] • labeled data (X L , f L ) and obtain [ η L , Var( η L )] • unlabeled data with (X U , f U ) and obtain [ η U , Var( η U )] • Q bootstrap of labeled data (X L , Y L , f L ) q , q = 1, . . . , Q and obtain Cov( θ L , η L ). 3: Employ one-step debiasing to the the summary statistics in step2:\nθ PSPS = ω T 0 η U -(ω T 0 η L -θ L ), where ω 0 = (Var( η L ) + n N Var( η U )) -1 Cov( θ L , η L ) and Var( θ PSPS ) = Var( θ L ) -Cov( θ L , η L ) T (Var( η L ) + n N Var( η U )) -1 Cov( θ L , η L ) Output: ML-assisted point estimator, standard error,",
+    "3.2_Theoretical_guarantees": "In this section, we examine the theoretical properties of PSPS. In what follows, P → denotes convergence in probability and D → denotes convergence in distribution.\nThe first result shows that our proposed estimator is consistent, asymptotically normally distributed, and uniformly better in terms of element-wise asymptotic variance compared with the classical estimator based on labeled data only.\nTheorem 1. Assuming equation (1) holds, then θ PSPS P → θ * , and\nn 1/2 ( θ PSPS -θ * ) D → N 0, V( θ PSPS ) , where V( θ PSPS ) = V( θ L ) -V( θ L , η L ) T (V( η L ) + ρV( η U )) -1 V( θ L , η L ). Assume the k-th column of V( θ L , η L ) is not a zero vector and at least one of V( η L ) and V( η U ) are positive definite, then V( θ PSPS ) kk ≤ V( θ L ) kk .\nThis result indicates a greater reduction in variance for the ML-assisted estimator is associated with larger values of V( θ L , η L ) and smaller values of V( η L ), V( η U ), and ρ. The variance reduction term\n[V( θ L , η L ) T (V( η L ) + ρV( η U )) -1 V( θ L , η L )]\nkk can also serve as a metric for selecting the optimal ML model in ML-assisted inference.\nOur next result shows that three existing methods, i.e., PPI, PPI++, and POP-Inf, are asymptotically equivalent to PSPS with different weighting vector. A broader class for consistent estimator of\nθ * is θ(ω) = ω T η U -(ω T θ L -η L ), where ω is a K×K matrix. The consistency of θ(ω) for θ * only requires ω T ( η U -η L ) P → 0. Since ( η U -η L ) P\n→ 0, assigning arbitrary fixed weights for will satisfy the condition. However, the choice of weights influences the efficiency of the estimator as illustrated in proposition 2 later. Proposition 1. Assuming equation (1) and regularity condition for the asymptotically normality of current ML-assisted estimator holds. For M-estimation problem, we have\nθ (diag(ω ele )C) -θ POP-Inf D → 0, θ (diag(ω tr )C) -θ PPI++ D → 0, θ (diag(1)C) -θ PPI D → 0.\nHere, ω ele = [ω ele,1 , . . . , ω ele,K ] T ∈ R K and ω ele,k minimizing the k-th diagonal element of V( θ(ω)), ω tr is a scalar used to minimize the trace of V( θ(ω)), and C is a matrix associated with the second derivatives of the loss function in M-estimation, with further details deferred to appendix A.\nThis demonstrates that for M-estimation problems, our method is asymptotically equivalent to POP-Inf, PPI++, and PPI each with the respective weights diag(ω ele )C, diag(ω tr )C, and diag(1)C. Therefore, PSPS can be viewed as a generalization of these existing methods.\nOur third result shows that the weights used in the proposition 1 are not optimal. Instead, our choice of ω 0 represents the optimal smooth combination of ( θ L , η L , η U ) in terms of minimizing the asymptotic variance, while still preserving consistency.\nProposition 2. Suppose n 1/2 (g( θ L , η L , η U ) -θ * ) D → N (0, Σ g ) and g is a smooth function, then Σ g kk ≥ Σ PSPS kk\nTogether with proposition 1, our results demonstrate that our protocol provides a more efficient estimator compared to existing methods for the M-estimation problem. Furthermore, the applicability of our protocol is not limited to M-estimation and only requires summary statistics as input. It also indicates that in a distributed inference setting (Jordan et al., 2018) where individual-level data are not available, PSPS proves to be the optimal approach for combining shared summary statistics.",
+    "3.3_Extensions": {
+      "3.3.1_Labeled_data_and_unlabeled_data_are_not_independent": "Here, we relax the assumption that the labeled data and unlabeled data are independent. When they are not independent, this can leads to the non-zero covariance between the η L and η U . Consider a more broader class of summary statistics asymptotically satisfying\nn 1/2   θ L -θ η L -η η U -η   D → N        0 K 0 K 0 K   ,       V( θ L ) V( θ L , η L ) V( η L , η U ) V( θ L , η L ) V( η L ) √ ρV( θ L , η U ) V( η L , η U ) √ ρV( θ L , η U ) ρV( η U )           \nWe can similarly employ the one-step debiasing\nθ no-indep PSPS = ω T 0 η U -ω 0 ( η L -θ)\nwhere\nω 0 = (V( θ L , η L ) -V( η L , η U )) T (V( η L ) + V( η U ) -2V( θ L , η U )) -1 and Var( θ no-indep PSPS ) = Var( θ L ) - (V( θ L , η L ) -V( η L , η U )) T (V( η L ) + V( η U ) -2V( θ L , η U )) -1 (V( θ L , η L ) -V( η L , η U )\n). The theoretical guarantees of the proposed estimator can be similarly derived by theorem 1.",
+      "3.3.2_Sensitivity_analysis_for_distributional_shift_between_labeled_and_unlabeled_data": "The other assumption of our approach is that the labeled and unlabeled data are identically distributed so that we can ensure η L -η U P → 0 and validity of PSPS results. To address the potential violation of this assumption, we introduce a sensitivity analysis with hypothesis testing for the null H 0 : η L,k = η U ,k with test statistics\nη L,k -η U ,k Var( η L,k ) + Var( η U ,k ) D → N (0, 1)\nto assess if η L,k and η U ,k are significantly different. Here, the subscript k indicates the k-th coordinate. We recommend using p-value < 0.1 as evidence for heterogeneity and caution the interpretation for results of ML-assisted inference.",
+      "_text": "We also provide several extensions to ensure the broad applicability of our proposed method."
+    },
+    "4_ML-assisted_False_Discovery_Rate_Control": "Controlling FDR is crucial for statistical application in various scientific disciplines (Benjamini and Hochberg, 1995; Benjamini and Yekutieli, 2001; Barber and Candès, 2015) . In this section, we show that our protocol can be utilized for ML-assisted FDR control, achieving greater statistical power compared to classical methods that solely rely on labeled data. We consider the linear regression model with\nY = K k=1 X k β k + ϵ, ϵ ∼ N 0, σ 2 I n\nHere, Y is a n-dimensional vector, X k is also a n-dimensional vector representing the k-th feature. A central question here is to select the variables associated with the outcome Y after accounting for all other variables. Formally, denote S ⊂ {1, 2, . . . , K} as the set of selected variables. The FDR is defined as\nFDR = E[ # k : β k = 0, k ∈ S #{k : k ∈ S} ∨ 1 ].\nWe consider two popular FDR control methods: Benjamini-Hochberg (BH) procedure (Benjamini and Hochberg, 1995) and knockoff (Barber and Candès, 2015) . BH procedure first computes p-values p k for each feature X k using multiple linear regression and then applies a threshold to these p-values. Features with p-values smaller than the threshold are considered as discoveries. The knockoff method does not rely on p-values. It includes three key components: a ranking algorithm that assigns an importance metric to each variable, an augmented design that creates fake variables, and a symmetric statistic that utilizes the importance metric for each original variable to control the final FDR (Ke et al., 2024) .\nWe introduce PSPS-BH and PSPS-knockoff for ML-assisted FDR control. Briefly, PSPS-BH processes the p-value from ML-assisted linear regression through the BH procedure, while PSPS-knockoff utilizes the ML-assisted debiased Lasso coefficient (Javanmard and Montanari, 2014; Zhang and Zhang, 2014; Liu and Rigollet, 2019) , in a ranking algorithm. These methods aim to improve the power of classical methods that employ linear regression or debiased Lasso (Zhang and Zhang, 2014) using only labeled data. Detailed descriptions of the algorithms are provided below:",
+    "5.1_Simulations": "We conduct simulations to assess the finite sample performance of our method. Our objectives are to demonstrate that 1) PSPS achieves narrower confidence intervals when applied to statistical tasks already implemented in existing ML-assisted methods; 2) when applied to statistical tasks that have not been implemented for ML-assisted inference, PSPS provides confidence intervals with narrower width but correct coverage (indicating higher statistical power) compared to classical approaches rely solely on labeled data; 3) it provides accurate FDR control and achieves higher power compared to classical methods for FDR control which only use labeled data.\nTasks that have been implemented for ML-assisted inference We compare PSPS with the classical method using only labeled data, the imputation-based method using only unlabeled data, and three MLassisted inference methods PPI, PPI++, and POP-Inf (Angelopoulos et al., 2023a,b; Miao et al., 2023b ) on mean estimation, linear and logistic. We defer the detailed data generating process to appendix B. In short, we generated outcome Y i from feature X 1i and X 2i , and obtained the pre-trained random forest that predict Y i using X 1i and X 2i . We have 500 labeled samples (X 1i , Y i , f i ) , and unlabeled samples (X 1i , f i ) ranged from 1,000 to 10,000. Our goal is to estimate the mean of Y i , the linear and logistic regression coefficient between Y i and X 1i .\nfig. 2a-c shows confidence interval coverage and fig. 2d-f shows confidence interval width. We find that imputation-based method fail to obtain correct coverage, while all other including PSPS have the correct the coverage. PSPS has narrower confidence interval width compared to the classical method and other approaches for ML-assisted inference. Tasks that have not been implemented for ML-assisted inference Next, we consider several commonly used statistical tasks that currently lack implementations for ML-assisted inference including quantile regression (Koenker, 2005) , instrumental variable (IV) regression (Angrist and Imbens, 1995) , negative binomial (NB) regression (Hilbe, 2011) , debiased Lasso (Zhang and Zhang, 2014) , and the Wilcoxon rank-sum test (Mann and Whitney, 1947) . Similar to our previous simulations, we utilize labeled data, unlabeled data, and a pre-trained ML model. Detailed simulation settings are deferred to the appendix B.\nOur goal is to estimate the regression coefficient between Y i and X 1i for quantile (at quantile level 0.75), IV, and NB regression, between Y i and high dimensional features X i ∈ R 150 for debiased Lasso, and to perform hypothesis testing on the medians of two independent samples Y i |X 1i = 1 and Y i |X 1i = 0 using the Wilcoxon rank-sum test.\nfig. 3a-d shows confidence interval coverage and fig. 3f -i shows confidence interval width for parameter estimation. fig. 3e and fig. 3j shows the type-I error and statistical power for Wilcoxon rank-sum test. We found that imputation-based method fail to obtain correct coverage or have inflated type-I error, while PSPS and classical method have the correct the coverage and type-I error control. PSPS have narrower confidence intervals width in all settings, and higher statistical power for Wilcoxon rank-sum test compared to classical methods. Confidence intervals become narrower as unlabeled sample size increases, indicating higher efficiency gain. FDR control We evaluate the finite sample performance of PSPS-BH and PSPS-knockoff in controlling the FDR compared with classical and imputation-based methods as baselines. We consider lowdimensional(K < n) and high-dimensional(K > n) linear regressions for PSPS-BH and PSPS-knockoff, respectively. We simulate the data such that only a proportion of the features are truly associated with the outcome. The data generating process is deferred to appendix B. Our goal is to select the associated features while maintaining the target FDR level. fig. 4a-b shows the estimated FDR and fig. 4c-d shows the statistical power for different methods. Imputation-based control method failed to control FDR in either low-dimensional or high-dimensional settings. Classical approach, PSPS-BH, and PSPS-knockoff effectively controlled in both low-dimensional and high-dimensional settings. PSPS-BH, and PSPS-knockoff achieve higher statistical power compared to the classical method.\n0.00 0.05 0.10 0.15 0.50 1.00 0.05 0.10 0.15 Nominal FDR level Estimated FDR BH a 0.00 0.05 0.10 0.15 0.50 1.00 0.05 0.10 0.15 Nominal FDR level Estimated FDR Knockoff b 0.00 0.25 0.50 0.75 1.00 0.05 0.10 0.15 Nominal FDR level Estimated Power BH c 0.00 0.25 0.50 0.75 1.00 0.05 0.10 0.15 Nominal FDR level Estimated Power Knockoff d Methods PSPS Classical Imputation-based Together, these simulations demonstrate that PSPS outperforms existing methods and can be easily adopted for a variety of important tasks that have not yet been implemented in existing ML-assisted inference methods.",
+    "5.2_Identify_vQTLs_for_bone_mineral_density": "We employed our method to carry out ML-assisted quantile regression to identify genetic variants associated with the outcome variability (vQTL) of bone mineral density derived from dual-energy X-ray absorptiometry imaging (DXA-BMD) (Miao et al., 2022) . DXA-BMD serves as the primary diagnostic marker for osteoporosis and fracture risk (Zheng et al., 2015; Carey and Delaney, 2017) . Identifying vQTL for DXA-BMD can provide insights into the biological mechanisms underlying outcome plasticity and reveal candidate genetic variants potential gene-gene and gene-environment interactions (Wang et al., 2019; Marderstein et al., 2021; Westerman et al., 2022; Young et al., 2018; Miao and Lu, 2022) . We focused on total body DXA-BMD, which integrates measurements from multiple skeletal sites. We used data from the UK Biobank (Bycroft et al., 2018) , which includes 36,971 labeled and 319,548 unlabeled samples with 9,450,880 genetic variants after quality control. Data processing details have been reported elsewhere (Miao et al., 2024) . We predicted DXA-BMD values in both labeled and unlabeled samples using SoftImpute (Mazumder et al., 2010) with 466 other variables measured in UK Biobank. Prediction in the labeled sample was implemented through cross-validation to avoid overfitting. We used the BH procedure to correct for multiple testing and considered FDR < 0.05 as the significance threshold.\nNo genetic variants reached statistical significance under the classical method with only labeled data. PSPS identified 108 significant variants with FDR < 0.05 spanning 5 independent loci, showcasing the superior statistical power of PSPS (fig. 5 and table 1 ). Notably, these the significant vQTL cannot be identified by linear regression (Miao et al., 2024) , indicating the different genetic mechanisms controlling outcome levels and variability for DXA-BMD. CHR BP SNP A1 A2 EAF BETA SE p-value FDR 1 205359339 rs12139623 T C 0.105 0.063 0.012 7.2e-08 0.033 4 14359045 rs552582509 A G 0.213 0.046 0.009 4.5e-07 0.045 7 132568586 rs79089873 A G 0.073 -0.068 0.014 5.6e-07 0.049 9 11587905 rs146938822 A G 0.022 -0.134 0.024 4.0e-08 0.033 15 47672201 rs281258 C T 0.393 -0.04 0.007 5.8e-08 0.033 Table 1: Significant vQTLs for bone mineral density. Abbreviations: CHR, Chromosome; BP, Base Pair; SNP, Single Nucleotide Polymorphism; A1, Allele 1 (Effect Allele); A2, Allele 2 (Non-effect Allele); EAF, Effect Allele Frequency; BETA, Effect Size (Beta Coefficient); SE, Standard Error; FDR, False Discovery Rate.",
+    "6_Conclusion": "In this work, we introduced a simple, task-agnostic protocol for ML-assisted inference, with applications across a broad range of statistical tasks. We established consistency and asymptotic normality of the proposed estimator. Additionally, we introduce several extensions to further expand the scope of our approach, addressing challenges such as dependence and distributional shifts between labeled and labeled data, and FDR control. Through extensive simulations and applications to real data, we demonstrate the superior performance and broad applicability of our method across diverse tasks. As a future direction, it would be interesting to develop and implement a fast algorithm for resampling in our method.\nThe codes to implement PSPS, along with the benchmark methods, and to replicate the simulation and real data analysis, are available at https://github.com/qlu-lab/PSPS."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Accurate structure prediction of biomolecular interactions with alphafold 3",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Abramson",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Adler",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Dunger",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Evans",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Green",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Pritzel",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Ronneberger",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Willmore",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "J"
+          ],
+          "last": "Ballard",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bambrick",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Openfold: Retraining alphafold2 yields new insights into its learning mechanisms and capacity for generalization",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Ahdritz",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Bouatta",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Floristean",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kadyan",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Gerecke",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "J"
+          ],
+          "last": "O'donnell",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Berenberg",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Fisk",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Zanichelli",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Nature Methods"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Prediction-powered inference",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "N"
+          ],
+          "last": "Angelopoulos",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bates",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Fannjiang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "I"
+          ],
+          "last": "Jordan",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zrnic",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Science"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Ppi++: Efficient prediction-powered inference",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "N"
+          ],
+          "last": "Angelopoulos",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "C"
+          ],
+          "last": "Duchi",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zrnic",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Identification and estimation of local average treatment effects",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Angrist",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Imbens",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Semi-supervised linear regression",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Azriel",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "D"
+          ],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Sklar",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Berk",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Buja",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Journal of the American Statistical Association"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Controlling the false discovery rate via knockoffs",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "F"
+          ],
+          "last": "Barber",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "J"
+          ],
+          "last": "Candès",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Annals of statistics"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "A knockoff filter for high-dimensional selective inference",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "F"
+          ],
+          "last": "Barber",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "J"
+          ],
+          "last": "Candès",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Annals of statistics"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Controlling the false discovery rate: a practical and powerful approach to multiple testing",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Benjamini",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Hochberg",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "Journal of the Royal statistical society: series B (Methodological)"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "The control of the false discovery rate in multiple testing under dependency",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Benjamini",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Yekutieli",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "Annals of statistics"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "for Anorexia Nervosa of the Wellcome Trust Case Control Consortium 3",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Bulik-Sullivan",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "K"
+          ],
+          "last": "Finucane",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Anttila",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gusev",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "R"
+          ],
+          "last": "Day",
+          "suffix": ""
+        },
+        {
+          "first": "P.-R",
+          "middle": [],
+          "last": "Loh",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Consortium",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "G"
+          ],
+          "last": "Consortium",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "C"
+          ],
+          "last": "Duncan",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Nature genetics"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Ld score regression distinguishes confounding from polygenicity in genome-wide association studies",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [
+            "K"
+          ],
+          "last": "Bulik-Sullivan",
+          "suffix": ""
+        },
+        {
+          "first": "P.-R",
+          "middle": [],
+          "last": "Loh",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "K"
+          ],
+          "last": "Finucane",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ripke",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "W G"
+          ],
+          "last": "Patterson",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Daly",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "J"
+          ],
+          "last": "Price",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "L"
+          ],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Neale",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "M"
+          ],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Nature genetics"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "The uk biobank resource with deep phenotyping and genomic data",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Bycroft",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Freeman",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Petkova",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Band",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "T"
+          ],
+          "last": "Elliott",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Sharp",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Motyer",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Vukcevic",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Delaneau",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "O'connell",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "The correlation-assisted missing data estimator",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [
+            "I"
+          ],
+          "last": "Cannings",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Utility of dxa for monitoring, technical aspects of dxa bmd measurement and precision testing",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "J"
+          ],
+          "last": "Carey",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "F"
+          ],
+          "last": "Delaney",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Bone"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Optimal and safe estimation for high-dimensional semi-supervised learning",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ning",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Journal of the American Statistical Association"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "The jackknife, the bootstrap and other resampling plans",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Efron",
+          "suffix": ""
+        }
+      ],
+      "year": 1982,
+      "venue": "SIAM"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Bootstrap methods: another look at the jackknife",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Efron",
+          "suffix": ""
+        }
+      ],
+      "year": 1992,
+      "venue": "Breakthroughs in statistics: Methodology and distribution"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "An introduction to the bootstrap",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Efron",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "J"
+          ],
+          "last": "Tibshirani",
+          "suffix": ""
+        }
+      ],
+      "year": 1994,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Prediction de-correlated inference",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Gan",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Negative binomial regression",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "M"
+          ],
+          "last": "Hilbe",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Confidence intervals and hypothesis testing for high-dimensional regression",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Javanmard",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Montanari",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "The Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Communication-efficient distributed statistical inference",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [
+            "I"
+          ],
+          "last": "Jordan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "D"
+          ],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Journal of the American Statistical Association"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Highly accurate protein structure prediction with alphafold",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Jumper",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Evans",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Pritzel",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Green",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Figurnov",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Ronneberger",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Tunyasuvunakool",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Bates",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vzídek",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Potapenko",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Power of knockoff: The impact of ranking algorithm, augmented design, and symmetric statistic",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [
+            "T"
+          ],
+          "last": "Ke",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "S"
+          ],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Quantile regression",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Koenker",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Power analysis of knockoff filters for correlated designs",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Rigollet",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "On a test of whether one of two random variables is stochastically larger than the other",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [
+            "B"
+          ],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "R"
+          ],
+          "last": "Whitney",
+          "suffix": ""
+        }
+      ],
+      "year": 1947,
+      "venue": "The annals of mathematical statistics"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Leveraging phenotypic variability to identify genetic interactions in human phenotypes",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "R"
+          ],
+          "last": "Marderstein",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "R"
+          ],
+          "last": "Davenport",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kulm",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "V"
+          ],
+          "last": "Van Hout",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Elemento",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "G"
+          ],
+          "last": "Clark",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "The American Journal of Human Genetics"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Spectral regularization algorithms for learning large incomplete matrices",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Mazumder",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Hastie",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Tibshirani",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "The Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Quantifying portable genetic effects and improving cross-ancestry genetic prediction with gwas summary statistics",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Miao",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Nature Communications"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "A quantile integral linear model to quantify genetic effects on phenotypic variability",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Miao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "L"
+          ],
+          "last": "Schmitz",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "M"
+          ],
+          "last": "Fletcher",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Identifying genetic loci associated with complex trait variability",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Miao",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Handbook of Statistical Bioinformatics"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Assumption-lean and data-adaptive post-prediction inference",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Miao",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Miao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Valid inference for machine learning-assisted gwas",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Miao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Miao",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "medRxiv"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Revisiting inference after prediction",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Motwani",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Witten",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Estimation of regression coefficients when some regressors are not always observed",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "M"
+          ],
+          "last": "Robins",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rotnitzky",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "P"
+          ],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 1994,
+      "venue": "Journal of the American statistical Association"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Improving polygenic prediction in ancestrally diverse populations",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ruan",
+          "suffix": ""
+        },
+        {
+          "first": "Y.-F",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Y.-C",
+          "middle": [
+            "A"
+          ],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "C.-Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lam",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sawa",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "R"
+          ],
+          "last": "Martin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Nature genetics"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Multiple imputation after 18+ years",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "B"
+          ],
+          "last": "Rubin",
+          "suffix": ""
+        }
+      ],
+      "year": 1996,
+      "venue": "Journal of the American statistical Association"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Semiparametric theory and missing data",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "A"
+          ],
+          "last": "Tsiatis",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Scientific discovery in the age of artificial intelligence",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Chandak",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Van Katwyk",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Deac",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Genotype-by-environment interactions inferred from genetic effects on phenotypic variability in the uk biobank",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "E"
+          ],
+          "last": "Kemper",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Xue",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "E"
+          ],
+          "last": "Powell",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "E"
+          ],
+          "last": "Goddard",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "R"
+          ],
+          "last": "Wray",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Science advances"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Methods for correcting inference based on outcomes predicted by machine learning",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "H"
+          ],
+          "last": "Mccormick",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "T"
+          ],
+          "last": "Leek",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Variance-quantitative trait loci enable systematic discovery of gene-environment interactions for cardiometabolic serum biomarkers",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [
+            "E"
+          ],
+          "last": "Westerman",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "D"
+          ],
+          "last": "Majarian",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Giulianini",
+          "suffix": ""
+        },
+        {
+          "first": "D.-K",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Miao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "C"
+          ],
+          "last": "Florez",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "I"
+          ],
+          "last": "Chasman",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "S"
+          ],
+          "last": "Udler",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "K"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Nature Communications"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Combining multiple observational data sources to estimate causal effects",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Journal of the American Statistical Association"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Identifying loci affecting trait variability and detecting interactions in genome-wide association studies",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "I"
+          ],
+          "last": "Young",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "L"
+          ],
+          "last": "Wauthier",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Donnelly",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Nature genetics"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Semi-supervised inference: General theory and estimation of means",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "D"
+          ],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "T"
+          ],
+          "last": "Cai",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Annals of statistics"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Confidence intervals for low dimensional parameters in high dimensional linear models",
+      "authors": [
+        {
+          "first": "C.-H",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "S"
+          ],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Journal of the Royal Statistical Society Series B: Statistical Methodology"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "High-dimensional semi-supervised learning: in search of optimal inference of the mean",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bradic",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Biometrika"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Optimizing and benchmarking polygenic risk scores with gwas summary statistics",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Gruenloh",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Miao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "BioRxiv"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Whole-genome sequencing identifies en1 as a determinant of bone density and fracture",
+      "authors": [
+        {
+          "first": "H.-F",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Forgetta",
+          "suffix": ""
+        },
+        {
+          "first": "Y.-H",
+          "middle": [],
+          "last": "Hsu",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Estrada",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rosello-Diez",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "J"
+          ],
+          "last": "Leo",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "L"
+          ],
+          "last": "Dahia",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "H"
+          ],
+          "last": "Park-Min",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "H"
+          ],
+          "last": "Tobias",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Kooperberg",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Cross-prediction-powered inference",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zrnic",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "J"
+          ],
+          "last": "Candès",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the National Academy of Sciences"
+    }
+  ]
+}

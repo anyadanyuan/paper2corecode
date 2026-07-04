@@ -1,0 +1,2255 @@
+{
+  "paper_id": "differentiable-tree-search-network",
+  "title": "LEARNING TO SEARCH FROM DEMONSTRATION SEQUENCES",
+  "authors": [
+    {
+      "first": "Dixant",
+      "middle": [],
+      "last": "Mittal",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Liwei",
+      "middle": [],
+      "last": "Kang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Wee",
+      "middle": [
+        "Sun"
+      ],
+      "last": "Lee",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Search and planning are essential for solving many real-world problems. However, in numerous learning scenarios, only action-observation sequences, such as demonstrations or instruction sequences, are available for learning. Relying solely on supervised learning with these sequences can lead to sub-optimal performance due to the vast, unseen search space encountered during training. In this paper, we introduce Differentiable Tree Search Network (D-TSN), a novel neural network architecture that learns to construct search trees from just sequences of demonstrations by performing gradient descent on a best-first search tree construction algorithm. D-TSN enables the joint learning of submodules, including an encoder, value function, and world model, which are essential for planning. To construct the search tree, we employ a stochastic tree expansion policy and formulate it as another decision-making task. Then, we optimize the tree expansion policy via REINFORCE with an effective variance reduction technique for the gradient computation. D-TSN can be applied to problems with a known world model or to scenarios where it needs to jointly learn a world model with a latent state space. We study problems from these two scenarios, including Game of 24, 2D grid navigation, and Procgen games, to understand when D-TSN is more helpful. Through our experiments, we show that D-TSN is effective, especially when the world model with a latent state space is jointly learned. The code is available at https://github. com/dixantmittal/differentiable-tree-search-network.",
+  "body": {
+    "1_INTRODUCTION": "Search and planning are critical components in a wide range of complex tasks. It has long been important in areas such as robotics and games (Mohanan & Salgoankar, 2018; Duarte et al., 2020) , and has recently gained prominence in the area of large language models as inference-time solutions for improving reasoning and agentic abilities (Yao et al., 2023; Hao et al., 2023; Zhou et al., 2024) . In many of these domains, step-by-step demonstrations are available in the form of recorded expert demonstrations, medical treatment records, and instruction/solution manuals. However, constructing a search tree would require data that is not directly available from the demonstration sequences -this can be impractical or very expensive to obtain. Hence, it would be desirable to learn to search from only demonstration sequences.\nSearch and planning can be effectively executed if a simulator or a world model is available. When such a world model is not available, we may learn the world model and then use it for these purposes (Kaiser et al., 2020; Hafner et al., 2020; Ha & Schmidhuber, 2018) . However, when separately learned from demonstration sequences, such world models often suffer from compounding errors, and cannot cover the complete state space. Using such world models for search can be unreliable, particularly if the search expands into parts of the space that are not seen during training (Asadi et al., 2018) .\nOne way to increase the reliability of the world model is to perform end-to-end learning (Farquhar et al., 2018) , where the world model is trained with the search algorithm. One of the advantages of end-to-end learning is that the search algorithm will learn to avoid going into states where the world model is inaccurate since this would result in lower performance. We begin by showing that, when the search tree has a fixed structure, the loss function for training is continuous with respect to the model parameters, justifying the use of a fixed-structure search tree with gradient-based learning methods. However, if the search tree structure can change during training, the loss function may no longer be continuous. This is because a small change in parameters could result in the construction of a different search tree and bring a large change in the corresponding loss function. To alleviate this issue, we propose employing a stochastic tree expansion policy and optimizing the expected loss, ensuring the continuity of loss function in the parameter space.\nWe further propose formulating the search tree expansion as another decision-making task with the goal of minimizing the prediction error progressively during the tree expansion and refining the tree expansion policy via REINFORCE (Williams, 1992) . The use of the REINFORCE algorithm introduces another challenge; REINFORCE usually has high variance in its gradient estimates. To handle that, we propose the use of a baseline for variance reduction, adopting the telescoping sum trick used in Guez et al. (2018) for constructing the baseline.\nEmploying these techniques allows us to train a novel neural network, Differentiable Tree Search Network (D-TSN), that embeds the structure of a best-first search algorithm into its architecture. D-TSN can use a simulator or world model, if available, to learn to perform search. We study this scenario by fine-tuning a large language model to play the Game of 24 (Yao et al., 2023) . D-TSN can also be used in more difficult scenarios where the world model is not available and only sequences of demonstrations are provided. We study two problems in this scenario, a small-scale 2D grid navigation problem and Procgen games (Cobbe et al., 2020) which are substantially more complex.\nThrough our experiments, we show that end-to-end learning for doing search and planning from only sequences of demonstrations is possible and useful, especially when the world model needs to be jointly learned.",
+    "2_RELATED_WORKS": "Search and planning are crucial in various domains. For example, in language model reasoning, recent works integrated search algorithms to enhance the reasoning capabilities of language models. These techniques employ in-context queries (Yao et al., 2023; Xie et al., 2023; Hao et al., 2023; Zhou et al., 2024) or additional value heads (Liu et al., 2023) to guide the search process during inference, enhancing model's reasoning ability by looking at different possible solutions. In gaming, notable successes (Silver et al., 2016; Schrittwieser et al., 2020; Nasiriany et al., 2019) have combined deep neural networks with search algorithms to achieve superhuman performance.\nOne line of recent works has focused on embedding search inductive bias into network architectures. Neural Admissible Relaxation (NEAR) (Shah et al., 2020 ) develops approximately admissible heuristics for the A* algorithm. Neural A* Search (Yonetani et al., 2021) integrates the A* algorithm into network structures, learning a cost function from a gridworld map. Similarly, MCTSnets (Guez et al., 2018) incorporate the framework of Monte Carlo Tree Search (MCTS) into network architectures, guiding the search using parameterized memory embeddings stored in a tree structure. However, these methods rely on a known world model for planning, which limits their application when the world model is unknown. Another notable work, TreeQN (Farquhar et al., 2018) , incorporates search inductive bias into the network by fully expanding a search tree to a fixed depth while jointly learning a world model, which allows it to tackle problems where the world model is unknown. However, the full expansion mechanism of TreeQN leads to a shallow search tree, which limits its application in complex problems with longer trajectories.\nOur setting of learning from sequences of demonstrations is closely related to Offline Reinforcement Learning (Prudencio et al., 2024; Levine et al., 2020) , where an agent learns its policy solely from a fixed dataset of experiences without further interactions with the environment. The Offline-RL paradigm is appealing in many real-world applications such as education, healthcare, and robotics, where active data collection is often infeasible (Singh et al., 2022; Singla et al., 2021; Liu et al., 2019) . In our work, we develop a method that learns to search in an end-to-end fashion solely from sequences of demonstrations, such as text solutions to reasoning problems and expert trajectories on navigation and games.",
+    "3_DIFFERENTIABLE_TREE_SEARCH_NETWORK": {
+      "3.1_LEARNABLE_SUBMODULES": "D-TSN comprises several learnable submodules that function as subroutines in a best-first search algorithm and dynamically construct a computation graph. An illustration is provided in Figure 4 . The Encoder module (E θ ) transforms the actual state s t into a latent state h t = E θ (s t ), facilitating online search within a latent space. The Transition module (T θ ) approximates the environment's transition function, using h t and action a t to predict the subsequent latent state, h t+1 = T θ (h t , a t ), of the transition. The Reward module (R θ ) approximates the environment's reward function, predicting the reward, r t = R θ (h t , a t ), for the transition based on h t and a t . The Value module (V θ ) maps latent state h t to its estimated state value, V θ (h t ). Dividing the network into these submodules reduces total learnable parameters and injects a strong search inductive bias into the network architecture, preventing overfitting to an arbitrary function that may align with the limited available training data.",
+      "3.2_TREE_SEARCH_IN_LATENT_SPACE": "The search begins by encoding the input state s 0 into its latent state h 0 , then proceeds through expansion and backup phases. During expansion, the search tree expands iteratively for a set number of expansion steps, where each step expands a node in the search tree. During backup, Q-values at the root node are recursively computed using the Bellman equation across expanded nodes. Each node represents a latent state reachable from the root, and branches represent actions taken. A candidate set O is maintained during the expansion phase, representing nodes eligible for further expansion. The D-TSN algorithm is detailed in Algorithm 1.\nExpansion Phase Each search iteration begins by evaluating the path value, V (N ), of the candidate nodes. The path value is defined as the cumulative sum of rewards from the root node to a particular leaf node N , in addition to the value of the leaf node predicted by the value module (V θ ), i.e.\nEQUATION\nA naive implementation of the search selects the node N with the highest total path value for expansion; however, for a differentiable search, the node N is sampled from the candidates using a distribution constructed by applying softmax over the path values of the candidates. Expansion of node N is carried out by simulating every action on the node using the transition module (T θ ). Simultaneously, the associated reward, R θ (h N , a), is also computed. The resulting latent states are added to the tree as children of node N . Additionally, they are added to the candidate set O for subsequent expansions, while N is excluded from the set. This can be represented as:\nEQUATION\nBackup Phase The expansion phase is followed by the Backup phase. In this phase, values of all tree nodes are recursively updated using the Bellman equation as follows:\nEQUATION\nAfter the backup phase, Q-values at the root node are returned as the final output of the online search.\nAn illustration of the constructing the tree is shown in Figure 1 .",
+      "3.3_CONSTRUCTION_OF_COMPUTATION_GRAPH": "Throughout the expansion and backup phases, illustrated in Appendix Figures 5 and 6 respectively, a dynamic computation graph is constructed where the output Q-values depend on the combination of all the submodules, i.e. Encoder, Transition, Reward, and Value modules. During training, the output ( ) = ( , ) ( ) = + + ( ) Sum of rewards to Value of leaf state Sample a leaf node from softmax( ( ), ( ), ( )) to expand Expansion Backup Value of nodes are updated as maximum Q value of children nodes Backup Expansion ( ， ) ( ， ) = ( , ) = ( , )\n( , ) = + ( ) ( ， ) ( ) = ( ) Figure 1 : An illustration of the stochastic tree expansion phase and backup phase.\nQ-function is evaluated by a loss function and is optimized using gradient-based optimizers such as Stochastic Gradient Descent (SGD). These optimizers backpropagate the gradient of this loss through the entire computation graph and update the parameters of submodules in an end-to-end process. An illustration of the process is provided in Appendix Figure 7 .",
+      "3.4_DISCONTINUITY_OF_THE_LOSS_FUNCTION": "A pivotal aspect of optimizing D-TSN's parameters through gradient descent is ensuring that the loss function applied to the output Q-values is continuous in the network's parameter space. We initiate this discussion by showing that the loss function, when applied to the Q-values computed by expanding a search tree, is continuous in the parameter space, provided that the search tree has a fixed structure. Theorem 3.1. Given a set of parameterized modules that are continuous in the parameter space θ, the Q-values computed by expanding a search tree with a fixed structure, through the composition of these modules and backpropagation of child values using addition and max operations, are continuous in the parameter space θ. When the tree structure is not fixed, the continuity of the Q-values is not guaranteed. (For a detailed proof, refer to Appendix B.) Theorem 3.1 establishes that the Q-values calculated by a fixed-structure tree expansion are continuous in the network's parameter space. The theorem applies to TreeQN (Farquhar et al., 2018) , which performs a full tree expansion to a fixed depth, and consequently, the loss function applied to its output Q-values is also continuous, contributing to TreeQN's success in gradient-based optimization.\nHowever, in the case of naive implementation of D-TSN, as outlined in Section 3.2, the search tree is constructed by expanding only those paths that are likely to represent the optimal trajectory from the root node. This results in the output Q-values and the corresponding loss function being dependent on the specific tree, τ , constructed during the search:\nEQUATION\nWhen the network parameters are changed slightly, this naive implementation could generate a different tree structure, which, in turn, would induce a large change in the loss function and affect its continuity in the parameter space.",
+      "3.5_ENABLING_CONTINUITY_IN_THE_LOSS_FUNCTION": "To overcome the discontinuity issue observed in the naive implementation of D-TSN, we employ a stochastic tree expansion policy. This approach allows us to optimize the expectation of the loss function, defined as:\nEQUATION\nThe expected loss in Equation ( 6) is continuous in the parameter space θ and can be optimized using gradient-based optimization techniques.",
+      "3.6_STOCHASTIC_TREE_EXPANSION_POLICY": "In order to compute the expected loss in Equation ( 6), let us represent a partial search tree after t iterations as τ t . The output Q-values, denoted as Q θ (s, a|τ ), depend on the final tree τ sampled after T iterations. We can define a stochastic tree expansion policy π θ (τ t ) that takes a tree τ t as input and outputs a distribution over the candidate nodes, facilitating stochastic selection of the node for further expansion and generating the tree τ t+1 . We compute the stochastic tree expansion policy by taking softmax over the path value, as defined in Equation (1), of each candidate node as follows:\nEQUATION\nThe gradient of the expected loss (Schulman et al., 2015) in Equation ( 6) can be computed as follows (See Appendix C for the derivation):\n(8) ∇ θ L(s, a) = E τ L(Q θ (s, a|τ )) T t=1 ∇ θ log π θ (n t |τ t ) + ∇ θ L(Q θ (s, a|τ )) 3.7 REDUCING VARIANCE USING TELESCOPIC SUM\nThe REINFORCE term of the gradient in Equation ( 8) usually has high variance due to the difficulty of credit assignment (Pignatelli et al., 2024) in a reinforcement learning type objective; the second part of the gradient equation is the usual optimization of a loss function, so we expect it to be reasonably well behaved. To reduce the variance of the first part of the gradient, we take inspiration from the telescoping sum trick used in Guez et al. (2018) .\nLet us denote the loss after t iterations as L t = L(Q θ (s, a|τ t )). The objective is to minimize the loss after T iterations, represented as L T . Assuming that L 0 = 0, we can rewrite L T as a telescoping sum:\nEQUATION\nNow, we define a reward term, r t , for selecting node n during the t th iteration as the reduction in the loss value after the t th iteration, i.e. r t = L t -L t-1 . Further, let us represent the return (or rewards-to-go) from iteration t to the final iteration T as R t , which can be computed as:\nEQUATION\n)\nGiven this, the REINFORCE term from Equation ( 8) can be reformulated as T t ∇ θ log π θ (n t |τ t )R t , where L T serves as a baseline that helps in reducing variance. Consequently, the final gradient estimate of the loss in Equation ( 6) is expressed as:\n(11) ∇ θ L(s, a) = E τ T t ∇ θ log π θ (n t |τ t )R t + ∇ θ L(Q θ (s, a|τ ))\nFor empirical evaluations, we use a single sample estimate Schulman et al. (2015) of the expected gradient in Equation (11).",
+      "3.8_LOSS_FUNCTIONS": "In this section, we define a series of loss functions that are used to train D-TSN. Given a dataset of trajectories where each trajectory is denoted as {(s i , a i , r i , Q i )} T i=0 , the primary objective is to make the computed Q-values closely approximate the observed Q-values for corresponding states and actions. To achieve this, we minimize the mean squared error between the predicted and observed Q-values. This loss, denoted as L Q , is defined as:\nEQUATION\nTo avoid Q-values for out-of-distribution actions getting overestimated, we incorporate the CQL (Kumar et al., 2020) loss, which encourages the agent to adhere to actions observed within the training data distribution. This loss, L D , is defined as:\nEQUATION\nAdditionally, we incorporate self-supervised consistency loss functions (Schwarzer et al., 2021; Ye et al., 2021) to ensure consistency in the transition and reward networks. Consider actual states s i and s i+1 , where s i+1 is obtained by taking action a i in state s i . Their corresponding latent state representations are denoted as h i and h i+1 . Here, h i = E θ (s i ) and h i+1 = E θ (s i+1 ). Now, we can use the transition module to predict another latent representation of state s i+1 , represented as hi+1 = T θ (h i , a i ). To ensure that the transition function, T θ , provides consistent predictions for the transitions in the latent space, we minimize the squared error between the latent representations h i+1 and hi+1 .\nEQUATION\nIn a similar vein, we minimize the mean squared error between the predicted reward R θ (h i , a i ) and the actual reward observed r i in the training dataset D.\nEQUATION\nCombining Equations ( 12), ( 13), ( 14) and ( 15), we define the loss function for training D-TSN as\nEQUATION\n)\nwhere τ denotes the search tree. Additional details on these loss functions are presented in Appendix D.4.",
+      "_text": "Differentiable Tree Search Network (D-TSN) is a neural network design that incorporates the algorithmic inductive bias of a best-first search algorithm into the network structure. It learns from sequences of demonstrations to construct search trees by composing submodules, that include an encoder, a value function, a reward function, and a transition function. If some submodules are readily available, e.g. a world model or simulator, they can be directly used in D-TSN. When these submodules are not available, they can be jointly optimized with the search algorithm. This joint optimization allows the learned imperfect world model to be useful for online search and makes the submodules robust against errors in the world model. We start by describing the version of D-TSN where all submodules are learned."
+    },
+    "4.1_D-TSN_WITH_KNOWN_WORLD_MODEL": {
+      "4.1.1_BASELINE": "We compare this version of D-TSN with a supervised fine-tuned (SFT) language model. For a fair comparison, the supervised fine-tuned model is also allowed to perform search during inference, where we use the log probability of the model generating the sequence as its value:\nEQUATION\nwhere s i are tokens in the sequence, p(•|•) is the conditional probability of generating the next token.\nThe log probability is divided by N to normalize the effect of sequence length.",
+      "4.1.2_TRAINING_DATASET": "We collected all valid Game of 24 problems and their solutions through an exhaustive search of all combinations, then randomly selected 530 problems for evaluation. The remaining 527 problems have 16k valid solutions, from which we randomly sampled a subset for training. We format the text solutions as following format: \"[2,3,7,7]->(2*7=14)->[3,7,14]->(14+7=21)->[3,21]->(3+21=24)->[24]\", where [...] represents current numbers, and (...) represents operations. The operations combine two numbers with an operator, resulting in a new number. We train D-TSN to select operands and operators, and use the transition function to handle the computation of the current numbers after the operation, i.e. given a state \"[2,3,7,7]->(2*\" and an action to select \"7\" as the next operand, the next state given by the transition function is \"[2,3,7,7]->(2*7=14)->[3,7,14]->(\". This would allow us to focus more on the difficult part of the solution, which is deciding which numbers to use in the operation and which operator to use. Such transition can be easily obtained in practice as we observe that the SFT model never makes mistakes on these positions in its generation.",
+      "4.1.3_RESULTS": "We train D-TSN using 8 search iterations in training and compare the resulting value function with a supervised fine-tuned model, as described in Equation ( 17), to guide the search during evaluation. To compare D-TSN with a supervised fine-tuned model under different amounts of available data, we sample 1k, 2k, and 10k trajectories to train both methods. Table 1 shows that D-TSN can better guide the search during evaluation when compared to the SFT model. On a closer look, we notice that the log-likelihood of the SFT model as a value function often fails to recognize promising states, assigning a lower value to them, even when the states have already reached 24. As a result, tokens chosen at each step often do not lead to a correct solution. In contrast, D-TSN better recognizes these states and assigns high values to them, guiding each step to select tokens that lead to a correct solution.\n4.2 D-TSN WITH JOINTLY LEARNED WORLD MODEL Next, we study two problems where we jointly learn a world model in D-TSN. The states in these problems are represented as pixels of images.\nNavigation This is a 2D grid-based navigation task designed to quantitatively and qualitatively visualize the agent's generalization capabilities. The environment is a 20 × 20 grid featuring a central hall. At the start of each episode, a robot is randomly positioned inside this hall, while its destination is set outside. We present two distinct scenarios: one with a single exit and another with two exits from the central hall. Training is done only in the two exit scenarios. The single exit scenario, which requires a longer-horizon planning to reach the goal, is used to test generalization.\nProcgen Procgen (Cobbe et al., 2019) is a collection of 16 procedurally generated, game-like environments, specifically designed to evaluate an agent's generalization capability, differentiating it from Atari 2600 games (Mnih et al., 2013) . Further details on these domains are presented in Appendix D.1.\nWe follow the Offline-RL paradigm and train D-TSN using sequences of demonstrations. Please refer to Appendix D.2 for a detailed explanation of the learning framework.",
+      "_text": "We take an initial step towards learning to perform tree search from instruction sequences for LLMs by first demonstrating that LLMs can be effectively fine-tuned when the world model is known. We study Game of 24 (Yao et al., 2023) , a reasoning problem where the transition dynamics and rules are well-defined and readily available. The task is that given four cards drawn from a deck of poker, use basic arithmetic operations to combine the card values to reach 24. The problem can be formulated as follows: a state is a list of current numbers, initially 4; the actions involve selecting an operation as well as two numbers from the current numbers; the transition will calculate the operation and update the list of current numbers by removing the selected two and adding the calculated result; the reward is one when 24 is the only number in the list, and zero otherwise. Since language models can directly process token sequences, we do not need an Encoder in this problem. We use a large language model, Llama3-8B (Dubey et al., 2024) , with an additional value head as the value function V θ ."
+    },
+    "4.2.1_TRAINING_DATASETS": "We use a behavior policy, which can be optimal or sub-optimal, to collect demonstration sequences for training. An optimal policy generates a dataset with lower noise and a cleaner training signal, leading to a stable learning process. In contrast, a sub-optimal policy produces a noisier dataset, which consequently restricts the quality of the policy that the agent can learn. The choice of the behavior policy depends on domain-specific requirements and the resources available for data collection. We use an optimal behavior policy for Navigation and a sub-optimal policy for Procgen.\nThe training dataset, D, consists of trajectories generated using the behavior policy π B , where each trajectory is defined as a series of T tuples, each comprising the state observed, action taken, reward observed, and the corresponding Q-value of the observed state, denoted as {(s i , a i , r i , Q i )} T i=0 . The Q-value for state s i can be computed by adding the rewards obtained in the trajectory from timestep i onwards, i.e. Q i = T j=i r j . We limit the number of trajectories to 1000 for each domain to evaluate the sample complexity and generalization capabilities of each method.",
+    "4.2.2_BASELINES": "We benchmark D-TSN against the following prominent baselines: Model-free Q-network This allows us to assess the significance of incorporating inductive biases into the neural network architecture. This model is trained using the loss defined as:\nEQUATION\nModel-based Search In this baseline, we utilize the submodules defined for D-TSN, but the world models and the value module are trained independently of each other. During evaluation, we employ the best-first search, akin to D-TSN, utilizing the independently trained modules. Through this baseline, we assess the benefits derived from the joint optimization of the world model and the search algorithm. For our evaluations, we perform 10 search iterations for each input state. To train this model, we compute the Q-value, Q θ , without performing the search and optimize the loss defined as:\nEQUATION\n)\nTreeQN This comparison helps highlight the advantages of an advanced search algorithm, used in D-TSN, that can execute a deeper search while maintaining similar computational constraints.\nFor evaluations, we adhere to a depth of 2 for TreeQN, as described in Farquhar et al. (2018) , for both Procgen and navigation domains. Notably, the memory footprint would increase exponentially for larger depth, which prohibits us to use a larger depth. This model is trained using the loss (as discussed in Farquhar et al. ( 2018)) defined as:\nEQUATION\n) Every method is trained with the same datasets using their respective loss functions. A more comprehensive discussion of the baselines and implementation details can be found in Appendix D.6. ",
+    "4.3.2_THE_CONTRIBUTION_OF_AUXILIARY_LOSSES": "In this study, we explore the contribution of auxiliary losses to D-TSN's performance. As outlined in Table 5 , the absence of these auxiliary losses leads to a more pronounced decline in the performance. Specifically, the success rate in the Navigation (1-exit) task drops significantly to 91.1% compared to 99.3% with auxiliary losses.",
+    "4.3.3_ENHANCING_PERFORMANCE_THROUGH_DEEPER_SEARCH": "In this study, we explore the benefits of deeper search in the D-TSN framework by increasing search iterations in Navigation and Game of 24 problems. For Navigation, we maintain an identical number of iterations in the training and evaluation phases to prevent any distribution shifts in the world model. For Game of 24, we can use a larger search iteration during evaluation, as the world model remains fixed.\nTable 6: Comparison of D-TSN trained with different number of search iterations ('n_itr') to evaluate the performance gain by performing deeper searches. Solver Navigation Navigation (2-exits) (1-exit) D-TSN (n_itr=5) 97.4% 96.6% D-TSN (n_itr=10) 99.0% 99.3% D-TSN (n_itr=20) 99.5% 99.1%\nTable 7: Comparison of D-TSN using different number of search iterations during evaluation. All methods are trained with 2k trajectories. #Search iterations in evaluation 1 4 8 16 128 D-TSN (n_itr=1) 20.75 31.51 38.16 49.76 89.29 D-TSN (n_itr=4) 32.22 41.13 49.67 90.24 D-TSN (n_itr=8) 38.25 49.91 91.42 D-TSN (n_itr=16) 49.58 92.38\nThe results, as listed in Table 6 and Table 7 indicate that a higher number of iterations leads to an improvement in the success rate in both Navigation and Game of 24. For Navigation, where the world model is not known, the improvement suggests that D-TSN is able to exploit the jointly learned world model effectively, and can potentially be scaled up further given additional computational resources. For Game of 24, we see performance consistently improve as the number of search iterations during evaluation increases, highlighting the importance of search. Notably, the performance reaches around 90% for D-TSN when there are sufficient search iterations during evaluation, suggesting that the value function learned by D-TSN can recognize the promising states and guide the generation to those states. We also observe that the number of search iterations performed during training does not affect the performance much in Game of 24. One explanation is that we are using a ground-truth world model, and performing a search using actual states. The REINFORCE term in Equation ( 11) would act similarly to the CQL loss in Equation ( 13). Learning a world model jointly in D-TSN is also possible in principle in language model tasks, but scaling considerations become important to manage the large action space and observation space. We leave this exploration for future works.",
+    "4.3.4_ROBUSTNESS_OF_THE_WORLD_MODEL": "A key challenge in employing learned world models for search is addressing the compounding errors, which impact the accuracy and effectiveness of search. This study shows that the joint optimization of both the world model and the search algorithm compensates for these inaccuracies, ensuring the world model is usable in deeper online searches. As demonstrated in Table 8 , the world model trained jointly with the search algorithm consistently outperforms the independently trained model, especially as the number of iterations increases.",
+    "5_CONCLUSION": "In this paper, we introduce Differentiable Tree Search Network (D-TSN), a novel framework that learns to conduct differentiable tree search from just sequences of demonstrations. D-TSN can leverage a known world model, or jointly learn a world model end-to-end with other search submodules. D-TSN conducts a best-first style search, which allows it to search deeper and explore more promising states. A naive incorporation of best-first search could lead to discontinuity of the loss in the parameter space, an issue we address by employing a stochastic tree expansion policy. We optimize the expected loss function using a REINFORCE-style objective and propose a telescoping sum trick to reduce the variance of the gradient for this expected loss. We evaluate D-TSN in two scenarios: 1) when the world model is known -we experiment with a language model reasoning task, Game of 24; 2) when the world model is not known -we experiment with 2D grid navigation and Procgen games. Through our experiments, we show that D-TSN is effective, outperforming baselines in both scenarios, especially when the world model is jointly learned.\nNonetheless, the strength of the current implementation of D-TSN is currently limited to deterministic decision-making problems with a discrete action space. We have demonstrated the method on latent world models with 2D visual observations but have yet to do so on language observations. To cater to a broader spectrum of decision-making problems, there is also a need to revamp the transition model to manage stochastic world scenarios, which include common usage of language and visual language models. We aim to address these problems in our future works."
+  },
+  "references": [
+    {
+      "id": "BIBREF1",
+      "title": "Lipschitz continuity in model-based reinforcement learning",
+      "authors": [
+        {
+          "first": "Dipendra",
+          "middle": [],
+          "last": "Asadi",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "L"
+          ],
+          "last": "Misra",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Littman",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 35th International Conference on Machine Learning, ICML 2018, Stockholmsmässan"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Agent57: Outperforming the atari human benchmark",
+      "authors": [
+        {
+          "first": "Adrià",
+          "middle": [],
+          "last": "Puigdomènech Badia",
+          "suffix": ""
+        },
+        {
+          "first": "Bilal",
+          "middle": [],
+          "last": "Piot",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Kapturowski",
+          "suffix": ""
+        },
+        {
+          "first": "Pablo",
+          "middle": [],
+          "last": "Sprechmann",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Vitvitskyi",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaohan",
+          "middle": [],
+          "last": "Daniel Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Charles",
+          "middle": [],
+          "last": "Blundell",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the 37th International Conference on Machine Learning, ICML 2020"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Leveraging procedural generation to benchmark reinforcement learning",
+      "authors": [
+        {
+          "first": "Karl",
+          "middle": [],
+          "last": "Cobbe",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Hesse",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Hilton",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Leveraging procedural generation to benchmark reinforcement learning",
+      "authors": [
+        {
+          "first": "Karl",
+          "middle": [],
+          "last": "Cobbe",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Hesse",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Hilton",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the 37th International Conference on Machine Learning, ICML 2020"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Phasic policy gradient",
+      "authors": [
+        {
+          "first": "Karl",
+          "middle": [],
+          "last": "Cobbe",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Hilton",
+          "suffix": ""
+        },
+        {
+          "first": "Oleg",
+          "middle": [],
+          "last": "Klimov",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 38th International Conference on Machine Learning, ICML 2021"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "A survey of planning and learning in games",
+      "authors": [
+        {
+          "first": "Nuno",
+          "middle": [],
+          "last": "Fernando Fradique Duarte",
+          "suffix": ""
+        },
+        {
+          "first": "Artur",
+          "middle": [],
+          "last": "Lau",
+          "suffix": ""
+        },
+        {
+          "first": "Luis",
+          "middle": [
+            "Paulo"
+          ],
+          "last": "Pereira",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Reis",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Applied Sciences"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "The llama 3 herd of models",
+      "authors": [
+        {
+          "first": "Abhimanyu",
+          "middle": [],
+          "last": "Dubey",
+          "suffix": ""
+        },
+        {
+          "first": "Abhinav",
+          "middle": [],
+          "last": "Jauhri",
+          "suffix": ""
+        },
+        {
+          "first": "Abhinav",
+          "middle": [],
+          "last": "Pandey",
+          "suffix": ""
+        },
+        {
+          "first": "Abhishek",
+          "middle": [],
+          "last": "Kadian",
+          "suffix": ""
+        },
+        {
+          "first": "Ahmad",
+          "middle": [],
+          "last": "Al-Dahle",
+          "suffix": ""
+        },
+        {
+          "first": "Aiesha",
+          "middle": [],
+          "last": "Letman",
+          "suffix": ""
+        },
+        {
+          "first": "Akhil",
+          "middle": [],
+          "last": "Mathur",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [],
+          "last": "Schelten",
+          "suffix": ""
+        },
+        {
+          "first": "Amy",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Angela",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Anirudh",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Hartshorn",
+          "suffix": ""
+        },
+        {
+          "first": "Aobo",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Archi",
+          "middle": [],
+          "last": "Mitra",
+          "suffix": ""
+        },
+        {
+          "first": "Archie",
+          "middle": [],
+          "last": "Sravankumar",
+          "suffix": ""
+        },
+        {
+          "first": "Artem",
+          "middle": [],
+          "last": "Korenev",
+          "suffix": ""
+        },
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Hinsvark",
+          "suffix": ""
+        },
+        {
+          "first": "Arun",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "Aston",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Aurélien",
+          "middle": [],
+          "last": "Rodriguez",
+          "suffix": ""
+        },
+        {
+          "first": "Austen",
+          "middle": [],
+          "last": "Gregerson",
+          "suffix": ""
+        },
+        {
+          "first": "Ava",
+          "middle": [],
+          "last": "Spataru",
+          "suffix": ""
+        },
+        {
+          "first": "Baptiste",
+          "middle": [],
+          "last": "Rozière",
+          "suffix": ""
+        },
+        {
+          "first": "Bethany",
+          "middle": [],
+          "last": "Biron",
+          "suffix": ""
+        },
+        {
+          "first": "Binh",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Bobbie",
+          "middle": [],
+          "last": "Chern",
+          "suffix": ""
+        },
+        {
+          "first": "Charlotte",
+          "middle": [],
+          "last": "Caucheteux",
+          "suffix": ""
+        },
+        {
+          "first": "Chaya",
+          "middle": [],
+          "last": "Nayak",
+          "suffix": ""
+        },
+        {
+          "first": "Chloe",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Marra",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Mcconnell",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Keller",
+          "suffix": ""
+        },
+        {
+          "first": "Christophe",
+          "middle": [],
+          "last": "Touret",
+          "suffix": ""
+        },
+        {
+          "first": "Chunyang",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Corinne",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        },
+        {
+          "first": "Cristian Canton",
+          "middle": [],
+          "last": "Ferrer",
+          "suffix": ""
+        },
+        {
+          "first": "Cyrus",
+          "middle": [],
+          "last": "Nikolaidis",
+          "suffix": ""
+        },
+        {
+          "first": "Damien",
+          "middle": [],
+          "last": "Allonsius",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Danielle",
+          "middle": [],
+          "last": "Pintz",
+          "suffix": ""
+        },
+        {
+          "first": "Danny",
+          "middle": [],
+          "last": "Livshits",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Esiobu",
+          "suffix": ""
+        },
+        {
+          "first": "Dhruv",
+          "middle": [],
+          "last": "Choudhary",
+          "suffix": ""
+        },
+        {
+          "first": "Dhruv",
+          "middle": [],
+          "last": "Mahajan",
+          "suffix": ""
+        },
+        {
+          "first": "Diego",
+          "middle": [],
+          "last": "Garcia-Olano",
+          "suffix": ""
+        },
+        {
+          "first": "Diego",
+          "middle": [],
+          "last": "Perino",
+          "suffix": ""
+        },
+        {
+          "first": "Dieuwke",
+          "middle": [],
+          "last": "Hupkes",
+          "suffix": ""
+        },
+        {
+          "first": "Egor",
+          "middle": [],
+          "last": "Lakomkin",
+          "suffix": ""
+        },
+        {
+          "first": "Ehab",
+          "middle": [],
+          "last": "Albadawy",
+          "suffix": ""
+        },
+        {
+          "first": "Elina",
+          "middle": [],
+          "last": "Lobanova",
+          "suffix": ""
+        },
+        {
+          "first": "Emily",
+          "middle": [],
+          "last": "Dinan",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "Michael"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Filip",
+          "middle": [],
+          "last": "Radenovic",
+          "suffix": ""
+        },
+        {
+          "first": "Frank",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Synnaeve",
+          "suffix": ""
+        },
+        {
+          "first": "Gabrielle",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Georgia",
+          "middle": [],
+          "last": "Lewis Anderson",
+          "suffix": ""
+        },
+        {
+          "first": "Graeme",
+          "middle": [],
+          "last": "Nail",
+          "suffix": ""
+        },
+        {
+          "first": "Grégoire",
+          "middle": [],
+          "last": "Mialon",
+          "suffix": ""
+        },
+        {
+          "first": "Guan",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "Guillem",
+          "middle": [],
+          "last": "Cucurell",
+          "suffix": ""
+        },
+        {
+          "first": "Hailey",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "Hannah",
+          "middle": [],
+          "last": "Korevaar",
+          "suffix": ""
+        },
+        {
+          "first": "Hu",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Iliyan",
+          "middle": [],
+          "last": "Zarov",
+          "suffix": ""
+        },
+        {
+          "first": "Arrieta",
+          "middle": [],
+          "last": "Imanol",
+          "suffix": ""
+        },
+        {
+          "first": "Isabel",
+          "middle": [
+            "M"
+          ],
+          "last": "Ibarra",
+          "suffix": ""
+        },
+        {
+          "first": "Ishan",
+          "middle": [],
+          "last": "Kloumann",
+          "suffix": ""
+        },
+        {
+          "first": "Ivan",
+          "middle": [],
+          "last": "Misra",
+          "suffix": ""
+        },
+        {
+          "first": "Jade",
+          "middle": [],
+          "last": "Evtimov",
+          "suffix": ""
+        },
+        {
+          "first": "Jaewon",
+          "middle": [],
+          "last": "Copet",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Jana",
+          "middle": [],
+          "last": "Geffert",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Vranes",
+          "suffix": ""
+        },
+        {
+          "first": "Jay",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Jeet",
+          "middle": [],
+          "last": "Mahadeokar",
+          "suffix": ""
+        },
+        {
+          "first": "Jelmer",
+          "middle": [],
+          "last": "Shah",
+          "suffix": ""
+        },
+        {
+          "first": "Jennifer",
+          "middle": [],
+          "last": "Van Der Linde",
+          "suffix": ""
+        },
+        {
+          "first": "Jenny",
+          "middle": [],
+          "last": "Billock",
+          "suffix": ""
+        },
+        {
+          "first": "Jenya",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Jeremy",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Jianfeng",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianyu",
+          "middle": [],
+          "last": "Chi",
+          "suffix": ""
+        },
+        {
+          "first": "Jiawen",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiecao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Joanna",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Joe",
+          "middle": [],
+          "last": "Bitton",
+          "suffix": ""
+        },
+        {
+          "first": "Jongsoo",
+          "middle": [],
+          "last": "Spisak",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [],
+          "last": "Rocca",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [],
+          "last": "Johnstun",
+          "suffix": ""
+        },
+        {
+          "first": "Junteng",
+          "middle": [],
+          "last": "Saxe",
+          "suffix": ""
+        },
+        {
+          "first": "Kalyan",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Kartikeya",
+          "middle": [],
+          "last": "Vasuden Alwala",
+          "suffix": ""
+        },
+        {
+          "first": "Kate",
+          "middle": [],
+          "last": "Upasani",
+          "suffix": ""
+        },
+        {
+          "first": "Ke",
+          "middle": [],
+          "last": "Plawiak",
+          "suffix": ""
+        },
+        {
+          "first": "Kenneth",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Heafield",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "CoRR"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Treeqn and atreec: Differentiable tree-structured models for deep reinforcement learning",
+      "authors": [
+        {
+          "first": "Gregory",
+          "middle": [],
+          "last": "Farquhar",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Rocktäschel",
+          "suffix": ""
+        },
+        {
+          "first": "Maximilian",
+          "middle": [],
+          "last": "Igl",
+          "suffix": ""
+        },
+        {
+          "first": "Shimon",
+          "middle": [],
+          "last": "Whiteson",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "6th International Conference on Learning Representations, ICLR 2018"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Learning to search with mctsnets",
+      "authors": [
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Guez",
+          "suffix": ""
+        },
+        {
+          "first": "Théophane",
+          "middle": [],
+          "last": "Weber",
+          "suffix": ""
+        },
+        {
+          "first": "Ioannis",
+          "middle": [],
+          "last": "Antonoglou",
+          "suffix": ""
+        },
+        {
+          "first": "Karen",
+          "middle": [],
+          "last": "Simonyan",
+          "suffix": ""
+        },
+        {
+          "first": "Oriol",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "Daan",
+          "middle": [],
+          "last": "Wierstra",
+          "suffix": ""
+        },
+        {
+          "first": "Rémi",
+          "middle": [],
+          "last": "Munos",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Silver",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Recurrent world models facilitate policy evolution",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Ha",
+          "suffix": ""
+        },
+        {
+          "first": "Jürgen",
+          "middle": [],
+          "last": "Schmidhuber",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in Neural Information Processing Systems 31: Annual Conference on Neural Information Processing Systems 2018"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Dream to control: Learning behaviors by latent imagination",
+      "authors": [
+        {
+          "first": "Danijar",
+          "middle": [],
+          "last": "Hafner",
+          "suffix": ""
+        },
+        {
+          "first": "Timothy",
+          "middle": [
+            "P"
+          ],
+          "last": "Lillicrap",
+          "suffix": ""
+        },
+        {
+          "first": "Jimmy",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Norouzi",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "8th International Conference on Learning Representations, ICLR 2020"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Reasoning with language model is planning with world model",
+      "authors": [
+        {
+          "first": "Shibo",
+          "middle": [],
+          "last": "Hao",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Haodi",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [
+            "Jiahua"
+          ],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Zhen",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Daisy",
+          "middle": [
+            "Zhe"
+          ],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiting",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, EMNLP 2023"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Model based reinforcement learning for atari",
+      "authors": [
+        {
+          "first": "Lukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Babaeizadeh",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Milos",
+          "suffix": ""
+        },
+        {
+          "first": "Blazej",
+          "middle": [],
+          "last": "Osinski",
+          "suffix": ""
+        },
+        {
+          "first": "Roy",
+          "middle": [
+            "H"
+          ],
+          "last": "Campbell",
+          "suffix": ""
+        },
+        {
+          "first": "Konrad",
+          "middle": [],
+          "last": "Czechowski",
+          "suffix": ""
+        },
+        {
+          "first": "Dumitru",
+          "middle": [],
+          "last": "Erhan",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Kozakowski",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "Afroz",
+          "middle": [],
+          "last": "Mohiuddin",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Sepassi",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Tucker",
+          "suffix": ""
+        },
+        {
+          "first": "Henryk",
+          "middle": [],
+          "last": "Michalewski",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "8th International Conference on Learning Representations, ICLR 2020"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Conservative q-learning for offline reinforcement learning",
+      "authors": [
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Aurick",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Tucker",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Annual Conference on Neural Information Processing Systems 2020"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Offline reinforcement learning: Tutorial, review, and perspectives on open problems",
+      "authors": [
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Tucker",
+          "suffix": ""
+        },
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Don't throw away your value model! generating more preferable text with valueguided monte-carlo tree search decoding",
+      "authors": [
+        {
+          "first": "Jiacheng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "Ramakanth",
+          "middle": [],
+          "last": "Pasunuru",
+          "suffix": ""
+        },
+        {
+          "first": "Yejin",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        },
+        {
+          "first": "Hannaneh",
+          "middle": [],
+          "last": "Hajishirzi",
+          "suffix": ""
+        },
+        {
+          "first": "Asli",
+          "middle": [],
+          "last": "Celikyilmaz",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Deep reinforcement learning for clinical decision support: A brief survey",
+      "authors": [
+        {
+          "first": "Siqi",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Kee",
+          "middle": [],
+          "last": "Yuan Ngiam",
+          "suffix": ""
+        },
+        {
+          "first": "Mengling",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Expose: Combining state-based exploration with gradient-based online search",
+      "authors": [
+        {
+          "first": "Dixant",
+          "middle": [],
+          "last": "Mittal",
+          "suffix": ""
+        },
+        {
+          "first": "Siddharth",
+          "middle": [],
+          "last": "Aravindan",
+          "suffix": ""
+        },
+        {
+          "first": "Wee",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Lee",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 2023 International Conference on Autonomous Agents and Multiagent Systems, AAMAS '23"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Playing atari with deep reinforcement learning",
+      "authors": [
+        {
+          "first": "Volodymyr",
+          "middle": [],
+          "last": "Mnih",
+          "suffix": ""
+        },
+        {
+          "first": "Koray",
+          "middle": [],
+          "last": "Kavukcuoglu",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Silver",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Graves",
+          "suffix": ""
+        },
+        {
+          "first": "Ioannis",
+          "middle": [],
+          "last": "Antonoglou",
+          "suffix": ""
+        },
+        {
+          "first": "Daan",
+          "middle": [],
+          "last": "Wierstra",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [
+            "A"
+          ],
+          "last": "Riedmiller",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Asynchronous methods for deep reinforcement learning",
+      "authors": [
+        {
+          "first": "Volodymyr",
+          "middle": [],
+          "last": "Mnih",
+          "suffix": ""
+        },
+        {
+          "first": "Adrià",
+          "middle": [],
+          "last": "Puigdomènech Badia",
+          "suffix": ""
+        },
+        {
+          "first": "Mehdi",
+          "middle": [],
+          "last": "Mirza",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Graves",
+          "suffix": ""
+        },
+        {
+          "first": "Timothy",
+          "middle": [
+            "P"
+          ],
+          "last": "Lillicrap",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Harley",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Silver",
+          "suffix": ""
+        },
+        {
+          "first": "Koray",
+          "middle": [],
+          "last": "Kavukcuoglu",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the 33nd International Conference on Machine Learning, ICML 2016"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "A survey of robotic motion planning in dynamic environments",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [
+            "G"
+          ],
+          "last": "Mohanan",
+          "suffix": ""
+        },
+        {
+          "first": "Ambuja",
+          "middle": [],
+          "last": "Salgoankar",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Robotics Auton. Syst"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Planning with goalconditioned policies",
+      "authors": [
+        {
+          "first": "Soroush",
+          "middle": [],
+          "last": "Nasiriany",
+          "suffix": ""
+        },
+        {
+          "first": "Vitchyr",
+          "middle": [],
+          "last": "Pong",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in Neural Information Processing Systems 32: Annual Conference on Neural Information Processing Systems 2019, NeurIPS 2019"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "A survey of temporal credit assignment in deep reinforcement learning",
+      "authors": [
+        {
+          "first": "Eduardo",
+          "middle": [],
+          "last": "Pignatelli",
+          "suffix": ""
+        },
+        {
+          "first": "Johan",
+          "middle": [],
+          "last": "Ferret",
+          "suffix": ""
+        },
+        {
+          "first": "Matthieu",
+          "middle": [],
+          "last": "Geist",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Mesnard",
+          "suffix": ""
+        },
+        {
+          "first": "Hado",
+          "middle": [],
+          "last": "Van Hasselt",
+          "suffix": ""
+        },
+        {
+          "first": "Laura",
+          "middle": [],
+          "last": "Toni",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Trans. Mach. Learn. Res"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "A survey on offline reinforcement learning: Taxonomy, review, and open problems",
+      "authors": [
+        {
+          "first": "Marcos",
+          "middle": [],
+          "last": "Rafael Figueiredo Prudencio",
+          "suffix": ""
+        },
+        {
+          "first": "Ricardo",
+          "middle": [],
+          "last": "Omena",
+          "suffix": ""
+        },
+        {
+          "first": "Albuquerque",
+          "middle": [],
+          "last": "Máximo",
+          "suffix": ""
+        },
+        {
+          "first": "Esther",
+          "middle": [
+            "Luna"
+          ],
+          "last": "Colombini",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "IEEE Trans. Neural Networks Learn. Syst"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Principles of Mathematical Analysis",
+      "authors": [
+        {
+          "first": "Walter",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        }
+      ],
+      "year": 1976,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Mastering atari, go, chess and shogi by planning with a learned model",
+      "authors": [
+        {
+          "first": "Julian",
+          "middle": [],
+          "last": "Schrittwieser",
+          "suffix": ""
+        },
+        {
+          "first": "Ioannis",
+          "middle": [],
+          "last": "Antonoglou",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Hubert",
+          "suffix": ""
+        },
+        {
+          "first": "Karen",
+          "middle": [],
+          "last": "Simonyan",
+          "suffix": ""
+        },
+        {
+          "first": "Laurent",
+          "middle": [],
+          "last": "Sifre",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Schmitt",
+          "suffix": ""
+        },
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Guez",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [],
+          "last": "Lockhart",
+          "suffix": ""
+        },
+        {
+          "first": "Demis",
+          "middle": [],
+          "last": "Hassabis",
+          "suffix": ""
+        },
+        {
+          "first": "Thore",
+          "middle": [],
+          "last": "Graepel",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Gradient estimation using stochastic computation graphs",
+      "authors": [
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Heess",
+          "suffix": ""
+        },
+        {
+          "first": "Theophane",
+          "middle": [],
+          "last": "Weber",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Advances in Neural Information Processing Systems 28: Annual Conference on Neural Information Processing Systems 2015"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Data-efficient reinforcement learning with self-predictive representations",
+      "authors": [
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Schwarzer",
+          "suffix": ""
+        },
+        {
+          "first": "Ankesh",
+          "middle": [],
+          "last": "Anand",
+          "suffix": ""
+        },
+        {
+          "first": "Rishab",
+          "middle": [],
+          "last": "Goel",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "Devon"
+          ],
+          "last": "Hjelm",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [
+            "C"
+          ],
+          "last": "Courville",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [],
+          "last": "Bachman",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "9th International Conference on Learning Representations, ICLR 2021, Virtual Event"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Learning differentiable programs with admissible neural heuristics",
+      "authors": [
+        {
+          "first": "Ameesh",
+          "middle": [],
+          "last": "Shah",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Zhan",
+          "suffix": ""
+        },
+        {
+          "first": "Jennifer",
+          "middle": [
+            "J"
+          ],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Abhinav",
+          "middle": [],
+          "last": "Verma",
+          "suffix": ""
+        },
+        {
+          "first": "Yisong",
+          "middle": [],
+          "last": "Yue",
+          "suffix": ""
+        },
+        {
+          "first": "Swarat",
+          "middle": [],
+          "last": "Chaudhuri",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Mastering the game of go with deep neural networks and tree search",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Silver",
+          "suffix": ""
+        },
+        {
+          "first": "Aja",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [
+            "J"
+          ],
+          "last": "Maddison",
+          "suffix": ""
+        },
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Guez",
+          "suffix": ""
+        },
+        {
+          "first": "Laurent",
+          "middle": [],
+          "last": "Sifre",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Van Den Driessche",
+          "suffix": ""
+        },
+        {
+          "first": "Julian",
+          "middle": [],
+          "last": "Schrittwieser",
+          "suffix": ""
+        },
+        {
+          "first": "Ioannis",
+          "middle": [],
+          "last": "Antonoglou",
+          "suffix": ""
+        },
+        {
+          "first": "Vedavyas",
+          "middle": [],
+          "last": "Panneershelvam",
+          "suffix": ""
+        },
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Lanctot",
+          "suffix": ""
+        },
+        {
+          "first": "Sander",
+          "middle": [],
+          "last": "Dieleman",
+          "suffix": ""
+        },
+        {
+          "first": "Dominik",
+          "middle": [],
+          "last": "Grewe",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Nham",
+          "suffix": ""
+        },
+        {
+          "first": "Nal",
+          "middle": [],
+          "last": "Kalchbrenner",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Timothy",
+          "middle": [
+            "P"
+          ],
+          "last": "Lillicrap",
+          "suffix": ""
+        },
+        {
+          "first": "Madeleine",
+          "middle": [],
+          "last": "Leach",
+          "suffix": ""
+        },
+        {
+          "first": "Koray",
+          "middle": [],
+          "last": "Kavukcuoglu",
+          "suffix": ""
+        },
+        {
+          "first": "Thore",
+          "middle": [],
+          "last": "Graepel",
+          "suffix": ""
+        },
+        {
+          "first": "Demis",
+          "middle": [],
+          "last": "Hassabis",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Reinforcement learning in robotic applications: a comprehensive survey",
+      "authors": [
+        {
+          "first": "Bharat",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "Rajesh",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Vinay Pratap",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Artif. Intell. Rev"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Reinforcement learning for education: Opportunities and challenges",
+      "authors": [
+        {
+          "first": "Adish",
+          "middle": [],
+          "last": "Singla",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [
+            "N"
+          ],
+          "last": "Rafferty",
+          "suffix": ""
+        },
+        {
+          "first": "Goran",
+          "middle": [],
+          "last": "Radanovic",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [
+            "T"
+          ],
+          "last": "Heffernan",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Reinforcement learning: An introduction",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Richard",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "G"
+          ],
+          "last": "Sutton",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Barto",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Simple statistical gradient-following algorithms for connectionist reinforcement learning",
+      "authors": [
+        {
+          "first": "Williams",
+          "middle": [],
+          "last": "Ronald",
+          "suffix": ""
+        }
+      ],
+      "year": 1992,
+      "venue": "Machine learning"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Self-evaluation guided beam search for reasoning",
+      "authors": [
+        {
+          "first": "Yuxi",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Kenji",
+          "middle": [],
+          "last": "Kawaguchi",
+          "suffix": ""
+        },
+        {
+          "first": "Yiran",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [
+            "Xu"
+          ],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Min-Yen",
+          "middle": [],
+          "last": "Kan",
+          "suffix": ""
+        },
+        {
+          "first": "Junxian",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "Qizhe"
+          ],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Tree of thoughts: Deliberate problem solving with large language models",
+      "authors": [
+        {
+          "first": "Shunyu",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Dian",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Izhak",
+          "middle": [],
+          "last": "Shafran",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [
+            "L"
+          ],
+          "last": "Griffiths",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Karthik",
+          "middle": [],
+          "last": "Narasimhan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Mastering atari games with limited data",
+      "authors": [
+        {
+          "first": "Weirui",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Shaohuai",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Thanard",
+          "middle": [],
+          "last": "Kurutach",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems 34: Annual Conference on Neural Information Processing Systems 2021"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Path planning using neural a* search",
+      "authors": [
+        {
+          "first": "Ryo",
+          "middle": [],
+          "last": "Yonetani",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsunori",
+          "middle": [],
+          "last": "Taniai",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammadamin",
+          "middle": [],
+          "last": "Barekatain",
+          "suffix": ""
+        },
+        {
+          "first": "Mai",
+          "middle": [],
+          "last": "Nishimura",
+          "suffix": ""
+        },
+        {
+          "first": "Asako",
+          "middle": [],
+          "last": "Kanezaki",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 38th International Conference on Machine Learning, ICML 2021"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Language agent tree search unifies reasoning, acting, and planning in language models",
+      "authors": [
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Michal",
+          "middle": [],
+          "last": "Shlapentokh-Rothman",
+          "suffix": ""
+        },
+        {
+          "first": "Haohan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yu-Xiong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Forty-first International Conference on Machine Learning, ICML 2024"
+    }
+  ]
+}

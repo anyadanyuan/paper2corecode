@@ -1,0 +1,1636 @@
+{
+  "paper_id": "CARE",
+  "title": "Structuring Representation Geometry with Rotationally Equivariant Contrastive Learning",
+  "authors": [
+    {
+      "first": "Sharut",
+      "middle": [],
+      "last": "Gupta",
+      "affiliation": {
+        "laboratory": "MIT CSAIL",
+        "institution": "",
+        "location": {}
+      }
+    },
+    {
+      "first": "Joshua",
+      "middle": [],
+      "last": "Robinson",
+      "affiliation": {
+        "laboratory": "MIT CSAIL",
+        "institution": "",
+        "location": {}
+      }
+    },
+    {
+      "first": "Derek",
+      "middle": [],
+      "last": "Lim",
+      "affiliation": {
+        "laboratory": "MIT CSAIL",
+        "institution": "",
+        "location": {}
+      }
+    },
+    {
+      "first": "Soledad",
+      "middle": [],
+      "last": "Villar",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Johns Hopkins University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Stefanie",
+      "middle": [],
+      "last": "Jegelka",
+      "affiliation": {
+        "laboratory": "MIT CSAIL",
+        "institution": "",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Self-supervised learning converts raw perceptual data such as images to a compact space where simple Euclidean distances measure meaningful variations in data. In this paper, we extend this formulation by adding additional geometric structure to the embedding space by enforcing transformations of input space to correspond to simple (i.e., linear) transformations of embedding space. Specifically, in the contrastive learning setting, we introduce an equivariance objesctive and theoretically prove that its minima forces augmentations on input space to correspond to rotations on the spherical embedding space. We show that merely combining our equivariant loss with a non-collapse term results in non-trivial representations, without requiring invariance to data augmentations. Optimal performance is achieved by also encouraging approximate invariance, where input augmentations correspond to small rotations. Our method, Care: Contrastive Augmentation-induced Rotational Equivariance, leads to improved performance on downstream tasks, and ensures sensitivity in embedding space to important variations in data (e.g., color) that standard contrastive methods do not achieve. Code is available at https://github.com/Sharut/CARE.\nRecent contrastive self-supervised learning approaches have explored ways to close this gap by * Equal contribution.",
+  "body": {
+    "1_Introduction": "It is only partially understood what structure neural network representation spaces should possess in order to enable intelligent behavior to efficiently emerge [Ma et al., 2022] . One known key ingredient is to learn low-dimensional spaces in which simple Euclidean distances effectively measure the similarity between data. A standout success of recent years has been the development of powerful methods for achieving this at web-scale using self-supervision [Chen et al., 2020 , Schneider et al., 2021 , Radford et al., 2021] . However, many use cases require the use of richer structural relationships that similarities between data cannot capture. One example that has enjoyed considerable success is the encoding of relations between objects (X is a parent of Y, A is a treatment for B) as simple transformations of embeddings (e.g., translations), which has driven learning with knowledge graphs [Bordes et al., 2013 , Sun et al., 2019 , Yasunaga et al., 2022] . But similar capabilities have been notably absent from existing self-supervised learning recipes. ensuring representation spaces are sensitive to certain transformations of input data (e.g., variations in color) [Dangovski et al., 2022 , Devillers and Lefort, 2023 , Garrido et al., 2023 , Bhardwaj et al., 2023] .\nEncouraging sensitivity is especially important in contrastive learning, as it is known to learn shortcuts that forget features that are not needed to solve the pretraining task [Robinson et al., 2021b] . This line of work formalizes sensitivity in terms of equivariance: transformations of input data correspond to predictable transformations in representation space. Equivariance requires specifying a family of transformations a ∈ A in the input space, a corresponding transformation T a in representation space and training f so that f (a(x)) ≈ T a f (x). A typical choice of T a is a learnable feed-forward network, which acts non-linearly on embeddings [Devillers and Lefort, 2023, Garrido et al., 2023] . This approach has the disadvantage of encoding the relation between the embeddings of x and a(x) in a complex and hard to interpret manner. It also suffers from geometric pathologies, such as inconsistency under compositions: T a 2 •a 1 f (x) ̸ = T a 2 T a 1 f (x).\nTo address these concerns we propose Care, an equivariant contrastive learning framework that learns to translate augmentations in the input space (such as cropping, blurring, and jittering) into simple linear transformations in feature space. Here, we use the sphere as our feature space (the standard space for contrastive learning), so we specifically consider transformations that are isometries of the sphere: rotations and reflections, i.e., orthogonal transformations. As orthogonal transformations are (intentionally) less expressive than prior non-linear formulations, our learning problem is more constrained and prior approaches for learning non-linear transforms do not apply (see Section 3). Care trains f to preserve angles, i.e., f (a(x)) ⊤ f (a(x ′ )) ≈ f (x) ⊤ f (x ′ ), a property that must hold if f is orthogonally equivariant. We show that achieving low error on this seemingly weaker property also implies approximate equivariance and enjoys consistency under compositions. Critically, we can easily integrate Care into contrastive learning workflows since both operate by comparing pairs of data.\nThe key contributions of this work include:\n• Introducing Care, a novel equivariant contrastive learning framework that trains transformations (cropping, jittering, blurring, etc.) in input space to approximately correspond to local orthogonal transformations in representation space.\n• Theoretically proving and empirically demonstrating that Care places an orthogonally equivariant structure on the embedding space.\n• Showing that Care increases sensitivity to features (e.g., color) compared to invariance-based contrastive methods, and also improves performance on image recognition tasks.",
+    "2_Rethinking_how_augmentations_are_used_in_self_supervised_learning": "Given access only to samples from a marginal distribution p(x) on some input space X such as images, the goal of representation learning is commonly to train a feature extracting model f : X → S d-1 mapping to the unit sphere S d-1 = {z ∈ R d : ∥z∥ 2 = 1}. A common strategy to automatically generate supervision from the data is to additionally introduce a space of augmentations A, containing maps a : X → X which slightly perturb inputs x (blurring, cropping, jittering, etc.). Siamese self-supervised methods learn representation spaces that reflect the relationship between the embeddings of x = a( x) and x + = a + ( x), commonly by training f to be invariant or equivariant to the augmentations in the input space [Chen and He, 2021] .",
+    "3_Care:_Contrastive_Augmentation-induced_Rotational_Equivariance": {
+      "3.1_Theoretical_properties_of_the_orthogonally_equivariant_loss": "In this section, we establish that matching angles via L equi leads to a seemingly stronger property. Specifically, L equi = 0 implies the existence of an orthogonal matrix R a ∈ O(d) for any augmentation a, such that f (a(x)) = R a f (x) holds for all x. The converse also holds and is easy to see. Indeed, suppose such an R a ∈ O(d) exists. Then, f (a(\nx ′ )) ⊤ f (a(x)) = f (x ′ ) ⊤ R ⊤ a R a f (x) = f (x) ⊤ f (x ′ ), which implies L equi ( f ) = 0.\nWe formulate the first direction as a proposition.\nProposition 1. Suppose L equi ( f ) = 0. Then for almost every a ∈ A, there is an orthogonal matrix R a ∈ O(d) such that f (a(x)) = R a f (x) for almost all x ∈ X . Figure 1 illustrates this result. Crucially R a is independent of x, without which the Proposition 1 would be trivial. That is, a single orthogonal transformation R a captures the impact of applying a across the entire input space X . Consequently, low L equi loss converts \"unstructured\" augmentations in input space to have a structured geometric interpretation as rotations in the embedding space.\nThis result can be expressed as the existence of a mapping ρ : A → O(d) that encodes the space of augmentations within O(d). This raises a natural question: how much of the structure of A does this encoding preserve? For instance, assuming A is a semi-group (i.e., closed under compositions a ′ • a ∈ A), does this transformation respect compositions: f (a ′ (a(x)) = R a ′ R a f (x)? This property does not hold for non-linear actions [Devillers and Lefort, 2023] , but does for orthogonal equivariance:\nCorollary 1. If L equi ( f ) = 0, then ρ : A → O(d) given by ρ(a) = R a satisfies ρ(a ′ • a) = ρ(a ′ )ρ(a)\nfor almost all a, a ′ . That is, ρ defines a group action on S d-1 up to a set of measure zero.\nFormally, this result states that if A is a semi-group, then ρ : A → O(d) defines a group homomorphism (or linear representation of A in the sense of representation theory [Curtis and Reiner, 1966, Serre et al., 1977] , a branch of mathematics that studies the encoding of abstract groups as spaces of linear maps). To exactly attain L equi ( f ) = 0, the space of augmentations A needs to have a certain structure, but this becomes less restrictive if d is large. Assuming for simplicity that A is a group, the first isomorphism theorem for groups states that ρ(A) ≃ A/ ker(ρ). For instance, if ker(ρ) is trivial, the equivariant loss can be exactly zero when the group of augmentations is a subgroup of the orthogonal group. Examples include orthogonal transformations or rotations that fix a subspace-i.e., O(d ′ ) or SO(d ′ ) with d ′ ≤ d-or subgroups of the permutation group on d elements. Furthermore, the Peter-Weyl theorem implies that any compact Lie group can be realized as a closed subgroup of O(d) for some d [Peter and Weyl, 1927] . In practice, we are learning equivariance, so do not expect to achieve exactly zero loss. Instead, the primary focus is on achieving better approximate equivariance (see Figure 6 ), while enforcing small transformations that remain local.",
+      "3.2_Extensions_to_other_groups": "Proposition 1 states that perfectly optimizing L equi = 0 produces an f that is equivariant, encoding augmentations in the input space as orthogonal transformation in the embedding space. Notably, since the computation of L equi solely relies on pairwise data instances x, x ′ ∈ X , it naturally aligns with the contrastive learning paradigm that already works with pairs of data. However, this alignment does not hold in cases where orthogonal transformations in the embedding space are replaced by arbitrary group actions.\nMathematically, invariants of the action of O(d\n) on n points-seen in (R d ) n as Q (x 1 , . . . x n ) = (Q x 1 , . . . , Q x n )-can be expressed as a function of pairs of objects (x ⊤ i x j ) i,j=1...n\n. This is because the orthogonal group is defined as the stabilizer of a bilinear form. In other words, letting B(x, x ′ ) = x ⊤ x ′ denote the standard inner product, we have\nEQUATION\nThis argument applies more generally to other groups that are defined as stabilizers of bilinear forms.\nFor instance, the Lorentz group, which has applications in the context of special relativity, can be defined as the stabilizer of the Minkowski inner product. Additionally, the symplectic group, which is used to characterize Hamiltonian dynamical systems, can be defined in a similar manner.\nSuch extensions to other groups allow us to use Care for different embedding space geometries. For instance, several recent works have used a hyperbolic space as an embedding space for self-supervised learners [Ge et al., 2022 , Yue et al., 2023 , Desai et al., 2023] . If we constrain our embedding to a hyperboloid model of hyperbolic space, then linear isometries of this space are precisely the Lorentz group. Hence, using our equivariance loss with the Minkowski inner product replacing the Euclidean inner product would allow us to learn hyperbolic representations that transform the embeddings according to the action of the Lorentz group when an augmentation is applied to the input space. Further discussions on extensions to other groups are given in Appendix C.",
+      "_text": "This section introduces a simple and practical approach for training a model f : X → S d-1 so that f is orthogonally equivariant: i.e., a data augmentation a ∼ A (cropping, blurring, jittering, etc.) applied to any input x ∈ X causes the embedding f (x) to transformed by the same R a ∈ O(d) for all x ∈ X : f (a(x)) = R a f (x).\nTo achieve this, we consider the following loss:\nL equi ( f ) = E a∼A E x,x ′ ∼X f (a(x ′ )) ⊤ f (a(x)) -f (x) ⊤ f (x ′ ) 2 (2)\nSince inner products describe angles on the sphere, this objective enforces the angles between the embeddings of independent samples x and x ′ to be the same as those between their transformed counterparts a(x) and a(x ′ ). This is necessarily true if f is orthogonally equivariant or, more generally, R a ∈ O(d) exists. But the converse-that L equi = 0 implies orthogonal equivariance-is non-obvious. In Section 3.1 we theoretically analyze L equi , demonstrating that it does indeed enforce mapping input augmentations to orthogonal transformations of embeddings. In practice, we replace the f (x) ⊤ f (x ′ ) term with f (a ′ (x)) ⊤ f (a ′ (x ′ )) for a freshly sampled a ′ ∼ A, noting that minimizing this variant also minimizes L equi , if we assume a ′ can be the identity function with non-zero probability. A trivial but undesirable solution that minimizes L equi is to collapse the embeddings of all points to be the same (see Figure 2 ). One natural approach to avoiding trivial solutions is to combine the equivariance loss with a non-collapse term such as the uniformity [Wang and Isola, 2020] whose optima f distribute points uniformly over the sphere:\nL unif ( f ) = log E x,x ′ ∼X exp f (x) ⊤ f (x ′ )\nL( f ) = L equi ( f ) + L unif ( f ).\n(3) This is directly comparable to the InfoNCE loss, which can similarly be decomposed into two terms:\nEQUATION\nwhere x) . Figure 2 shows that training using L equi + L unif yields non-trivial representations. However, the performance is below that of invariance-based contrastive learning approaches. We hypothesize that this is because data augmentations-which make small perceptual changes to data-should correspond to small perturbations of embeddings, which L equi does not enforce.\nEQUATION\nInvariance (I) Equiv. (E) Uniform (U) Random Init. Uniform + Equiv. SimCLR (I+U) CARE (I+E+U) 0 20 40 60 80 Top-1 Accuracy 10.0 10.0 20.46 22.94 46.88 90.98 91.93 Figure 2: Ablating different loss terms. Combining L equi with a uniformity promoting non-collapses term suffices to learn non-trivial features. However, optimal performance is achieved when encouraging smaller rotations, as in Care. ResNet-50 models pretrained on CIFAR10 and evaluated with linear probes. CARE (ours) SimCLR 7.0 7.5 8.0 8.5 9.0 Wahba Rotation Error f Figure 3: Care learns a representation space with better rotational equivariance.\nWe compare the models by the error of optimally rotating a set of embeddings to match the embeddings of augmented inputs, known as Wahba's problem (Sec. 4).\nTo rule out this possibility, we introduce Care: Contrastive Augmentation-induced Rotational Equivariance. Care additionally enforces the orthogonal transformations in embedding space to be localized by reintroducing an invariance loss term L inv to encourage f to be approximately invariant. Doing so breaks the indifference of L equi between large and small rotations, biasing towards small. Specifically, we propose the following objective that combines our equivariant loss with InfoNCE:\nEQUATION\nwhere λ weights the equivariant loss. We note that many variations of this approach are possible. For instance, the equivariant loss and InfoNCE loss could use different augmentations, resulting in invariance to specific transformations while maintaining rotational equivariance to others, similar to Dangovski et al. [2022] . The InfoNCE loss can also be replaced by other Siamese self-supervised losses. We leave further exploration of these possibilities to future work. In all, Care consists of three components: (i) a term to induce orthogonal equivariance; (ii) a non-collapse term; and (iii) an invariance term to enforce localized transformations on the embedding space."
+    },
+    "4_Measuring_orthogonal_action_on_embedding_space": "To probe the geometric properties of Care, we consider two efficiently computable metrics for empirically measuring the orthogonal equivariance in the embedding space. We report empirical results with these measures in Section 5.2.\nWahba's problem. Proposition 1 states that a single orthogonal matrix R a ∈ O(d) describes the effect of augmentation a for all input points x-i.e., R a does not depend on x. Hence, a natural way to assess the equivariance of f is to sample a batch of data {x i } n i=1 and an augmentation a and test to what extent applying a transforms the embeddings of each x i the same way. To measure this we compute a single rotation that approximates the map from f (x i ) to f (a(x i )) for all i. Let F and F a ∈ R d×n have ith columns f (x i ) and f (a(x i )) respectively, then we compute the error\nEQUATION\nwhere\nEQUATION\n) is a well-studied problem known as Wahba's problem. The analytic solution to Wahba's problem is easily computed. It is nearly R * = UV ⊤ where UΣV ⊤ is a singular value decomposition of F a F ⊤ . However, a slight modification is required as this R * could have determinant ±1, and therefore may not belong to SO(d). Fortunately, the only modification needed is to re-scale so that the determinant is one:\nR * = U • diag 1 (n-1) , det(U)det(V) • V ⊤\nwhere 1 n denotes the vector in R n of all ones. This method of computing the solution R * to Wahba's problem is known as Kabsch's algorithm [Kabsch, 1976] , and has been used for aligning point clouds to, e.g., compare molecular and protein structures and spacecraft attitude determination [Markley and Crassidis, 2014, Kneller, 1991] . We use this algorithm to compute the optimal solution R * and further compare the error of interest as W f = ∥R * F -F a ∥.",
+    "5_Experiments": {
+      "5.1_Qualitative_assessment_of_equivariance": "A key property promised by equivariant contrastive models is sensitivity to specific augmentations. To qualitatively evaluate the sensitivity, or equivariance, of our models, we consider an image retrieval task on the Flowers-102 dataset [Nilsback and Zisserman, 2008] , as considered by Bhardwaj et al. [2023] . Specifically, when presented with an input image x, we extract the top 5 nearest neighbors based on the Euclidean distance of f (x) and f (a(x)), where a ∈ A. We report the results of using color jitter as a transformation of the input, comparing the invariant (SimCLR) and our equivariant (Care) models in Figure 5 . We see that retrieved results for the Care model exhibit greater variability in response to a change in query color compared to the SimCLR model. Notably, the color of the retrieved results for all queries in the SimCLR model remains largely invariant, thereby confirming its robustness to color changes.",
+      "5.2_Quantitative_measures_for_orthogonal_equivariance": "Wahba's Problem We compare ResNet-18 models pretrained with Care and with SimCLR on CIFAR10.\nFor each model, we compute the optimal value W f of Wahba's problem, as introduced in Section 4, over repeated trials. In each trial, we sample a single augmentation a ∼ A at random and compute W f for f = f Care and f = f SimCLR over the test data. We repeat this process 20 times and plot the results in Figure 3 , where the colors of dots indicate the sampled augmentation. Results show that Care has a lower average error and worst-case error. Furthermore, comparing point-wise for a single augmentation, Care achieves lower error in nearly all cases. ) produce approximately invariant embeddings. However, they differ in their residual sensitivity to augmentations. Care learns a considerably more rotationally structured embedding space. We note that this is in part because Care is less invariant to augmentations (higher invariance loss).\nRelative rotational equivariance. We measure the relative rotational equivariance for both Care and SimCLR over the course of pretraining by following the approach outlined in Section 4. Specifically, we compare ResNet-18 models trained using Care and SimCLR on CIFAR10. From Figure 6 , we observe that both the models produce embeddings with comparable non-zero invariance loss L inv , indicating approximate invariance. However, they differ in their sensitivity to augmentations, with Care attaining a much lower relative equivariance error. Importantly, this shows that Care is not achieving lower equivariance error L equi by collapsing to invariance, a trivial form of equivariance. ",
+      "5.3_Linear_probe_for_image_classification": "Next, we examine the quality of features learned by Care for solving image classification tasks. We train ResNet-50 models on four datasets: CIFAR10, CIFAR100, STL10, and ImageNet100 using Care and SimCLR (see Appendix E for details). To illustrate that Care can also be integrated into other selfsupervised frameworks, we train MoCo-v2 models on ImageNet100 (with and without Care). We refer to the model trained using Care with SimCLR or MoCo-v2 backbone as Care SimCLR and Care MoCo-v2 respectively. For each method and dataset, we evaluate the quality of the learned features by training a linear classifier (i.e., probe [Alain and Bengio, 2017] ) on the frozen features of f and report the test set performances in Figure 8 . In all cases, we run the linear probe training for five random seeds and report averages. We find consistent improvements in performance using Care, showing the benefits of our structured embedding approach for image recognition tasks.\nCARE SimCLR SimCLR 90 92 94 Top-1 Accuracy 91.92 90.98 CIFAR10 CARE SimCLR SimCLR 66 68 70 Top-1 Accuracy 68.05 66.77 CIFAR100 CARE SimCLR SimCLR 82 84 86 Top-1 Accuracy 84.64 84.19 STL10 CARE SimCLR SimCLR 72.5 75.0 77.5 Top-1 Accuracy 76.69 72.79 Image et100 CARE MoCo v2 MoCo-v2 72 74 76 Top-1 Accuracy 74.22 73.16\nImage et100\nFigure 8 : Top-1 linear readout accuracy (%) on CIFAR10, CIFAR100, STL10 and ImageNet100. All results are from 5 independent seed runs for the linear probe.",
+      "5.4_Ablation_of_loss_terms": "The Care loss L Care is a weighted sum of the InfoNCE loss L InfoNCE and the orthogonal equivariance loss L equi . Furthermore, as outlined in Section 3, the InfoNCE loss is itself a combination of an invariance inducing loss L inv and a non-collapse term L unif . To study each loss component, we pretrain ResNet-50 models on CIFAR10 using different combinations of the three losses. The results in Figure 2 suggest that simply optimizing for L inv and L equi leads to collapse, while optimizing L unif alone prevents collapse but performs similar to random initialization. Interestingly, L unif + L equi yields non-trivial representations without directly enforcing invariance. But the performance falls below that of invariance-based contrastive baselines. In combination with the invariance term L inv -which biases rotations to be small-we achieve superior performance to the invariance-only counterpart.\n6 Related work",
+      "_text": "We examine the representations learned by Care, as well as those obtained from purely invariance-based contrastive approaches. We study three aspects of our model: 1) quantitative measures of orthogonal equivariance, 2) qualitative evaluation of the effect of equivariance on sensitivity to data transforms, and 3) performance of features learned by Care on image classification tasks. We describe our experiment configurations in detail in Appendix E."
+    },
+    "7_Discussion": "Converting transformations that are complex in input space into simple transformations in embedding space has many potential uses. For instance, modifying data (e.g., in order to reason about counterfactuals) can be viewed as transforming one embedding to another. If the sought after transformation was simple and predictable, it may be easier to find. Similarly, generalizing out-of-distribution is easier when extrapolating linearly [Xu et al., 2021] , suggesting that linear transformations of embedding space may facilitate more reliable generalization. This work considers several design principles that may be broadly relevant: 1) learned equivariance preserves the expressivity of backbone architectures, and in some cases may be easier for model design than hard-coded equivariance, 2) linear group actions are desirable, but require carefully designed objectives (similar in spirit to the principle of parsimony [Ma et al., 2022] , also advocated for by Shakerinava et al. [2022] ), and 3) orthogonal (and related) symmetries are a promising structure for Siamese network training as they can be efficiently learned using pair-wise data comparisons.",
+    "9_Reproducibility_statement": "Algorithm 1 in Appendix D provides the pseudocode for implementing our work using the PyTorch framework. To ensure reproducibility, Appendix E.3 details all the experimental configurations employed in our work. Additionally, our code is available at https://github.com/Sharut/CARE."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Understanding intermediate layers using linear classifier probes",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Alain",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Steerable equivariant representation learning",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bhardwaj",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Mcclinton",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Lajoie",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Isola",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Krishnan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Equivariant maps from invariant functions",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Blum-Smith",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Villar",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Translating embeddings for modeling multi-relational data",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bordes",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Usunier",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Garcia-Duran",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Weston",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Yakhnenko",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Geometric deep learning: Grids, groups, graphs, geodesics, and gauges",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [
+            "M"
+          ],
+          "last": "Bronstein",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bruna",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Veličković",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "A simple framework for contrastive learning of visual representations",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kornblith",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Norouzi",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Exploring simple siamese representation learning",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Debiased contrastive learning",
+      "authors": [
+        {
+          "first": "C.-Y",
+          "middle": [],
+          "last": "Chuang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Robinson",
+          "suffix": ""
+        },
+        {
+          "first": "Y.-C",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Torralba",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Jegelka",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "A toy model of universality: Reverse engineering how networks learn group operations",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Chughtai",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Nanda",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICLR Workshop on Physics for Machine Learning"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Group equivariant convolutional networks",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Representation theory of finite groups and associative algebras",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [
+            "W"
+          ],
+          "last": "Curtis",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Reiner",
+          "suffix": ""
+        }
+      ],
+      "year": 1966,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Equivariant contrastive learning",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Dangovski",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Jing",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Loh",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Srivastava",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Cheung",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Agrawal",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Soljačić",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Hyperbolic image-text representations",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Desai",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Nickel",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Rajpurohit",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Vedantam",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICLR Workshop on Multimodal Representation Learning"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Equimod: An equivariance module to improve self-supervised learning",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Devillers",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lefort",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "An image is worth 16x16 words: Transformers for image recognition at scale",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Weissenborn",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Minderer",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Heigold",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gelly",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Self-supervised learning of split invariant equivariant representations",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Garrido",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Najman",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Hyperbolic contrastive learning for visual representations beyond objects",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ge",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kornblith",
+          "suffix": ""
+        },
+        {
+          "first": "C.-L",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Jacobs",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Noise-contrastive estimation: A new estimation principle for unnormalized statistical models",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Gutmann",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Hyvärinen",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "Proceedings International Conference on Artificial Intelligence and Statistics (AISTATS)"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Deep residual learning for image recognition",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "IEEE Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Understanding dimensional collapse in contrastive selfsupervised learning",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Jing",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Vincent",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Equivariance with learned canonicalization functions",
+      "authors": [
+        {
+          "first": "S.-O",
+          "middle": [],
+          "last": "Kaba",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "K"
+          ],
+          "last": "Mondal",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ravanbakhsh",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "A solution for the best rotation to relate two sets of vectors",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Kabsch",
+          "suffix": ""
+        }
+      ],
+      "year": 1976,
+      "venue": "Acta Crystallographica Section A: Crystal Physics, Diffraction, Theoretical and General Crystallography"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Superposition of molecular structures using quaternions",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [
+            "R"
+          ],
+          "last": "Kneller",
+          "suffix": ""
+        }
+      ],
+      "year": 1991,
+      "venue": "Molecular Simulation"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Improving transferability of representations via augmentationaware self-supervision",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "On the principles of parsimony and self-consistency for the emergence of intelligence",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Tsao",
+          "suffix": ""
+        },
+        {
+          "first": "H.-Y",
+          "middle": [],
+          "last": "Shum",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Frontiers of Information Technology & Electronic Engineering"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Fundamentals of spacecraft attitude determination and control",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [
+            "L"
+          ],
+          "last": "Markley",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "L"
+          ],
+          "last": "Crassidis",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Automated flower classification over a large number of classes",
+      "authors": [
+        {
+          "first": "M.-E",
+          "middle": [],
+          "last": "Nilsback",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Sixth Indian Conference on Computer Vision, Graphics & Image Processing"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Pytorch: An imperative style, high-performance deep learning library",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Paszke",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gross",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lerer",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Chanan",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Killeen",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Gimelshein",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Antiga",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Die Vollständigkeit der primitiven Darstellungen einer geschlossenen kontinuierlichen Gruppe",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Peter",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Weyl",
+          "suffix": ""
+        }
+      ],
+      "year": 1927,
+      "venue": "Mathematische Annalen"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Learning transferable visual models from natural language supervision",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "W"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Hallacy",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Goh",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Contrastive learning with hard negative samples",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Robinson",
+          "suffix": ""
+        },
+        {
+          "first": "C.-Y",
+          "middle": [],
+          "last": "Chuang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sra",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Jegelka",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Can contrastive learning avoid shortcut solutions?",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Robinson",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Batmanghelich",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Jegelka",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sra",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Finite groups and invariant theory",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [
+            "J"
+          ],
+          "last": "Schmid",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Topics in Invariant Theory: Séminaire d'Algèbre P. Dubreil et"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Wav2vec 2.0: A framework for self-supervised learning of speech representations",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Schneider",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Baevski",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "-W. Chen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Khudanpur",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Davis",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 2021 Conference of the International Speech Communication Association (INTERSPEECH)"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Linear representations of finite groups",
+      "authors": [
+        {
+          "first": "J.-P",
+          "middle": [],
+          "last": "Serre",
+          "suffix": ""
+        }
+      ],
+      "year": 1977,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Structuring representations using group invariants",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Shakerinava",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "K"
+          ],
+          "last": "Mondal",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ravanbakhsh",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Duet: 2d structured and approximately equivariant representations",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Suau",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Danieli",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "A"
+          ],
+          "last": "Keller",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Blaas",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ramapuram",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Busbridge",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zappella",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "RotatE: Knowledge graph embedding by relational rotation in complex space",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Z.-H",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "J.-Y",
+          "middle": [],
+          "last": "Nie",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Representation learning with contrastive predictive coding",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Van Den Oord",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Scalars are universal: Equivariant machine learning, structured like classical physics",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Villar",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "W"
+          ],
+          "last": "Hogg",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Storey-Fisher",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Blum-Smith",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Understanding contrastive representation learning through alignment and uniformity on the hypersphere",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Isola",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "The classical groups: their invariants and representations",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Weyl",
+          "suffix": ""
+        }
+      ],
+      "year": 1946,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "What should not be contrastive in contrastive learning",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "A"
+          ],
+          "last": "Efros",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Darrell",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "What should be equivariant in self-supervised learning",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "W"
+          ],
+          "last": "Lau",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "A U"
+          ],
+          "last": "Rehman",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "How neural networks extrapolate: From feedforward to graph neural networks",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "S"
+          ],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "-I. Kawarabayashi",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Jegelka",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Deep bidirectional language-knowledge graph pretraining",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Yasunaga",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bosselut",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "S"
+          ],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Leskovec",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Hyperbolic contrastive learning",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Yue",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "D"
+          ],
+          "last": "Yamada",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    }
+  ]
+}

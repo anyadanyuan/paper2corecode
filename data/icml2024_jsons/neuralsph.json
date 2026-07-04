@@ -1,0 +1,2805 @@
+{
+  "paper_id": "neuralsph",
+  "title": "Neural SPH: Improved Neural Modeling of Lagrangian Fluid Dynamics",
+  "authors": [
+    {
+      "first": "Artur",
+      "middle": [
+        "P"
+      ],
+      "last": "Toshev",
+      "affiliation": {
+        "laboratory": "Chair of Aerodynamics and Fluid Mechanics",
+        "institution": "Technical University of Munich",
+        "location": {
+          "settlement": "Garching",
+          "country": "Germany"
+        }
+      }
+    },
+    {
+      "first": "Jonas",
+      "middle": [
+        "A"
+      ],
+      "last": "Erbesdobler",
+      "affiliation": {
+        "laboratory": "Chair of Aerodynamics and Fluid Mechanics",
+        "institution": "Technical University of Munich",
+        "location": {
+          "settlement": "Garching",
+          "country": "Germany"
+        }
+      }
+    },
+    {
+      "first": "Nikolaus",
+      "middle": [
+        "A"
+      ],
+      "last": "Adams",
+      "affiliation": {
+        "laboratory": "Chair of Aerodynamics and Fluid Mechanics",
+        "institution": "Technical University of Munich",
+        "location": {
+          "settlement": "Garching",
+          "country": "Germany"
+        }
+      }
+    },
+    {
+      "first": "Johannes",
+      "middle": [],
+      "last": "Brandstetter",
+      "affiliation": {
+        "laboratory": "LIT AI Lab",
+        "institution": "Johannes Kepler University",
+        "location": {
+          "settlement": "Linz",
+          "country": "Austria"
+        }
+      }
+    }
+  ],
+  "abstract": "Smoothed particle hydrodynamics (SPH) is omnipresent in modern engineering and scientific disciplines. SPH is a class of Lagrangian schemes that discretize fluid dynamics via finite material points that are tracked through the evolving velocity field. Due to the particle-like nature of the simulation, graph neural networks (GNNs) have emerged as appealing and successful surrogates. However, the practical utility of such GNN-based simulators relies on their ability to faithfully model physics, providing accurate and stable predictions over long time horizons -which is a notoriously hard problem. In this work, we identify particle clustering originating from tensile instabilities as one of the primary pitfalls. Based on these insights, we enhance both training and rollout inference of state-of-the-art GNNbased simulators with varying components from standard SPH solvers, including pressure, viscous, and external force components. All Neural SPH-enhanced simulators achieve better performance than the baseline GNNs, often by orders of magnitude in terms of rollout error, allowing for significantly longer rollouts and significantly better physics modeling. Code available under https://github.com/tumaer/neuralsph.",
+  "body": {
+    "4._Experiments": "Our analyses are based on the datasets of Toshev & Adams (2024) , accompanying the LagrangeBench paper (Toshev et al., 2024a) . These datasets represent challenging coarsegrained temporal dynamics and contain long trajectories, i.e., up to thousands of steps. We test the performance difference of two popular GNN-based simulators when: (i) external forces are removed from the model target (□ g ), (ii) an SPH relaxation with pressure term is applied (□ p ), and (iii) an SPH relaxation with viscous term is applied (□ ν ).\nGNN-based simulators. The Graph Network-based Simulator (GNS) model (Sanchez-Gonzalez et al., 2020) is a popular learned surrogate for physical particle-based simulations and our main model. The architecture is kept simple, based on the encoder-processor-decoder principle, where the processor consists of multiple graph network blocks (Battaglia et al., 2018) . Our second model, the Steerable E(3)-equivariant Graph Neural Network (SEGNN) (Brandstetter et al., 2021a ) is a general implementation of an E(3) equivariant GNN, where layers are directly conditioned on steerable attributes for both nodes and edges. The main building block is the steerable MLP, i.e., a stack of learnable linear Clebsch-Gordan tensor products interleaved with gated non-linearities (Weiler et al., 2018) . SEGNN layers are message-passing layers (Gilmer et al., 2017) where steerable MLPs replace the traditional non-equivariant MLPs for both message and node update functions. These two models were chosen as they present the current state-of-the-art surrogates for Lagrangian fluid dynamics (Toshev et al., 2024a) , and also because they are representative of two fundamentally different classes of GNNs: non-equivariant (GNS) and equivariant (SEGNN).\nIn all our experiments ρ ref = 1.0.\n5. Dirichlet -Dirichlet energy (Zhou & Schölkopf, 2005) of density field Diening et al. (2011) . It measures both high-frequency (e.g. clustering) and low-frequency (e.g. instabilities) density fluctuations. Lower is better and means less steep gradients (Cai & Wang, 2020; Di Giovanni et al., 2023) .\nE D (ρ) = 1 2 ∥∇ρ∥ 2 2 dx, based on Taheri (2009);\n6. Chamfer -symmetric Chamfer distance d CD (X, Y ) = x∈X min y∈Y ||x -y|| 2 2 + y∈Y min x∈X ||x -y|| 2\n2 between predicted and ground truth frames. Similar to Sinkhorn, but only considers nearest neighbors, and thus much more compute efficient.\nFor all these measures applies: lower is better, and 0.0 is best.",
+    "4.2.1._PERIODIC_BOUNDARIES": "Taylor-Green vortex (TGV). We did not expect the SPH relaxation to be very beneficial to the Taylor-Green vortex cases because (a) the trajectories are rather short with 125 and 60 steps in the 2D and 3D cases, respectively, and also (b) TGV represents a decaying problem, making it less prone to clustering in later stages of the trajectory. But according to Table 1 , we get a consistent improvement of the position error MSE 400 of ∼ 5% and significant Sinkhorn divergence improvements on the 2D and 3D datasets.\nViscous term. In addition to external force subtraction, we found it beneficial to use the pressure (p) and viscous (ν) terms during relaxation, termed GNS p,ν . Viscosity, which manifests itself in shearing forces, in general, refers to the idea that if two fluid elements are close to each other but move in opposite directions, then they should both decelerate. Thus, to apply viscosity, we need to again approximate velocities by finite differences between consecutive positions of particles.\nReverse Poiseuille flow (RPF). In Figs. 4 and 10, we show histograms over velocity magnitudes to quantify how the different RPF correction terms impact the dynamics. Firstly, the original GNS model loses its high-velocity components over time, resembling a diffusion process, which makes it more stable with respect to perturbations, but, at the same time, leads to wrong kinetic energy. Secondly, simply changing the training objective by removing the external force (see GNS g ) already mitigates the problem of missing high velocities. And by adding the viscous term, which is especially relevant in the shearing region, to the pressure gradient term, we almost perfectly recover the target velocity distribution. See Fig. 3 and Appendix G.3 for further details. 4.2.2. WALL BOUNDARIES A typical failure mode of learned solvers is that one or multiple particles penetrate what should be a solid wall, see top left part of Fig. 5 for LDC 2D and top part of Fig. 8 in Appendix A for DAM 2D. We solve this problem nearly completely with our SPH relaxations. Relaxation at wall boundaries. The only part we have not Density 1.0 1.1 1.2 1.3 1.0 1.1 1.2 1.3 1.0 1.1 1.2 1.3 Vel. magnitude 0.0 0.5 1.0 0.0 0.5 1.0 0.0 0.5 1.0 GNS GNS p SPH Figure 5. Density and velocity magnitude of 2D lid-driven cavity after 400 rollout steps (left to right): GNS, GNSp, SPH. The colors in the first row correspond to the density deviation from the reference density; the system is considered physical within 0.98-1.02.\ndiscussed yet is how to ensure that particles do not escape the computational domain by passing through the walls. We use the simple and effective approach laid out in the generalized wall boundary condition paper by Adami et al. (2012) . The idea of this approach is to enforce the impermeability of the walls by setting the pressure of the dummy wall particles to the average pressure of their adjacent fluid neighbors, see Eq. ( 27) in Adami et al. (2012) , and, thus, constructing a setting of zero pressure gradients normal to the walls. With this boundary condition implementation, we obtain the following one-step relaxation algorithm: 1. density computation for fluid particles, 2. pressure computation for fluid particles through the equation of state, 3. computation of pressure of wall particles via weighted summation over the pressure of adjacent fluid particles, and 4. evaluation of the pressure gradient term, which gives the forces used to integrate the momentum equation Eq. ( 5) through Eq. ( 6).",
+    "5._Concluding_Remarks": "We introduce Neural SPH, a framework for improved training and inference of GNN-based simulators for Lagrangian fluid dynamics simulations. We demonstrate the utility of our toolkit on seven diverse 2D and 3D datasets and on two state-of-the-art GNN-based simulators, GNS and SEGNN. We identify particle clustering originating from tensile in- Limitations and future work. We observe that tuning the hyperparameters of the particle relaxation is crucial since redistributing the particles inherently translates to modified velocity histories, which directly enter the next autoregressive update step. Thus, the learned solver may become unstable by bringing the past velocities out-of-distribution. Although using the proposed hyperparameter tuning recipe leads to a fairly stable inference routine of the learned solvers, further improving this recipe might be beneficial. Another potential limitation concerns the handling of external forces, namely, that information on the timestep and coarsening level of the dataset is required. Finally, and related to the parameter tuning, we point out the necessity of defining physical thresholds akin to the energy and force within threshold by (Chanussot et al., 2021) , to identify whether our Neural SPH improvements are needed in the first place. Our work shows what is possible by integrating machine learning models with established simulation routines like enforcing boundary conditions or improving particle spreading, but one can extend this idea by adding arbitrarily many terms from the enormous body of literature on classical numerics. We point out that the proposed alternation of learned and classical solver terms is a framework, applicable to any combination of compatible methods, extending beyond GNNs and Lagrangian systems.",
+    "2._Simulating_Lagrangian_dynamics": "Smoothed particle hydrodynamics. Smoothed particle hydrodynamics (SPH) approximates the incompressible Navier-Stokes equations (NSE) by the so-called weakly compressible NSE. This is necessary because the density of the fluid is defined by radial kernel summation ρ i = j m j W (r ij |h), where m j represents the mass of the adjacent particles j, and W the radial interpolation kernel with smoothing length h that operates on the scalar distance r ij . This summation may violate strict incompressibility. However, the weak compressibility assumption typically allows for up to ∼ 1% density deviation (Monaghan, 2005) . This ∼ 1% is also enforced for the weakly compressible SPH method, while evolving density and momentum:\nEQUATION\nEQUATION\nHerein, ρ is the density, u the velocity vector, p the pressure, g the external force, ν the viscosity, and U ref , L ref the reference velocity and length scale. Without loss of generality, we consider U ref = 1, L ref = 1. We note that either density summation with kernel averaging, or density evolution (Eq. ( 1)) is used to compute the density, and as we explain later, the former is the preferred and the latter the more general approach. To evolve the system in time, the above equation(s) are integrated in time by, e.g., semiimplicit Euler (see Appendix F). However, solving these equations with standard SPH methods may still produce artifacts, most notably when particle clumping exceeds the 1% density-fluctuation requirement (Adami et al., 2013) .",
+    "3._Neural_SPH": "In this section, we introduce Neural SPH, which improves both training and rollout inference of temporally coarsened GNN-based simulators. Neural SPH comprises a routine to correct for induced modeling errors due to external forces, and inference-time refinement steps of the system state based on SPH relaxation methods.",
+    "4.2.3._FREE_SURFACES": "A major difference between dam break and the other datasets we benchmark is that in dam break we not only care about the particle distribution within the fluid, but also about the volume filled with fluid. The latter is the focus of this section, and it is reflected in the MSE 400 and Sinkhorn divergence measures, but not in MSE Ekin .",
+    "4.3._SEGNN_Results": "We applied the same external force treatment and SPH relaxations to the SEGNN model (Brandstetter et al., 2021a) without further tuning of the Neural SPH hyperparameters (see Appendix B) and summarize the results in Table 2 . This comparison is useful not only for better comparability but also to show that proper SPH relaxation often depends more on the dataset than on the model -for example, moving the external force out of the 2D RPF case results in a 40 times lower kinetic energy error. However, in some cases, the GNS and SEGNN models behave quite differently. In most cases, SEGNN performs on par with GNS on long trajectories, with the notable SEGNN blowups on LDC 2D, DAM 2D, and RPF 3D. In particular, when we change the treatment of the external force in dam break without applying additional wall boundary conditions, we observe many particles falling through the bottom wall around step 200. Adding the relaxation with wall boundary conditions solves this problem, but investigating the qualitative differences between GNS and SEGNN would be an interesting future work. See Appendix G for our hyperparameter ablations.",
+    "4.1._External_Force_Treatment": "In this section, we study the influence of the proposed external force treatment without combining it with the SPH relaxation. As only the dam break and reverse Poiseuille flow datasets have external force features, we focus on them. ",
+    "4.2._SPH_Relaxation": "This section presents the results of our SPH relaxation on its own, and also in combination with the proposed external force treatment. We divide the discussion based on common characteristics of the datasets into periodic boundary cases, cases with wall boundaries, and free surface problems.",
+    "1._Introduction": "In the sciences, considerable efforts have led to the development of highly complex mathematical models of our world, with many naturally formulated as partial differential equations (PDEs). Over the past years, deep neu-Proceedings of the 41 st International Conference on Machine Learning, Vienna, Austria. PMLR 235, 2024. Copyright 2024 by the author(s). ral network-based PDE surrogates have gained significant momentum as a more computationally efficient solution methodology (Thuerey et al., 2021; Brunton & Kutz, 2023) , transforming amongst others computational fluid dynamics (Guo et al., 2016; Kochkov et al., 2021; Li et al., 2020; Gupta & Brandstetter, 2023; Alkin et al., 2024) , weather forecasting (Rasp & Thuerey, 2021; Weyn et al., 2020; Sønderby et al., 2020; Pathak et al., 2022; Lam et al., 2022; Nguyen et al., 2023; Bodnar et al., 2024) , and molecular modeling (Gasteiger et al., 2021; Batzner et al., 2022; Batatia et al., 2022; Zeni et al., 2023; Merchant et al., 2023) .\nIn computational fluid dynamics (CFD), we broadly categorize numerical simulation methods into two distinct families: particle-based and grid-based, better known as Lagrangian and Eulerian discretization schemes. In Eulerian schemes, space is discretized, i.e., fixed finite nodes or control volumes lead to grid-based or mesh-based models. In Lagrangian schemes, the discretization happens on finite material points, commonly known as particles, which dynamically move with the local deformation of the continuum. One of the most prominent Lagrangian discretization schemes is smoothed particle hydrodynamics (SPH), originally proposed by Lucy (1977) and Gingold & Monaghan (1977) for applications in astrophysics. In contrast to grid-and mesh-based approaches, SPH approximates the field properties using radial kernel interpolations over adjacent particles. The strength of the SPH method is that it does not require connectivity constraints, e.g., meshes, which is particularly useful for simulating systems with large deformations. Since its foundation, SPH has been greatly extended and is the preferred method to simulate problems with (a) free surfaces (Marrone et al., 2011; Violeau & Rogers, 2016) , (b) complex boundaries (Adami et al., 2012) , (c) multi-phase flows (Hu & Adams, 2007) , and (d) fluid-structure interactions (Antoci et al., 2007) .\nIn deep learning, graph neural networks (GNNs) (Scarselli et al., 2008; Kipf & Welling, 2017) are an obvious fit to model particle-based dynamics. Often, predicted accelerations at the nodes are numerically integrated to model the time evolution of the particles or the mesh, i.e., dynamics are updated in a hybrid neural-numerical fashion (Sanchez-Gonzalez et al., 2020; Pfaff et al., 2020; Mayr et al., 2023) . Most recent applications of GNN-based simulators involve Lagrangian fluid simulations (Toshev et al., 2023a; 2024a; Winchenbach & Thuerey, 2024) . One downside of these simulators is the risk of non-physical instabilities during rollout, which affects the neural and numerical components.\nIt is known that already standard SPH schemes exhibit tensile instability, i.e., numerical errors leading to particle clumping and void regions when negative pressure occurs within what should be an incompressible fluid (Price, 2012) . This has led to the development of improved SPH schemes explicitly targeting regularity of particle distribution (Adami et al., 2013; Zhang et al., 2017b) . A review of SPH literature indicates that even methods seeking to improve other properties, like reducing artificial dissipation (Zhang et al., 2017a) or handling violent water flows (Marrone et al., 2011) , may also improve the particle distribution.\nIn this work, we present a large-scale analysis of Lagrangian physical modeling capabilities of various GNN-based simulators, i.e., a non-equivariant and an equivariant one. We identify a shared pitfall, i.e., particle clustering effects that are similar to those known from SPH schemes. Particle clustering in GNN-based simulators limits stable rollouts and accurate physics modeling. Based on these insights, we draw inspiration from numerical SPH solvers and enhance both training and inference of state-of-the-art GNN-based simulators with varying components from standard SPH solvers, including (i) pressure, (ii) viscous, and (iii) external force components -all implemented in JAX (Bradbury et al., 2018) . Methodologically, our main contributions are two:\n(a) novel external force treatment during training, and (b) an additional SPH relaxation routine during inference.\nWe demonstrate the efficacy of Neural SPH-enhanced Lagrangian simulators by achieving better performance on seven diverse 2D and 3D Lagrangian datasets -sometimes by orders of magnitude in terms of rollout error -than the baseline GNN, allowing for significantly better physical modeling capabilities. We note that the introduced Neural SPH techniques may apply to a wide range of physics scenarios beyond GNNs and SPH. Our source code is available at https://github.com/tumaer/neuralsph."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "A generalized wall boundary condition for smoothed particle hydrodynamics",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Adami",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Journal of Computational Physics"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "A transport-velocity formulation for smoothed particle hydrodynamics",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Adami",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Journal of Computational Physics"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Universal physics transformers",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Alkin",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Fürst",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Schmid",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Gruber",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Holzleitner",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Brandstetter",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Numerical simulation of fluid-structure interaction by sph",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Antoci",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Gallati",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sibilla",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "Computers & structures"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Higher order equivariant message passing neural networks for fast and accurate force fields",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Batatia",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "P"
+          ],
+          "last": "Kovacs",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Simm",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Ortner",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Csányi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mace",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Relational inductive biases, deep learning, and graph networks",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [
+            "W"
+          ],
+          "last": "Battaglia",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "B"
+          ],
+          "last": "Hamrick",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Bapst",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sanchez-Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Zambaldi",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Malinowski",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Tacchetti",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Raposo",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Santoro",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Faulkner",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "E(3)-equivariant graph neural networks for data-efficient and accurate interatomic potentials",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Batzner",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Musaelian",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Geiger",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "P"
+          ],
+          "last": "Mailoa",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Kornbluth",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Molinari",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "E"
+          ],
+          "last": "Smidt",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Kozinsky",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Nature communications"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Weakly compressible sph for free surface flows",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Becker",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Teschner",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "Proceedings of the 2007 ACM SIGGRAPH/Eurographics symposium on Computer animation"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Aurora: A foundation model of the atmosphere",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Bodnar",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [
+            "P"
+          ],
+          "last": "Bruinsma",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lucic",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Stanley",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Brandstetter",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Garvan",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Riechert",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Weyn",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vaughan",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Variational and momentum preservation aspects of smooth particle hydrodynamic formulations",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bonet",
+          "suffix": ""
+        },
+        {
+          "first": "T.-S",
+          "middle": [],
+          "last": "Lok",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": "Computer methods in applied mechanics and engineering"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "JAX: composable transformations of Python+NumPy programs",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Frostig",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Hawkins",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "J"
+          ],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Leary",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Maclaurin",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Necula",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Paszke",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Vanderplas",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wanderman-Milne",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Geometric and physical quantities improve e (3) equivariant message passing",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Brandstetter",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Hesselink",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Van Der Pol",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "J"
+          ],
+          "last": "Bekkers",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Message passing neural pde solvers",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Brandstetter",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "E"
+          ],
+          "last": "Worrall",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Machine learning for partial differential equations",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [
+            "L"
+          ],
+          "last": "Brunton",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "N"
+          ],
+          "last": "Kutz",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "A note on over-smoothing for graph neural networks",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Open catalyst 2020 (oc20) dataset and community challenges",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Chanussot",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Lavril",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Shuaibi",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Riviere",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Heras-Domingo",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Acs Catalysis"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Numerical simulation of interfacial flows by smoothed particle hydrodynamics",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Colagrossi",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Landrini",
+          "suffix": ""
+        }
+      ],
+      "year": 2003,
+      "venue": "Journal of computational physics"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Über die partiellen differenzengleichungen der mathematischen physik",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Courant",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Friedrichs",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Lewy",
+          "suffix": ""
+        }
+      ],
+      "year": 1928,
+      "venue": "Mathematische annalen"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Understanding convolution on graphs via energies",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Di Giovanni",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Rowbottom",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "P"
+          ],
+          "last": "Chamberlain",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Markovich",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "M"
+          ],
+          "last": "Bronstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Transactions on Machine Learning Research"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Lebesgue and Sobolev Spaces with Variable Exponents",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Diening",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Harjulehto",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Hästö",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ruzicka",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Moving least-squares particle hydrodynamics ii: conservation and boundaries",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [
+            "A"
+          ],
+          "last": "Dilts",
+          "suffix": ""
+        }
+      ],
+      "year": 2000,
+      "venue": "International Journal for Numerical Methods in Engineering"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Analysis of the particle relaxation method for generating uniform particle distributions in smoothed particle hydrodynamics",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Learning interatomic potentials at multiple scales",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Musaelian",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Johansson",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Jaakkola",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Kozinsky",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Forces are not enough: Benchmark and critical evaluation for machine learning force fields with molecular simulations",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Keten",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Gomez-Bombarelli",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "S"
+          ],
+          "last": "Jaakkola",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Transactions on Machine Learning Research"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Universal directional graph neural networks for molecules",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gasteiger",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Becker",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Günnemann",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gemnet",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Neural message passing for quantum chemistry",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gilmer",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "S"
+          ],
+          "last": "Schoenholz",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "F"
+          ],
+          "last": "Riley",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "E"
+          ],
+          "last": "Dahl",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Smoothed particle hydrodynamics: theory and application to non-spherical stars",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "A"
+          ],
+          "last": "Gingold",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "J"
+          ],
+          "last": "Monaghan",
+          "suffix": ""
+        }
+      ],
+      "year": 1977,
+      "venue": "Monthly notices of the royal astronomical society"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "State-of-the-artofclassicalsphforfreesurfaceflows",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Gomez-Gesteira",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "D"
+          ],
+          "last": "Rogers",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "A"
+          ],
+          "last": "Dalrymple",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "J"
+          ],
+          "last": "Crespo",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "Journal of Hydraulic Research"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Convolutional neural networks for steady flow approximation",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Iorio",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the 22nd ACM SIGKDD international conference on knowledge discovery and data mining"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Towards multispatiotemporal-scale generalized pde modeling",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "K"
+          ],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Brandstetter",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Transactions on Machine Learning Research"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "An arbitrary lagrangian-eulerian computing method for all flow speeds",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [
+            "W"
+          ],
+          "last": "Hirt",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "A"
+          ],
+          "last": "Amsden",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Cook",
+          "suffix": ""
+        }
+      ],
+      "year": 1974,
+      "venue": "Journal of computational physics"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "An incompressible multi-phase sph method",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "Journal of computational physics"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Composing partial differential equations with physics-aware neural networks",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Karlbauer",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Praditia",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Otte",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Oladyshkin",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Nowak",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "V"
+          ],
+          "last": "Butz",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Semi-supervised classification with graph convolutional networks",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [
+            "N"
+          ],
+          "last": "Kipf",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Simulating liquids with graph networks",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Klimesch",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Holl",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Thuerey",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Machine learning-accelerated computational fluid dynamics",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Kochkov",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Alieva",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "P"
+          ],
+          "last": "Brenner",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Hoyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Graphcast: Learning skillful medium-range global weather forecasting",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Lam",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sanchez-Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Willson",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Wirnsberger",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Fortunato",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Alet",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ravuri",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Ewalds",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Eaton-Rosen",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Graph neural network-accelerated lagrangian fluid simulation",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "B"
+          ],
+          "last": "Farimani",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Computers & Graphics"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Fourier neural operator for parametric partial differential equations",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "B"
+          ],
+          "last": "Kovachki",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Azizzadenesheli",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Bhattacharya",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Stuart",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Anandkumar",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Learning the dynamics of physical systems from sparse observations with finite element networks",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lienen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Günnemann",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Pde-refiner: Achieving accurate long rollouts with neural pde solvers",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Lippe",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Veeling",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Perdikaris",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Turner",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Brandstetter",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Towards consistence and convergence of conservative sph approximations",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Litvinov",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Journal of Computational Physics"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "A numerical approach to the testing of the fission hypothesis",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [
+            "B"
+          ],
+          "last": "Lucy",
+          "suffix": ""
+        }
+      ],
+      "year": 1977,
+      "venue": "Astronomical Journal"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Towards sph simulations of cavitating flows with an eosb cavitation model",
+      "authors": [
+        {
+          "first": "H.-G",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        },
+        {
+          "first": "P.-N",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Colagrossi",
+          "suffix": ""
+        },
+        {
+          "first": "A.-M",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Acta Mechanica Sinica"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "δ-sph model for simulating violent impact flows",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Marrone",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Antuono",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Colagrossi",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Colicchio",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Le Touzé",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Graziani",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Computer Methods in Applied Mechanics and Engineering"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Boundary graph neural networks for 3d simulations",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mayr",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lehner",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mayrhofer",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Kloss",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Hochreiter",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Brandstetter",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Scaling deep learning for materials discovery",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Merchant",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Batzner",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "S"
+          ],
+          "last": "Schoenholz",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Aykol",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Cheon",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "D"
+          ],
+          "last": "Cubuk",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Simulating free surface flows with sph",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "J"
+          ],
+          "last": "Monaghan",
+          "suffix": ""
+        }
+      ],
+      "year": 1994,
+      "venue": "Journal of computational physics"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Smoothed particle hydrodynamics",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "J"
+          ],
+          "last": "Monaghan",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": "Reports on progress in physics"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Climax: a25 foundation model for weather and climate",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Brandstetter",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kapoor",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "K"
+          ],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Grover",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Forecasting global weather with graph neural networks",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Pathak",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Subramanian",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Harrington",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Raja",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Chattopadhyay",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Mardani",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Kurth",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Hall",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Azizzadenesheli",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Hassanzadeh",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Kashinath",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Anandkumar",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Learning mesh-based simulation with graph networks",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Pfaff",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Fortunato",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sanchez-Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Battaglia",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Smoothed particle hydrodynamics and magnetohydrodynamics",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "J"
+          ],
+          "last": "Price",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Journal of Computational Physics"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Data-driven medium-range weather prediction with a resnet pretrained on climate simulations: A new model for weatherbench",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Rasp",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Thuerey",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Journal of Advances in Modeling Earth Systems"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Learning to simulate complex physics with graph networks",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sanchez-Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Godwin",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Pfaff",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Ying",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Leskovec",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Battaglia",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "The graph neural network model",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Scarselli",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Gori",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "C"
+          ],
+          "last": "Tsoi",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Hagenbuchner",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Monfardini",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "IEEE transactions on neural networks"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "A two-dimensional interpolation function for irregularly-spaced data",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Shepard",
+          "suffix": ""
+        }
+      ],
+      "year": 1968,
+      "venue": "Proceedings of the 1968 23rd ACM National Conference"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Modelling free surface flows with smoothed particle hydrodynamics",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [
+            "D G"
+          ],
+          "last": "Sigalotti",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Daza",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Donoso",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Condensed Matter Physics"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Metnet: A neural weather model for precipitation forecasting",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [
+            "K"
+          ],
+          "last": "Sønderby",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Espeholt",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Heek",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Oliver",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Agrawal",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hickey",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Kalchbrenner",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Multi-resolution delta-plus-sph with tensile instability control: Towards high reynolds number flows",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Colagrossi",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Marrone",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Antuono",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Computer Physics Communications"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Minimizing the dirichlet energy over a space of measure preserving maps",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Taheri",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "Topological Methods in Nonlinear Analysis"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Physics-based deep learning",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Thuerey",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Holl",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Mueller",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Schnell",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Trost",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Um",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Lagrangebench: A lagrangian fluid mechanics benchmarking suite",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Toshev",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Galletti",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Fritz",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Adami",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Lagrangebench datasets",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "P"
+          ],
+          "last": "Toshev",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Learning lagrangian fluid mechanics with e (3)-equivariant graph neural networks",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "P"
+          ],
+          "last": "Toshev",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Galletti",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Brandstetter",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Adami",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Geometric Science of Information"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "On the relationships between graph neural networks for the simulation of physical systems and classical numerical methods",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "P"
+          ],
+          "last": "Toshev",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Paehler",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Panizza",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Jax-sph: A differentiable smoothed particle hydrodynamics framework",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "P"
+          ],
+          "last": "Toshev",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Ramachandran",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "A"
+          ],
+          "last": "Erbesdobler",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Galletti",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Brandstetter",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Solverin-the-Loop: Learning from Differentiable Physics to Interact with Iterative PDE-Solvers",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Um",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Brand",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Fei",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Holl",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Thuerey",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Smoothed particle hydrodynamics (sph) for free-surface flows: past, present and future",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Violeau",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "D"
+          ],
+          "last": "Rogers",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Journal of Hydraulic Research"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "3d steerable cnns: Learning rotationally equivariant features in volumetric data",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Weiler",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Geiger",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Boomsma",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "S"
+          ],
+          "last": "Cohen",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Improving data-driven global weather prediction using deep convolutional neural networks on a cubed sphere",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "A"
+          ],
+          "last": "Weyn",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "R"
+          ],
+          "last": "Durran",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Caruana",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Journal of Advances in Modeling Earth Systems"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "Symmetric basis convolutions for learning lagrangian fluid mechanics",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Winchenbach",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Thuerey",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF72",
+      "title": "Mattergen: a generative model for inorganic materials design",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zeni",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Pinsler",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zügner",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Fowler",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Horton",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Shysheya",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Crabbé",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF73",
+      "title": "A weakly compressible sph method based on a low-dissipation riemann solver",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Journal of Computational Physics"
+    },
+    {
+      "id": "BIBREF74",
+      "title": "A generalized transport-velocity formulation for smoothed particle hydrodynamics",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [
+            "Y"
+          ],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Journal of Computational Physics"
+    },
+    {
+      "id": "BIBREF75",
+      "title": "Regularization on discrete spaces",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Schölkopf",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": "Joint Pattern Recognition Symposium"
+    }
+  ]
+}

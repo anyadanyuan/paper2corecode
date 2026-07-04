@@ -1,0 +1,3802 @@
+{
+  "paper_id": "YOLA",
+  "title": "You Only Look Around: Learning Illumination Invariant Feature for Low-light Object Detection",
+  "authors": [
+    {
+      "first": "Mingbo",
+      "middle": [],
+      "last": "Hong",
+      "affiliation": {}
+    },
+    {
+      "first": "Shen",
+      "middle": [],
+      "last": "Cheng",
+      "affiliation": {}
+    },
+    {
+      "first": "Haibin",
+      "middle": [],
+      "last": "Huang",
+      "affiliation": {}
+    },
+    {
+      "first": "Haoqiang",
+      "middle": [],
+      "last": "Fan",
+      "affiliation": {}
+    },
+    {
+      "first": "Shuaicheng",
+      "middle": [],
+      "last": "Liu",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "In this paper, we introduce YOLA, a novel framework for object detection in low-light scenarios. Unlike previous works, we propose to tackle this challenging problem from the perspective of feature learning. Specifically, we propose to learn illumination-invariant features through the Lambertian image formation model. We observe that, under the Lambertian assumption, it is feasible to approximate illumination-invariant feature maps by exploiting the interrelationships between neighboring color channels and spatially adjacent pixels. By incorporating additional constraints, these relationships can be characterized in the form of convolutional kernels, which can be trained in a detection-driven manner within a network. Towards this end, we introduce a novel module dedicated to the extraction of illumination-invariant features from low-light images, which can be easily integrated into existing object detection frameworks. Our empirical findings reveal significant improvements in low-light object detection tasks, as well as promising results in both well-lit and over-lit scenarios. Code is available at https://github.com/MingboHong/YOLA.",
+  "body": {
+    "1_Introduction": "In the field of computer vision, object detection stands as a cornerstone, driving advancements in numerous applications ranging from autonomous vehicles to security surveillance [26, 51, 20] . The ability to accurately identify and locate objects in digital imagery has seen remarkable progress, largely due to the advent of deep learning techniques [16, 15, 40] . However, despite these advancements, object detection in low-light conditions remains a significant challenge. Low-light environments lead to poor image quality, reduced visibility, and increased misdetections in night-time surveillance and twilight driving [48, 32] .\nTraditional methods in tackling low-light object detection have predominantly leaned towards image enhancement techniques [17, 24, 53, 34] . While these methods have demonstrated effectiveness in , c ) However, when IIM is employed with a simple edge feature, the object is identified. (d, e) Furthermore, the full IIM utilizes a taskdriven learnable kernel to extract illumination-invariant features that are richer and more suitable for the detection task than simple edge features. improving visual aesthetics and perceptual quality, they often do not directly translate to improved object detection performance. This discrepancy arises because these enhancement techniques are typically optimized for human visual perception, which does not always correlate with the requirements for effective and accurate object detection by machine learning models.\nIn addition to image enhancement strategies, another research direction involves fine-tuning pretrained models for low-light conditions. Typically, detectors are initially trained on extensive datasets of well-lit images, such as those from Pascal VOC [11] and Microsoft COCO [28] , and subsequently fine-tuned on smaller, low-light datasets [48, 32] . To enhance the utilization of crossdomain information, the MAET framework [7] was developed to learn intrinsic visual structure features by separating object features from those caused by degradation in image quality. Similarly, methods [31, 25] aim to restore the normal appearances of corrupted images during detector training. However, these techniques often depend heavily on synthetic datasets, which could limit their real-world applicability.\nRecent methods in low-light object detection, such as those in [36, 49] , use Laplacian pyramids [2] for multi-scale edge extraction and image enhancement. FeatEnHancer [18] further leverages hierarchical features for improved low-light vision. However, these task-specific, loss-driven approaches often grapple with a larger solution space due to varying illumination effects.\nIn this study, we introduce a novel approach that explicitly leverages illumination-invariant features, utilizing the principles of the Lambertian image formation model [42] . Under the Lambertian assumption, we can express the pixel values in each channel as a discrete combination of three key components: the surface normal, the light direction (both of which are solely related to the pixel's position), the spectral power distribution, and the intrinsic properties of the pixel itself. The illumination-invariant feature can be learned by eliminating the position-related term and spectral power-related term [14] . We introduce this concept of extracting illumination-invariant features into low-light detection tasks and demonstrate that incorporating this feature yields significant performance improvements in low-light detection tasks. We further improve this illumination-invariant feature using task-driven kernels. Our key observation is that by imposing a zero-mean constraint on these kernels, the feature can simultaneously discover richer downstream task-specific patterns and maintain illumination invariance, thereby improving performance.\nTowards this end, we propose the Illumination-Invariant Module (IIM), a versatile and adaptive component designed to integrate the information gleaned from these specialized kernels with standard RGB images. The IIM can be seamlessly integrated with a variety of existing object detection frameworks, enhancing their capability to perform accurately in low-light environments, whether through naive edge features or diverse illumination-invariant characteristics, as shown in Fig 1 .\nWe further conduct experiments on the ExDark and U G 2 +DARK FACE datasets to evaluate our method. Our experimental results demonstrate that the integration of the IIM significantly enhances the detection accuracy of existing methods, leading to substantial improvements in low-light object detection. To summarize, our contributions are as follows:\n• We introduce YOLA, a novel framework for object detection in low-light conditions by leveraging illumination-invariant features. • We design a novel Illumination-Invariant Module to extract illumination-invariant features without requiring additional paired datasets, and can be seamlessly integrated into existing object detection methods.\n• We provide an in-depth analysis of the extracted illumination-invariant paradigm and propose a learning illumination-invariant paradigm.\n• Our experiments show YOLA can significantly improve the detection accuracy of existing methods when dealing with low-light images.\n2 Related work",
+    "2.1_General_object_detection": "Current modern object detection methods can be classified as anchor-based and anchor-free. The anchor-based detectors are derived from the sliding-window paradigm, where the dense anchor can be viewed as the sliding-window arranged in spatial space. Subsequently, the anchors are assigned as positive or negative samples based on the matching strategy (i.e., Intersection-over Union (IoU) [16] , Top-K [52, 50] ). Common anchor-based methods include R-CNN [16, 15, 40] , SSD [30] , YOLOv2 [38] , and RetinaNet [27] , among others. In contrast, the anchor-free detectors liberate the handcraft anchor hyper-parameter setting, enhancing their potential in terms of generalization capability. Prominent methods in anchor-free include YOLOv1 [37] , FCOS [44] , and DETR [3] .\nDespite the remarkable achievements of both anchor-based and anchor-free detectors in general object detection, they exhibit unsatisfactory performance under low-light conditions.",
+    "2.2_Low-light_object_detection": "Object detection in low-light conditions remains a significant challenge. One common line of research involves leveraging image enhancement techniques, such as KIND [53] , SMG [46] , NeRCo [47] , and others [17, 24, 22, 23] to directly improve the quality of the low-light image. The enhanced images are then deployed in the subsequent training and testing stages of detection. However, the objective of image enhancement is inherently different from that of object detection, making this strategy suboptimal. To address this, some researchers [21, 6] explore integrating image enhancement with object detection during the training process. Nevertheless, the task of balancing hyperparameters to equilibrate visual quality and detection performance remains intricate. Recently, Sun et al. [43] proposed a targeted adversarial attack paradigm aimed at restoring degraded images to ones that are more favorable for object detection. MAET [7] trained on a low-light synthetic dataset, obtaining the pre-trained model endowed intrinsic structure decomposition ability for downstream lowlight object detection. Further, IA-YOLO [31] and GDIP [25] elaborately design the differentiable image processing module to enhance image adaptively for adverse weather object detection. Note that the aforementioned methods either require a dedicated low-light enhancement dataset or rely heavily on synthetic datasets in training. To mitigate the limitations, a set of methodologies [36, 49, 18] utilize multi-scale hierarchical features and are driven purely by task-specific loss to improve low-light vision. Unlike those methods, we introduce illumination-invariant features to alleviate the effect of illumination on low-light object detection, without requiring additional low-light enhancement datasets or synthetic datasets.",
+    "2.3_Illumination_invariant_representation": "Adverse illumination typically degrades the performance on downstream tasks, prompting researchers to explore illumination-invariant techniques to mitigate this impact. For high-level tasks, Wang et al. [45] proposed an illumination normalization method for Face Recognition. Alshammari et al. [1] use illumination-invariant image representation to improve automotive scene understanding and segmentation. Lu et al. [33] convert RGB images to illumination-invariant chromaticity space, preparing for the following feature extraction to achieve traffic object detection in various illumination conditions. For low-level tasks, several physics-based invariants, such as Colour Ratios [13] (CR) and Cross Colour Ratios [14] (CCR), are employed to decompose the illumination for intrinsic image decomposition [10, 9, 8] . However, these methods leverage illumination-invariant representations derived from the fixed formulations, which may not adequately capture the diverse and complex illumination scenarios that are specific to downstream applications. In contrast, our method enables the adaptive learning of illumination-invariant features in an end-to-end manner, thereby enhancing compatibility with downstream tasks.",
+    "3_Method": {
+      "3.1_Illumination_invariant_feature": "Notation: Let I represents an image in the standard RGB domain, and let C ∈ [R, G, B] represent the image in the red, green, or blue channel. We define the value in channel C of a pixel p i as C pi , where i ∈ I is the pixel index.\nLambertian assumption: According to body reflection term of the dichromatic reflection model, the value of C pi can be expressed in the discreet form as follows:\nEQUATION\nHere, ⃗ n pi , ⃗ l pi represents surface normal and light direction respectively, and m denotes the interaction function between them. The term e Cp i represents the spectral power distribution of the illuminant at point p i in color channel C , and ρ Cp i represents the intrinsic property (reflectance) of the object at point p i in color channel C.\nIt becomes apparent that the term m is determined solely by the positional component, with no impact from the color channels. This observation leads to the strategy of calculating the difference between values of different color channels at the same spatial positions to effectively eliminate the influence of m. To eliminate the term e, we can utilize the assumption that illumination is approximately uniform across adjacent pixels. Consequently, by computing the difference between values of neighboring pixels, we can further further eliminate the influence of m.\nCross color ratio: Taking into consideration two adjacent pixels, denoted as p 1 and p 2 , along with the red (R) and blue (B) channels, we can determine the ratio M rb between the red and blue channels through the following computational procedure:\nEQUATION\nTaking the logarithm of M rb and substituting the pixel values with Eq. 1, we get:\nEQUATION\nWith the illumination assumption that e Cp 1 ≈ e Cp 2 , the above equation can be further simplified into an illumination-invariant form:\nEQUATION\nBy observing the elimination in Eq. 4, we can find that subtraction within the same channel eliminates the illumination term (implemented by zero-mean constraint), while cross-channel subtraction removes the surface normal and light direction terms, which motivates us to design the learning illumination-invariant paradigms.\nIn this case, we can use a convolution operation to extract features, as shown in Fig. 2 . The extracted features are processed and fused by the IIM before being sent to the detector. When using fixed weights of adjacent pixels with a subtraction value of 1 or -1, we refer to it as IIM-Edge. Next, we will provide a detailed introduction to the IIM.",
+      "3.2_Illumination_invariant_module": "While Eq. 4 offers a straightforward and effective method for calculating Illumination Invariant features, its rigidity presents certain limitations. Specifically, the fixed nature of this equation may not adequately capture the diverse and complex variations in illumination that are specific to downstream tasks across different scenarios. To address this, we have evolved the equation into a more adaptable form using convolutional operations. Instead of relying on a single kernel, our approach involves learning a set of convolutional kernels. This strategy not only enhances the robustness of the Illumination Invariant feature extraction but also improves its efficiency. To this end, we propose Illumination Invariant Module comprising two main components, including learnable kernels and a zero-mean constraint. Note that Illumination Invariant Module yield features are inherently illumination invariant at initialization. Subsequent kernel learning is geared towards producing task-specific illumination invariant features for downstream tasks.\nLearnable kernel. The goal is to transform the fixed illumination-invariant feature into a learnable form. Specifically, we aim to learn a set of convolutional kernels\nW 1 , W 2 , • • • W ∈k×k n\n, where n represents the number of kernels and k denotes the kernel size. Here, we extend the fixed feature into a more versatile and generalized form. Let p i and w i represent a group pixel position and its corresponding weight within a kernel W n , where i = 0, 1, • • • k 2 . These parameters enable us to evolve the Cross Color Ratio (CCR) into an adaptable form, enhancing its capability to effectively handle varying illumination conditions. Note that w i is trainable, rendering the positive or negative polarity inconsequential.\nM rb = k 2 -1 i=1 R pi B pi wi B pi+1 R pi+1 wi+1 = k 2 i=1 R pi B pi wi (5)\nTo make the extended form still satisfy Illumination Invariant, the logarithm of M rb should satisfy the following constraints:\nEQUATION\n6) GT Baseline DENet MAET KIND SMG NERCO Ours GT Baseline DENet MAET KIND SMG NERCO Ours Figure 3: Qualitative comparisons of TOOD detector on both ExDark and U G 2 +DARK FACE dataset, where the top 2 rows visualize the detection results from ExDark, and the bottom 2 rows show the results from U G 2 +DARK FACE. The images are being replaced with enhanced images generated by LLIE or low-light object methods. Red dash boxes highlight the inconspicuous cases. Zoom in red dash boxes for the best view.\nIf the above equation holds true, the e term and the m term are eliminated. The final feature can be expressed in a generalized form:\nEQUATION\nSimilarly, we can obtain log(M rg ) and log(M gb ) to form f Wi (I).\nThe resulting features obtained by applying the kernel W i to the image I denoted as f Wi (I), can be expressed as:\nEQUATION\nwhere ⊛ denotes the convolution.\nZero mean constraint: Drawing from Eq. 6 and the approximation e Rp 1i ≈ e Bp i , in the context of convolutional kernels, we simply ensure that the mean of W ∈k×k n to be 0, as depicted by:\nEQUATION\n)\nThis constraint is enforced by substituting the mean value from the kernel W n = W n -W n .",
+      "_text": "In this section, we formally introduce YOLA, a novel method for low-light object detection. As illustrated in Fig. 2 , the key component of YOLA is the Illumination Invariant Module (IIM) focusing on feature learning to derive downstream task-specific illumination-invariant features. These features can be integrated with existing detection modules, enhancing their capability in low-light conditions.\nNext, we will introduce the derivation of illumination-invariant features and provide a detailed description of IIM's specific implementation."
+    },
+    "4.1_Implementation_details": "We evaluate the proposed method using the popular anchor-based detector YOLOv3 [39] and the anchor-free detector TOOD [12] . Both detectors are initially pre-trained on the COCO dataset and subsequently fine-tuned on the target datasets utilizing the SGD [41] optimizer with an initial learning rate of 1e-3. Specifically, we resize the ExDark dataset images to 608 × 608 and train both detectors for 24 epochs, reducing the learning rate by a factor of 10 at epochs 18 and 23. For the U G 2 +DARK FACE dataset, we resize images to 1500 × 1000 for TOOD and maintain the 608 × 608 resolution for YOLOv3 to be consistent with MAET. YOLOv3 is trained for 20 epochs, with the learning rate decreased by a factor of 10 at 14 and 18 epochs. TOOD are trained for 12 epochs, with the learning rate decreased by a factor of 10 at 8 and 11 epochs. Additionally, we implement a straightforward illumination-invariant model, denoted as YOLA-Naive, by removing the IIM and ensuring various illumination features are consistently imposed by an MSE loss. We implement YOLA using the MMDetection toolbox [4] .",
+    "4.2_Dataset": "We evaluate our proposed method on both real-world scenarios datasets: exclusively dark [32] (ExDark) and U G 2 +DARK FACE [48] . ExDark dataset contains 7363 images ranging from lowlight environments to twilight, including 12 categories, 3,000 images for training, 1,800 images for validation, and 2,563 images for testing. We calculate the overall mean average precision (mAP 50 ) and mean recall at the IoU threshold of 0.5 as the evaluation metric. U G 2 +DARK FACE dataset contains 6,000 labeled face bounding box images, where 5,400 images are allocated for training and 600 images are reserved for testing, and calculating the corresponding recall and mAP 50 as evaluation metrics. Additionally, we also evaluate the generalization ability of our method on the COCO 2017 [28] dataset. Table 5: Model size of different methods.",
+    "4.3_Low-light_object_detection": "and anchor-free detectors TOOD, surpassing the baseline by significant gains of 1.7 and 2.5 mAP, indicative of its superiority and effectiveness. Meanwhile, compared with most LLIE and lowlight object detection techniques, the number of parameters in our YOLA (0.008M) is significantly lower, as presented in Table 5 . This highlights the potential for our method to be deployed in lightweight practical applications. For a more detailed quantitative comparison, please refer to our appendix.",
+    "4.4_Low-light_face_detection": "We have shown the results on the ExDark dataset. Next, we showcase the results on a dataset that includes small-sized objects. Table 2 presents the quantitative results of the detector YOLOv3 and TOOD on U G 2 +DARK FACE dataset. Significantly, it is worth noting that most LLIE methods integrated into the YOLOv3 detector fail to achieve satisfactory results. This implies that the utilization of enhancement-based approaches can impair the details of small faces, hindering the learning of useful representations in such images. On the other hand, methods considering the object detection task demonstrate better performance, where YOLA increases the 1.5 mAP, demonstrating its superior performance and generalization capability. For the recently advanced detector TOOD, our method still outperforms these LLIE and low-light object detection methods, achieving a remarkable mAP of 67.4. This underscores YOLA's superior generalization capabilities in improving the performance of both anchor-based and anchor-free detection paradigms.",
+    "4.5_Quantitative_results": "The top 2 rows of Figure 3 show the qualitative results from the ExDark dataset using the TOOD detector, where existing methods exhibit missed detections, highlighted by the red dashed boxes. In contrast, YOLA excels in detecting these challenging cases, demonstrating its superior performance in complex scenarios. The bottom 2 rows exhibit the qualitative results of the U G 2 +DARK FACE dataset using the TOOD detector. These faces are typically tiny under low-light conditions, making it difficult for most methods to achieve comprehensive results.\nAlthough our method does not explicitly constrain image brightness, the enhanced images tend to display increased brightness in the final results. The visual results shown in the figures may appear slightly grayish due to the absence of value range constraints on the enhanced images. For image display, we conducted channel-wise normalization.",
+    "4.6_Ablation_studies_4.6.1_Illumination_invariant_module": {
+      "4.6.2_Zero_mean_constraint": "By imposing a zero mean constraint on the convolutional kernels, the subtraction formed by the kernels can factor out the illumination items. To evaluate the impact of this constraint, we exclude it from IIM, and the results are shown in Table 3 . It is evident that the removal of this constraint leads to a decline in performance, with reductions of 0.3 and 0.5 mAP for TOOD. These results indicate that utilizing the zero mean constraint to mitigate the effects of illumination is beneficial to low-light object detection.",
+      "4.6.3_Learnable_kernel": "The IIM is formed with the learnable kernels, encouraging the illumination-invariant features that are adaptively learned in an end-to-end fashion. In this experiment, we evaluate the fixed kernels (as specified in Eq. 4, also referred to as IIM-Edge), the results of which are shown in Table 3 . It outperforms the baseline by 1.3 mAP on ExDark and 2.4 mAP on U G 2 +DARK FACE, which demonstrates that the incorporation of illumination-invariant features is beneficial for low-light object detection. Subsequently, we substitute the fixed kernels with the learnable kernels, yielding further gains of 1.4 mAP on ExDark and 2.9 mAP on U G 2 +DARK FACE. These results clearly prove the effectiveness of learnable kernels. In addition, we also impose a consistency loss for IIM's output feature to stabilize the kernel learning to prevent trivial solutions within the kernel, mitigating the impact of uneven lighting. (please refer to the appendix A for details).\nVisualization: Illumination-invariant features exhibit considerable diversity, but the diversity captured by fixed kernels is limited. We visualize and compare the fixed kernel and learnable kernel as shown in Fig. 4 . The features yielded by fixed kernels appear relatively uniform, primarily consisting of simple edge features. In contrast, learnable kernels extract more diverse patterns, resulting in visually richer and more informative representations.",
+      "_text": "We evaluate the effectiveness of the IIM in detectors TOOD, as presented in Table 3 , respectively. The 1st and 5th rows of Table 3 show the baseline detectors evaluated on ExDark and U G 2 +DARK FACE dataset. By incorporating the IIM to introduce illumination-invariant features, the detector yields considerable performance gains (2.3 and 4.8 mAP for ExDark and U G 2 +DARK FACE, respectively)."
+    },
+    "4.7_Generalization": "In this section, we broaden the application of the YOLA to the general object detection dataset COCO 2017, investigating the YOLA's generalization capability beyond low-light object detection. The metrics mAP (average for IoU [0.5:0.05:0.95]), AP 50 , and AP 75 are adopted to evaluate performance on COCO 2017val (also called minival) as presented in Table 4 . Specifically, we trained 12 epochs with 8 GPUs and a mini-batch of 1 per GPU in an initial learning rate of 1e-2 by the SGD optimizer on both well-lit and over-lit (generated by brightening the origin image) scenarios. By observing Table 4 , we can see that detectors integrated with YOLA in both scenarios exhibit notable improvements in performance.",
+    "5_Conclusion": "In this work, we have revisited the complex challenge of object detection in low-light conditions and demonstrated the effectiveness of illumination-invariant features in improving detection accuracy in such environments. Our key innovation, the Illumination-Invariant Module (IIM), harnesses these features to great effect. By integrating a zero-mean constraint within the framework, we have effectively learned a diverse set of kernels. These kernels are adept at extracting illumination-invariant features, significantly enhancing detection precision. We believe that our developed IIM module can be instrumental in advancing low-light object detection tasks in future applications.\n[50] Hongkai Zhang, Hong Chang, Bingpeng Ma, Naiyan Wang, and Xilin Chen. Dynamic r-cnn: Towards high quality object detection via dynamic training. In ECCV, pages 260-275. Springer, 2020. [51] Kaipeng Zhang, Zhanpeng Zhang, Zhifeng Li, and Yu Qiao. Joint face detection and alignment using multitask cascaded convolutional networks. IEEE signal processing letters, 23(10):1499-1503, 2016. [52] Shifeng Zhang, Cheng Chi, Yongqiang Yao, Zhen Lei, and Stan Z Li. Bridging the gap between anchor-based and anchor-free detection via adaptive training sample selection. In CVPR, pages 9759-9768, 2020. [53] Yonghua Zhang, Jiawan Zhang, and Xiaojie Guo. Kindling the darkness: A practical low-light image enhancer. In ACM MM, pages 1632-1640, 2019."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "On the impact of illumination-invariant image pre-transformation for contemporary automotive semantic scene understanding",
+      "authors": [
+        {
+          "first": "Naif",
+          "middle": [],
+          "last": "Alshammari",
+          "suffix": ""
+        },
+        {
+          "first": "Samet",
+          "middle": [],
+          "last": "Akcay",
+          "suffix": ""
+        },
+        {
+          "first": "Toby",
+          "middle": [
+            "P"
+          ],
+          "last": "Breckon",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "IEEE Intelligent Vehicles Symposium"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "The laplacian pyramid as a compact image code",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Peter",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [
+            "H"
+          ],
+          "last": "Burt",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Adelson",
+          "suffix": ""
+        }
+      ],
+      "year": 1987,
+      "venue": "Readings in computer vision"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "End-to-end object detection with transformers",
+      "authors": [
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Carion",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Synnaeve",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Usunier",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kirillov",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Zagoruyko",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Mmdetection: Open mmlab detection toolbox and benchmark",
+      "authors": [
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaqi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiangmiao",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhang",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoxiao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Shuyang",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Wansen",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Ziwei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiarui",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Instance segmentation in the dark",
+      "authors": [
+        {
+          "first": "Linwei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Kaixuan",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Dezhi",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Felix",
+          "middle": [],
+          "last": "Heide",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IJCV"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "You only need 90k parameters to adapt light: a light weight transformer for image enhancement and exposure correction",
+      "authors": [
+        {
+          "first": "Ziteng",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        },
+        {
+          "first": "Kunchang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Lin",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Shenghan",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengkai",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsuya",
+          "middle": [],
+          "last": "Harada",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "BMVC"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Multitask aet with orthogonal tangent regularity for dark object detection",
+      "authors": [
+        {
+          "first": "Ziteng",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        },
+        {
+          "first": "Guo-Jun",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Lin",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Shaodi",
+          "middle": [],
+          "last": "You",
+          "suffix": ""
+        },
+        {
+          "first": "Zenghui",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsuya",
+          "middle": [],
+          "last": "Harada",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Idtransformer: Transformer for intrinsic image decomposition",
+      "authors": [
+        {
+          "first": "Partha",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "Maxime",
+          "middle": [],
+          "last": "Gevers",
+          "suffix": ""
+        },
+        {
+          "first": "Sezer",
+          "middle": [],
+          "last": "Karaoglu",
+          "suffix": ""
+        },
+        {
+          "first": "Theo",
+          "middle": [],
+          "last": "Gevers",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Intrinsic image decomposition using physicsbased cues and cnns",
+      "authors": [
+        {
+          "first": "Partha",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "Sezer",
+          "middle": [],
+          "last": "Karaoglu",
+          "suffix": ""
+        },
+        {
+          "first": "Theo",
+          "middle": [],
+          "last": "Gevers",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Pie-net: Photometric invariant edge guided network for intrinsic image decomposition",
+      "authors": [
+        {
+          "first": "Partha",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "Sezer",
+          "middle": [],
+          "last": "Karaoglu",
+          "suffix": ""
+        },
+        {
+          "first": "Theo",
+          "middle": [],
+          "last": "Gevers",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "The pascal visual object classes (voc) challenge",
+      "authors": [
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Everingham",
+          "suffix": ""
+        },
+        {
+          "first": "Luc",
+          "middle": [],
+          "last": "Van Gool",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "I"
+          ],
+          "last": "Christopher",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Winn",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "IJCV"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Tood: Task-aligned one-stage object detection",
+      "authors": [
+        {
+          "first": "Chengjian",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Yujie",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [
+            "R"
+          ],
+          "last": "Scott",
+          "suffix": ""
+        },
+        {
+          "first": "Weilin",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Colour object recognition",
+      "authors": [
+        {
+          "first": "Graham",
+          "middle": [],
+          "last": "David",
+          "suffix": ""
+        },
+        {
+          "first": "Finlayson",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 1992,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Color-based object recognition",
+      "authors": [
+        {
+          "first": "Theo",
+          "middle": [],
+          "last": "Gevers",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [
+            "M"
+          ],
+          "last": "Arnold",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Smeulders",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": "Pattern recognition"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Fast r-cnn",
+      "authors": [
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Rich feature hierarchies for accurate object detection and semantic segmentation",
+      "authors": [
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Donahue",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Darrell",
+          "suffix": ""
+        },
+        {
+          "first": "Jitendra",
+          "middle": [],
+          "last": "Malik",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Zero-reference deep curve estimation for low-light image enhancement",
+      "authors": [
+        {
+          "first": "Chunle",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Chongyi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jichang",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [
+            "Change"
+          ],
+          "last": "Loy",
+          "suffix": ""
+        },
+        {
+          "first": "Junhui",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Kwong",
+          "suffix": ""
+        },
+        {
+          "first": "Runmin",
+          "middle": [],
+          "last": "Cong",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Featenhancer: Enhancing hierarchical features for object detection and beyond under low-light vision",
+      "authors": [
+        {
+          "first": "Azeem",
+          "middle": [],
+          "last": "Khurram",
+          "suffix": ""
+        },
+        {
+          "first": "Goutham",
+          "middle": [],
+          "last": "Hashmi",
+          "suffix": ""
+        },
+        {
+          "first": "Didier",
+          "middle": [],
+          "last": "Kallempudi",
+          "suffix": ""
+        },
+        {
+          "first": "Muhammad",
+          "middle": [],
+          "last": "Stricker",
+          "suffix": ""
+        },
+        {
+          "first": "Afzal",
+          "middle": [],
+          "last": "Zeshan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Mask r-cnn",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Georgia",
+          "middle": [],
+          "last": "Gkioxari",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Sspnet: Scale selection pyramid network for tiny person detection from uav images",
+      "authors": [
+        {
+          "first": "Mingbo",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Shuiwang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yuchao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Feiyu",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Qijun",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE geoscience and remote sensing letters"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Dsnet: Joint semantic learning for object detection in inclement weather conditions",
+      "authors": [
+        {
+          "first": "Shih-Chia",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Trung-Hieu",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "Da-Wei",
+          "middle": [],
+          "last": "Jaw",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE TPAMI"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Low-light image enhancement with wavelet-based diffusion models",
+      "authors": [
+        {
+          "first": "Hai",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Ao",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Haoqiang",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Songchen",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Shuaicheng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ACM TOG"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Lightendiffusion: Unsupervised low-light image enhancement with latent-retinex diffusion models",
+      "authors": [
+        {
+          "first": "Hai",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Ao",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohong",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Songchen",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Shuaicheng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Enlightengan: Deep light enhancement without paired supervision",
+      "authors": [
+        {
+          "first": "Yifan",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyu",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Ding",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohui",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Jianchao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Pan",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Zhangyang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE transactions on image processing"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Gdip: Gated differentiable image processing for object detection in adverse conditions",
+      "authors": [
+        {
+          "first": "Sanket",
+          "middle": [],
+          "last": "Kalwar",
+          "suffix": ""
+        },
+        {
+          "first": "Dhruv",
+          "middle": [],
+          "last": "Patel",
+          "suffix": ""
+        },
+        {
+          "first": "Aakash",
+          "middle": [],
+          "last": "Aanegola",
+          "suffix": ""
+        },
+        {
+          "first": "Krishna",
+          "middle": [
+            "Reddy"
+          ],
+          "last": "Konda",
+          "suffix": ""
+        },
+        {
+          "first": "Sourav",
+          "middle": [],
+          "last": "Garg",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Madhava",
+          "suffix": ""
+        },
+        {
+          "first": "Krishna",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Adaptive and background-aware vision transformer for real-time uav tracking",
+      "authors": [
+        {
+          "first": "Shuiwang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yangxiang",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Xucheng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Focal loss for dense object detection",
+      "authors": [
+        {
+          "first": "Tsung-Yi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Priya",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Microsoft coco: Common objects in context",
+      "authors": [
+        {
+          "first": "Tsung-Yi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Maire",
+          "suffix": ""
+        },
+        {
+          "first": "Serge",
+          "middle": [],
+          "last": "Belongie",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Hays",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Perona",
+          "suffix": ""
+        },
+        {
+          "first": "Deva",
+          "middle": [],
+          "last": "Ramanan",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lawrence",
+          "suffix": ""
+        },
+        {
+          "first": "Zitnick",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Retinex-inspired unrolling with cooperative prior architecture search for low-light image enhancement",
+      "authors": [
+        {
+          "first": "Risheng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Zhongxuan",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Ssd: Single shot multibox detector",
+      "authors": [
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Dragomir",
+          "middle": [],
+          "last": "Anguelov",
+          "suffix": ""
+        },
+        {
+          "first": "Dumitru",
+          "middle": [],
+          "last": "Erhan",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Szegedy",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Reed",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng-Yang",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [
+            "C"
+          ],
+          "last": "Berg",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Image-adaptive yolo for object detection in adverse weather conditions",
+      "authors": [
+        {
+          "first": "Wenyu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Gaofeng",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Runsheng",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Shi",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Jianke",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "AAAI"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Getting to know low-light images with the exclusively dark dataset",
+      "authors": [
+        {
+          "first": "Yuen",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Loh",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Chee",
+          "middle": [],
+          "last": "Seng",
+          "suffix": ""
+        },
+        {
+          "first": "Chan",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "A cross-scale and illumination invariance-based model for robust object detection in traffic surveillance scenarios",
+      "authors": [
+        {
+          "first": "Yan-Feng",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Jing-Wen",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Qian",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yi-Sheng",
+          "middle": [],
+          "last": "Lv",
+          "suffix": ""
+        },
+        {
+          "first": "Hong",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE Transactions on Intelligent Transportation Systems"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Mbllen: Low-light image/video enhancement using cnns",
+      "authors": [
+        {
+          "first": "Feifan",
+          "middle": [],
+          "last": "Lv",
+          "suffix": ""
+        },
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianhua",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Chongsoon",
+          "middle": [],
+          "last": "Lim",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "BMVC"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Toward fast, flexible, and robust low-light image enhancement",
+      "authors": [
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Tengyu",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Risheng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Zhongxuan",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Denet: Detection-driven enhancement network for object detection under adverse weather conditions",
+      "authors": [
+        {
+          "first": "Qingpao",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Kan",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Mengyuan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Guiqing",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ACCV"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "You only look once: Unified, real-time object detection",
+      "authors": [
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Redmon",
+          "suffix": ""
+        },
+        {
+          "first": "Santosh",
+          "middle": [],
+          "last": "Divvala",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Yolo9000: better, faster, stronger",
+      "authors": [
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Redmon",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Yolov3: An incremental improvement",
+      "authors": [
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Redmon",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Faster r-cnn: Towards real-time object detection with region proposal networks",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "Shaoqing Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "An overview of gradient descent optimization algorithms",
+      "authors": [
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Ruder",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Using color to separate reflection components",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Steven",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Shafer",
+          "suffix": ""
+        }
+      ],
+      "year": 1985,
+      "venue": "Color Research & Application"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Rethinking image restoration for object detection",
+      "authors": [
+        {
+          "first": "Shangquan",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Wenqi",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaochun",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Fcos: Fully convolutional one-stage object detection",
+      "authors": [
+        {
+          "first": "Chunhua",
+          "middle": [],
+          "last": "Zhi Tian",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Illumination normalization based on weber's law with application to face recognition",
+      "authors": [
+        {
+          "first": "Biao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Weifeng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Wenming",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Qingmin",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "IEEE Signal Processing Letters"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Low-light image enhancement via structure modeling and guidance",
+      "authors": [
+        {
+          "first": "Xiaogang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Ruixing",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiangbo",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Implicit neural representation for cooperative low-light image enhancement",
+      "authors": [
+        {
+          "first": "Shuzhou",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Moxuan",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Yanmin",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Zihan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Advancing image understanding in poor visibility environments: A collective benchmark study",
+      "authors": [
+        {
+          "first": "Wenhan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Ye",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Wenqi",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaying",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Walter",
+          "middle": [
+            "J"
+          ],
+          "last": "Scheirer",
+          "suffix": ""
+        },
+        {
+          "first": "Zhangyang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Taiheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Qiaoyong",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Di",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Shiliang",
+          "middle": [],
+          "last": "Pu",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE Transactions on Image Processing"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Pe-yolo: Pyramid enhancement network for dark object detection",
+      "authors": [
+        {
+          "first": "Xiangchen",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenda",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Zetao",
+          "middle": [],
+          "last": "Fei",
+          "suffix": ""
+        },
+        {
+          "first": "Wenjun",
+          "middle": [],
+          "last": "Lv",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Artificial Neural Networks"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Dynamic r-cnn: Towards high quality object detection via dynamic training",
+      "authors": [
+        {
+          "first": "Hongkai",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Hong",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Bingpeng",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Naiyan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xilin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Joint face detection and alignment using multitask cascaded convolutional networks",
+      "authors": [
+        {
+          "first": "Kaipeng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhanpeng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhifeng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "IEEE signal processing letters"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Bridging the gap between anchor-based and anchor-free detection via adaptive training sample selection",
+      "authors": [
+        {
+          "first": "Shifeng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Chi",
+          "suffix": ""
+        },
+        {
+          "first": "Yongqiang",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhen",
+          "middle": [],
+          "last": "Lei",
+          "suffix": ""
+        },
+        {
+          "first": "Stan",
+          "middle": [
+            "Z"
+          ],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Kindling the darkness: A practical low-light image enhancer",
+      "authors": [
+        {
+          "first": "Yonghua",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiawan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaojie",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ACM MM"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "On the impact of illumination-invariant image pre-transformation for contemporary automotive semantic scene understanding",
+      "authors": [
+        {
+          "first": "Naif",
+          "middle": [],
+          "last": "Alshammari",
+          "suffix": ""
+        },
+        {
+          "first": "Samet",
+          "middle": [],
+          "last": "Akcay",
+          "suffix": ""
+        },
+        {
+          "first": "Toby",
+          "middle": [
+            "P"
+          ],
+          "last": "Breckon",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "IEEE Intelligent Vehicles Symposium"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "The laplacian pyramid as a compact image code",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Peter",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [
+            "H"
+          ],
+          "last": "Burt",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Adelson",
+          "suffix": ""
+        }
+      ],
+      "year": 1987,
+      "venue": "Readings in computer vision"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "End-to-end object detection with transformers",
+      "authors": [
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Carion",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Synnaeve",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Usunier",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kirillov",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Zagoruyko",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Mmdetection: Open mmlab detection toolbox and benchmark",
+      "authors": [
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaqi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiangmiao",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhang",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoxiao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Shuyang",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Wansen",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Ziwei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiarui",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Instance segmentation in the dark",
+      "authors": [
+        {
+          "first": "Linwei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Kaixuan",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Dezhi",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Felix",
+          "middle": [],
+          "last": "Heide",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IJCV"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "You only need 90k parameters to adapt light: a light weight transformer for image enhancement and exposure correction",
+      "authors": [
+        {
+          "first": "Ziteng",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        },
+        {
+          "first": "Kunchang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Lin",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Shenghan",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengkai",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsuya",
+          "middle": [],
+          "last": "Harada",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "BMVC"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Multitask aet with orthogonal tangent regularity for dark object detection",
+      "authors": [
+        {
+          "first": "Ziteng",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        },
+        {
+          "first": "Guo-Jun",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Lin",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Shaodi",
+          "middle": [],
+          "last": "You",
+          "suffix": ""
+        },
+        {
+          "first": "Zenghui",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsuya",
+          "middle": [],
+          "last": "Harada",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Idtransformer: Transformer for intrinsic image decomposition",
+      "authors": [
+        {
+          "first": "Partha",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "Maxime",
+          "middle": [],
+          "last": "Gevers",
+          "suffix": ""
+        },
+        {
+          "first": "Sezer",
+          "middle": [],
+          "last": "Karaoglu",
+          "suffix": ""
+        },
+        {
+          "first": "Theo",
+          "middle": [],
+          "last": "Gevers",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Intrinsic image decomposition using physicsbased cues and cnns",
+      "authors": [
+        {
+          "first": "Partha",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "Sezer",
+          "middle": [],
+          "last": "Karaoglu",
+          "suffix": ""
+        },
+        {
+          "first": "Theo",
+          "middle": [],
+          "last": "Gevers",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Pie-net: Photometric invariant edge guided network for intrinsic image decomposition",
+      "authors": [
+        {
+          "first": "Partha",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "Sezer",
+          "middle": [],
+          "last": "Karaoglu",
+          "suffix": ""
+        },
+        {
+          "first": "Theo",
+          "middle": [],
+          "last": "Gevers",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "The pascal visual object classes (voc) challenge",
+      "authors": [
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Everingham",
+          "suffix": ""
+        },
+        {
+          "first": "Luc",
+          "middle": [],
+          "last": "Van Gool",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "I"
+          ],
+          "last": "Christopher",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Winn",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "IJCV"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Tood: Task-aligned one-stage object detection",
+      "authors": [
+        {
+          "first": "Chengjian",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Yujie",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [
+            "R"
+          ],
+          "last": "Scott",
+          "suffix": ""
+        },
+        {
+          "first": "Weilin",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Colour object recognition",
+      "authors": [
+        {
+          "first": "Graham",
+          "middle": [],
+          "last": "David",
+          "suffix": ""
+        },
+        {
+          "first": "Finlayson",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 1992,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Color-based object recognition",
+      "authors": [
+        {
+          "first": "Theo",
+          "middle": [],
+          "last": "Gevers",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [
+            "M"
+          ],
+          "last": "Arnold",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Smeulders",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": "Pattern recognition"
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Fast r-cnn",
+      "authors": [
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Rich feature hierarchies for accurate object detection and semantic segmentation",
+      "authors": [
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Donahue",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Darrell",
+          "suffix": ""
+        },
+        {
+          "first": "Jitendra",
+          "middle": [],
+          "last": "Malik",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Zero-reference deep curve estimation for low-light image enhancement",
+      "authors": [
+        {
+          "first": "Chunle",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Chongyi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jichang",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [
+            "Change"
+          ],
+          "last": "Loy",
+          "suffix": ""
+        },
+        {
+          "first": "Junhui",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Kwong",
+          "suffix": ""
+        },
+        {
+          "first": "Runmin",
+          "middle": [],
+          "last": "Cong",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Featenhancer: Enhancing hierarchical features for object detection and beyond under low-light vision",
+      "authors": [
+        {
+          "first": "Azeem",
+          "middle": [],
+          "last": "Khurram",
+          "suffix": ""
+        },
+        {
+          "first": "Goutham",
+          "middle": [],
+          "last": "Hashmi",
+          "suffix": ""
+        },
+        {
+          "first": "Didier",
+          "middle": [],
+          "last": "Kallempudi",
+          "suffix": ""
+        },
+        {
+          "first": "Muhammad",
+          "middle": [],
+          "last": "Stricker",
+          "suffix": ""
+        },
+        {
+          "first": "Afzal",
+          "middle": [],
+          "last": "Zeshan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "Mask r-cnn",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Georgia",
+          "middle": [],
+          "last": "Gkioxari",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF72",
+      "title": "Sspnet: Scale selection pyramid network for tiny person detection from uav images",
+      "authors": [
+        {
+          "first": "Mingbo",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Shuiwang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yuchao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Feiyu",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Qijun",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE geoscience and remote sensing letters"
+    },
+    {
+      "id": "BIBREF73",
+      "title": "Dsnet: Joint semantic learning for object detection in inclement weather conditions",
+      "authors": [
+        {
+          "first": "Shih-Chia",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Trung-Hieu",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "Da-Wei",
+          "middle": [],
+          "last": "Jaw",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE TPAMI"
+    },
+    {
+      "id": "BIBREF74",
+      "title": "Low-light image enhancement with wavelet-based diffusion models",
+      "authors": [
+        {
+          "first": "Hai",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Ao",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Haoqiang",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Songchen",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Shuaicheng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ACM TOG"
+    },
+    {
+      "id": "BIBREF75",
+      "title": "Lightendiffusion: Unsupervised low-light image enhancement with latent-retinex diffusion models",
+      "authors": [
+        {
+          "first": "Hai",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Ao",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohong",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Songchen",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Shuaicheng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF76",
+      "title": "Enlightengan: Deep light enhancement without paired supervision",
+      "authors": [
+        {
+          "first": "Yifan",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyu",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Ding",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohui",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Jianchao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Pan",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Zhangyang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE transactions on image processing"
+    },
+    {
+      "id": "BIBREF77",
+      "title": "Gdip: Gated differentiable image processing for object detection in adverse conditions",
+      "authors": [
+        {
+          "first": "Sanket",
+          "middle": [],
+          "last": "Kalwar",
+          "suffix": ""
+        },
+        {
+          "first": "Dhruv",
+          "middle": [],
+          "last": "Patel",
+          "suffix": ""
+        },
+        {
+          "first": "Aakash",
+          "middle": [],
+          "last": "Aanegola",
+          "suffix": ""
+        },
+        {
+          "first": "Krishna",
+          "middle": [
+            "Reddy"
+          ],
+          "last": "Konda",
+          "suffix": ""
+        },
+        {
+          "first": "Sourav",
+          "middle": [],
+          "last": "Garg",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Madhava",
+          "suffix": ""
+        },
+        {
+          "first": "Krishna",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF78",
+      "title": "Adaptive and background-aware vision transformer for real-time uav tracking",
+      "authors": [
+        {
+          "first": "Shuiwang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yangxiang",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Xucheng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF79",
+      "title": "Focal loss for dense object detection",
+      "authors": [
+        {
+          "first": "Tsung-Yi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Priya",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF80",
+      "title": "Microsoft coco: Common objects in context",
+      "authors": [
+        {
+          "first": "Tsung-Yi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Maire",
+          "suffix": ""
+        },
+        {
+          "first": "Serge",
+          "middle": [],
+          "last": "Belongie",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Hays",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Perona",
+          "suffix": ""
+        },
+        {
+          "first": "Deva",
+          "middle": [],
+          "last": "Ramanan",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lawrence",
+          "suffix": ""
+        },
+        {
+          "first": "Zitnick",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF81",
+      "title": "Retinex-inspired unrolling with cooperative prior architecture search for low-light image enhancement",
+      "authors": [
+        {
+          "first": "Risheng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Zhongxuan",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF82",
+      "title": "Ssd: Single shot multibox detector",
+      "authors": [
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Dragomir",
+          "middle": [],
+          "last": "Anguelov",
+          "suffix": ""
+        },
+        {
+          "first": "Dumitru",
+          "middle": [],
+          "last": "Erhan",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Szegedy",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Reed",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng-Yang",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [
+            "C"
+          ],
+          "last": "Berg",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF83",
+      "title": "Image-adaptive yolo for object detection in adverse weather conditions",
+      "authors": [
+        {
+          "first": "Wenyu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Gaofeng",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Runsheng",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Shi",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Jianke",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "AAAI"
+    },
+    {
+      "id": "BIBREF84",
+      "title": "Getting to know low-light images with the exclusively dark dataset",
+      "authors": [
+        {
+          "first": "Yuen",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Loh",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Chee",
+          "middle": [],
+          "last": "Seng",
+          "suffix": ""
+        },
+        {
+          "first": "Chan",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF85",
+      "title": "A cross-scale and illumination invariance-based model for robust object detection in traffic surveillance scenarios",
+      "authors": [
+        {
+          "first": "Yan-Feng",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Jing-Wen",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Qian",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yi-Sheng",
+          "middle": [],
+          "last": "Lv",
+          "suffix": ""
+        },
+        {
+          "first": "Hong",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE Transactions on Intelligent Transportation Systems"
+    },
+    {
+      "id": "BIBREF86",
+      "title": "Mbllen: Low-light image/video enhancement using cnns",
+      "authors": [
+        {
+          "first": "Feifan",
+          "middle": [],
+          "last": "Lv",
+          "suffix": ""
+        },
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianhua",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Chongsoon",
+          "middle": [],
+          "last": "Lim",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "BMVC"
+    },
+    {
+      "id": "BIBREF87",
+      "title": "Toward fast, flexible, and robust low-light image enhancement",
+      "authors": [
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Tengyu",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Risheng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Zhongxuan",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF88",
+      "title": "Denet: Detection-driven enhancement network for object detection under adverse weather conditions",
+      "authors": [
+        {
+          "first": "Qingpao",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Kan",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Mengyuan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Guiqing",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ACCV"
+    },
+    {
+      "id": "BIBREF89",
+      "title": "You only look once: Unified, real-time object detection",
+      "authors": [
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Redmon",
+          "suffix": ""
+        },
+        {
+          "first": "Santosh",
+          "middle": [],
+          "last": "Divvala",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF90",
+      "title": "Yolo9000: better, faster, stronger",
+      "authors": [
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Redmon",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF91",
+      "title": "Yolov3: An incremental improvement",
+      "authors": [
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Redmon",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF92",
+      "title": "Faster r-cnn: Towards real-time object detection with region proposal networks",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "Shaoqing Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF93",
+      "title": "An overview of gradient descent optimization algorithms",
+      "authors": [
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Ruder",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF94",
+      "title": "Using color to separate reflection components",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Steven",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Shafer",
+          "suffix": ""
+        }
+      ],
+      "year": 1985,
+      "venue": "Color Research & Application"
+    },
+    {
+      "id": "BIBREF95",
+      "title": "Rethinking image restoration for object detection",
+      "authors": [
+        {
+          "first": "Shangquan",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Wenqi",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaochun",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF96",
+      "title": "Fcos: Fully convolutional one-stage object detection",
+      "authors": [
+        {
+          "first": "Chunhua",
+          "middle": [],
+          "last": "Zhi Tian",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF97",
+      "title": "Illumination normalization based on weber's law with application to face recognition",
+      "authors": [
+        {
+          "first": "Biao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Weifeng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Wenming",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Qingmin",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "IEEE Signal Processing Letters"
+    },
+    {
+      "id": "BIBREF98",
+      "title": "Low-light image enhancement via structure modeling and guidance",
+      "authors": [
+        {
+          "first": "Xiaogang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Ruixing",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiangbo",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF99",
+      "title": "Implicit neural representation for cooperative low-light image enhancement",
+      "authors": [
+        {
+          "first": "Shuzhou",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Moxuan",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Yanmin",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Zihan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF100",
+      "title": "Advancing image understanding in poor visibility environments: A collective benchmark study",
+      "authors": [
+        {
+          "first": "Wenhan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Ye",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Wenqi",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaying",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Walter",
+          "middle": [
+            "J"
+          ],
+          "last": "Scheirer",
+          "suffix": ""
+        },
+        {
+          "first": "Zhangyang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Taiheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Qiaoyong",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Di",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Shiliang",
+          "middle": [],
+          "last": "Pu",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE Transactions on Image Processing"
+    },
+    {
+      "id": "BIBREF101",
+      "title": "Pe-yolo: Pyramid enhancement network for dark object detection",
+      "authors": [
+        {
+          "first": "Xiangchen",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenda",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Zetao",
+          "middle": [],
+          "last": "Fei",
+          "suffix": ""
+        },
+        {
+          "first": "Wenjun",
+          "middle": [],
+          "last": "Lv",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Artificial Neural Networks"
+    }
+  ]
+}

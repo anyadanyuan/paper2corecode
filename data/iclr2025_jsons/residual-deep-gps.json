@@ -1,0 +1,1043 @@
+{
+  "paper_id": "residual-deep-gps",
+  "title": "RESIDUAL DEEP GAUSSIAN PROCESSES ON MANIFOLDS",
+  "authors": [
+    {
+      "first": "Kacper",
+      "middle": [],
+      "last": "Wyrwal",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zürich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Andreas",
+      "middle": [],
+      "last": "Krause",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zürich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Viacheslav",
+      "middle": [],
+      "last": "Borovitskiy",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zürich",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "We propose practical deep Gaussian process models on Riemannian manifolds, similar in spirit to residual neural networks. With manifold-to-manifold hidden layers and an arbitrary last layer, they can model manifold-and scalar-valued functions, as well as vector fields. We target data inherently supported on manifolds, which is too complex for shallow Gaussian processes thereon. For example, while the latter perform well on high-altitude wind data, they struggle with the more intricate, nonstationary patterns at low altitudes. Our models significantly improve performance in these settings, enhancing prediction quality and uncertainty calibration, and remain robust to overfitting, reverting to shallow models when additional complexity is unneeded. We further showcase our models on Bayesian optimisation problems on manifolds, using stylised examples motivated by robotics, and obtain substantial improvements in later stages of the optimisation process. Finally, we show our models to have potential for speeding up inference for nonmanifold data, when, and if, it can be mapped to a proxy manifold well enough.",
+  "body": {
+    "1_INTRODUCTION": "Gaussian processes (GPs) are a widely adopted model class for learning functions within the Bayesian framework (Rasmussen and Williams, 2006) . They offer accurate uncertainty estimates and perform well even when data is scarce. Consequently, GPs have found success in decisionmaking tasks, where well-calibrated uncertainty is key, including Bayesian optimisation (Snoek et al., 2012) , active (Krause et al., 2008) and reinforcement (Kamthe and Deisenroth, 2018) learning.\nIn recent years, substantial work went into developing the analogues of practical GP models on various non-Euclidean domains (Borovitskiy et al., 2021; 2023; 2020; Fichera et al., 2023) . By virtue of being geometry-aware, these analogues have demonstrated improved performance in a variety of tasks on non-Euclidean spaces. Their notable applications include Bayesian optimisation on manifolds for robotics (Jaquier et al., 2022) , traffic flow interpolation on road networks (Borovitskiy et al., 2021) , and wind velocity prediction on the globe (Hutchinson et al., 2021; Robert-Nicoud et al., 2024) . These models were also used to speed up inference for Euclidean GPs by transferring data to a hypersphere and leveraging the attractive structure GPs thereon possess (Dutordoir et al., 2020) .\nDespite their advantages, GPs can sometimes fall short in modelling complex, irregular functions. To address this, deep Gaussian processes have been introduced as a sequential composition of GPs (Damianou and Lawrence, 2013) , providing improved flexibility through their layered structure (Dai et al., 2016; Mattos et al., 2016) . Many techniques developed for shallow GPs, such as variational inference (Salimbeni and Deisenroth, 2017) and efficient sampling techniques (Wilson et al., 2020) , can be adapted for deep GPs, enabling them to be efficiently trained and deployed on large datasets. This scalability is vital when dealing with data with complex, irregular patterns.\nDeep Gaussian processes have demonstrated success in handling complex data of Euclidean nature, often competing with Bayesian neural networks and deep ensembles. However, there has been limited work on expressive uncertainty-quantifying models on manifolds beyond shallow GPs. This gap leads to the natural question: how can we construct deep Gaussian processes on manifolds?\nBy analogy with the Euclidean case, a deep GP on a manifold should be a composition of GP layers which take inputs and produce outputs on the manifold of interest. While significant advancements have been made in handling manifold-input GPs, outputs on manifolds conflict with the fundamental GVF exp GP Figure 1 : Schematic illustration of a scalar-valued residual deep GP with L hidden layers. The last layer is a scalar-valued GP on the manifold. If it is not present, the model is manifold-valued. If it is replaced with a Gaussian vector field (GVF), the model is a vector field on the manifold.\nconcept of a GP, which dictates that outputs must be Gaussian and thus Euclidean. 1 Designing GPs with inputs or outputs on a manifold is challenging; with both, it is even more so.\nOur solution to this problem is in part inspired by residual neural networks, thus we term our models residual deep Gaussian processes. Instead of constructing a manifold-to-manifold GP layer directly, we represent it as a Gaussian vector field (GVF) combined with an exponential map. The former represents a displacement vector, a deviation from the identity map, or a residual, while the latter translates the input by the given displacement vector. The mean of a layer is always the output of the previous layer. We visualise this architecture in Figure 1 , with sphere as the manifold of interest. Notably, by changing the last layer only, one can get manifold-valued or vector-valued deep GPs.\nAs Section 3 will show, our residual deep Gaussian processes generalise the deep GP architecture of Salimbeni and Deisenroth (2017) , perhaps the most successful architecture in the Euclidean case.\nWe examine residual deep GPs through synthetic and real-world experiments, demonstrating our models' superior performance over shallow geometry-aware GPs on tasks where complex data inherently lies on a manifold. Additionally, we show that our models offer prospective avenues for accelerating inference for inherently Euclidean data in the context of deep GPs. Our main focus is on hypersphere manifolds S d , due to their importance in key applications such as climate modelling and robotics, as well as their particularly simple structure that allows for more powerful and specialised GVFs (Robert-Nicoud et al., 2024) . However, the applicability of our model extends to all Riemannian manifolds, including ones represented by meshes, indicating an even broader potential.",
+    "2_BACKGROUND": {
+      "2.1_GAUSSIAN_PROCESSES_ON_RIEMANNIAN_MANIFOLDS": "A principled way of generalising the family of Matérn kernels to Riemannian manifolds was proposed by Lindgren et al. (2011) based on the ideas dating back to Whittle (1963) . Borovitskiy et al. (2020) showed that the resulting kernels can be represented as the following infinite series\nEQUATION\nwhere -λ j , ϕ j are the eigenpairs of the Laplace-Beltrami operator on X, d is the dimension of X, and C ν,κ is a normalisation constant ensuring 1 volX X k ν,κ,σ 2 (x, x) dx = σ 2 . The infinite sum must be truncated for computational tractability; nevertheless, the rapid decay of the coefficients Φ ν,κ (λ j ) makes this a sensible approximation with convergence guarantees (Rosa et al., 2023) . Such models were used, e.g., in robotics (Jaquier et al., 2022; 2024) and medical (Coveney et al., 2020) applications. Their vector field counterparts, to which we return later in the paper, were used for modelling wind velocities on the globe (Hutchinson et al., 2021; Robert-Nicoud et al., 2024) .\nThese models tend to perform well, especially when data is scarce and uncertainty quantification is crucial, but they can struggle to capture complex irregular patterns. One potential way to improve on this is to consider deep Gaussian processes, which-in the Euclidean case-we now review. (Damianou and Lawrence, 2013) . To allow for richer structure, the hidden layers f l , for 1 ≤ l ≤ L -1, are typically vector-valued GPs f l : R d → R d , i.e. vectors of scalar-valued GPs stacked together and potentially correlated with each other ( Álvarez et al., 2012) . The resulting random function F is itself not a GP. Thus, even for Gaussian likelihoods p(y | F (x)), inference for F | y is intractable.",
+      "2.2_DEEP_GAUSSIAN_PROCESSES_AND_APPROXIMATE_INFERENCE": "A deep Gaussian process F is a composition F = f L •• • ••f 1 of multiple shallow GPs f l\nTo overcome this, various approximate inference techniques for deep GPs were proposed, perhaps the most popular being doubly stochastic variational inference (Salimbeni and Deisenroth, 2017) . In it, the intractable posterior F | y is approximated in terms of the KL divergence metric D KL by the elements of a certain variational family of tractable distributions. This family itself consists of deep GPs whose layers are sparse GPs (Hensman et al., 2013; Titsias, 2009) which we now discuss.\nSparse GPs were originally proposed as a variational family for approximating shallow GPs. For them, approximate inference helps scale to big datasets or accommodate non-Gaussian likelihoods. Take some f ∼ GP(µ, k). A sparse GP f z,m,S is a family of GPs parameterised by a set of m inducing locations z ⊆ X, as well as a mean vector m ∈ R m and a covariance matrix S ∈ R m×m which determine the corresponding inducing variable distribution q(u) = N (m, S). Specifically,\nEQUATION\nwhere p(f (•) | u, z) is the prior f conditioned on f (z) = u. Intuitively, z are the pseudo-inputs, u are random pseudo-observations, and\nEQUATION\nEQUATION\nThese can be readily generalised to the vector-valued setting, with m ∈ R md and S ∈ R md×md .\nFor a deep GP, the respective variational family is the distribution of a composition of sparse GPs:\nF θ = f z L ,m L ,S L • . . . • f z 1 ,m 1 ,S 1 , θ = z l , m l , S l L l=1 .\n(7) The variational parameters θ are found by minimising D KL (p(F | y) ∥ p(F θ )), which is equivalent (Salimbeni and Deisenroth, 2017) to maximising the following evidence lower bound (ELBO)\nEQUATION\nwhere q(u l ) ∼ N (m l , S l ) and p(u l ) ∼ N (µ l (z l ), k l (z l , z l )). The second term can be computed exactly using the formula for D KL between two Gaussian vectors. The first term is intractable, but can be efficiently approximated by drawing a sample from p(F θ )-this can be done in a layerwise fashion, as Salimbeni and Deisenroth (2017) suggest-and subsampling the sum over a mini-batch of inputs x. This way, optimisation proceeds by stochastic gradient descent.",
+      "_text": "Mathematically, a Gaussian process (GP) is a real-valued random function f whose marginals are jointly Gaussian. The same term is also used for the respective distribution over functions. For such f there always exist a mean µ : X → R on the input domain X of f and a kernel k : X × X → R such that f (x) ∼ N (µ(x), k(x, x)) for all x ⊆ X. In this case, we write f ∼ GP(µ, k).\nGPs define useful priors for learning functions from noisy observations y ∈ R n at given input locations x ⊆ X within the Bayesian framework. In fact, if the observation likelihood is assumed Gaussian y | f (x) ∼ N (f (x), Σ), then the posterior is a GP (Rasmussen and Williams, 2006) with\nEQUATION\nEQUATION\nThe input domain X can, in principle, be any set. However, a good kernel k : X × X → R is necessary to define practical GP models on X. If X = R d , the most widely used kernels are from the Matérn family (Rasmussen and Williams, 2006) , including, as a limiting case, the especially popular squared exponential kernel. 2 These kernels are attractive because they implement two natural inductive biases: (1) model behaviour should not change under any symmetries of the data-translations, in the case of R d -and (2) the unknown function possesses a certain degree of smoothness. It turns out that the Matérn family can be generalised to various non-Euclidean domains X in such a way that it still implements (1) and ( 2). We now discuss such a generalisation to Riemannian manifolds 3 ."
+    },
+    "3_RESIDUAL_DEEP_GAUSSIAN_PROCESSES_ON_MANIFOLDS": {
+      "3.1_THE_ARCHITECTURE": "Let X be a Riemannian manifold. The key challenge in building a deep Gaussian process F on X is finding a practical notion of manifold-to-manifold GPs f l to serve as its hidden layers:\nEQUATION\nwhere, to simplify exposition, we assume that the last layer f L is real-valued, although it can just as well be X-valued, vector-valued, or it can be a vector field, depending on the problem at hand.\nWhile building a GP with inputs in X amounts to finding an appropriate kernel k : X × X → R, handling outputs in X requires redefining the inherently Euclidean notion of a Gaussian. We aim to circumvent this difficulty. To explain how, we start by considering the popular Euclidean deep GP architecture of Salimbeni and Deisenroth (2017) . There, each layer f l : R d → R d is of the form\nEQUATION\nwhere g l is a zero-mean GP. That is, each layer f l displaces its input x by a residual vector g l (x) = f l (x)-x, the difference to the identity transform, much like a residual connection in neural networks (He et al., 2016) , which is modelled by a GP. On a manifold X ̸ = R d , when x ∈ X and g l (x) ∈ R d , the addition operation in f l (x) = x + g l (x) is undefined. However, there is a natural generalisation:\nEQUATION\nHere, exp x : T x X → X is the exponential map, the canonical mapping of the tangent space T x X at x ∈ X-i.e., the linear space of vectors tangent to X at point x-back to X itself. That is, a point x is still displaced by the vector g l (x), but in a geometrically sound manner.\nThe beauty of Equation ( 11) is that it reduces modelling f l to modelling g l . The latter is vectorvalued, and thus compatible with the traditional notion of a Gaussian, making the problem conceptually much simpler. Still, a major technical difficulty remains: for different inputs x, the value g l (x) must lie in the different spaces T x X. The mappings behaving like this are called vector fields, and their random Gaussian counterparts are called Gaussian vector fields, which we proceed to discuss.",
+      "3.2_KEY_BUILDING_BLOCKS:_GAUSSIAN_VECTOR_FIELDS": "A vector field on a manifold X is a function that takes each x ∈ X to an element of the tangent space T x X of X at the point x. If X isfoot_2 a submanifold of R D -like the 2-sphere is a submanifold of R 3 -the difference between a vector field and a general vector-valued function on X is very intuitive: in the latter, a vector attached to a point x ∈ X can point in any direction, while in the former it must always be tangential to the manifold X at x. This difference can be seen in Figure 2a , which features a vector-valued function on the left and an actual vector field on the right.\nA Gaussian vector field (GVF) can be thus thought of as a vector-valued GP whose outputs always happen to be tangential vectors. This notion is rigorously formalised in the appendices of Hutchinson et al. (2021) . However, for simplicity, we do not dwell on the formalism here. Instead, we proceed to discuss three practicable GVF constructions that have been put forward in recent research.\nProjected GVFs Hutchinson et al. (2021) propose a simple idea, to build a GVF g from any given vector-valued GP h : X ⊂ R D → R D by projecting its outputs onto the appropriate tangent spaces. Such a projection P (•) : R D → T (•) X exists because, if X is a submanifold of R D , then any tangent space T (•) X can be identified with a linear subspace of R D . Thus, g(x) = P x h(x) defines a random vector field (see Figure 2a ), which turns out to be Gaussian because of the linearity of P (•) . Coordinate-frame-based GVFs Given any coordinate frame {e i } d i=1 -that is, a set of functions such that {e i (•)} d i=1 is a linear basis of T (•) X-and a vector-valued GP h : X → R d with components h i : X → R, the equation g(x) = d i=1 h i (x)e i (x) defines a GVF. This is shown in Figure 2b. Hodge GVFs Most recently, Robert-Nicoud et al. (2024) extended the generalisation of Matérn GPs from Section 2.1 to the setting of vector fields on compact manifolds. They derive an analogue of Equation (3), representing the respective Hodge Matérn kernels, as an infinite seriesfoot_3 \nEQUATION\nHere, s j are the eigenfields of the Hodge Laplacian on X that correspond to the eigenvalues -λ j , ⊗ is the tensor product, and Φ ν,κ is exactly as in Equation ( 3). This family of kernels can be made more expressive by using different hyperparameters σ 2 , κ, and ν for different types of eigenfields s j : the pure-divergence s j , the pure-curl s j , and the harmonic s j . The result is called Hodgecompositional Matérn kernels (Robert-Nicoud et al., 2024; Yang et al., 2023) . For example, it can represent the inductive bias of divergence-free vector fields, i.e. vector fields having no \"sinks\" and \"sources\", like the wind velocity field at certain altitudes. This can be seen in Figure 2c .\nThe first two constructions are universal. This means that by choosing an appropriate h, one can obtain any possible GVF. Although this might seem advantageous, this is also a major curse, as it is often unclear which particular h to take to get good inductive biases. What is more, simple solutions, such as h with IID components, may lead to undesirable artefacts (Robert-Nicoud et al., 2024) . On the other hand, the third construction is canonical, in the same way as the Matérn family is canonical in the scalar Euclidean case, and it is based on the same simple and natural inductive biases.\nHodge GVFs seem to be the most attractive building blocks for deep GPs. However, although they are generally applicable in theory, Robert-Nicoud et al. (2024) only provide practical expressions for the eigenfields s n when X is the circle S 1 , the 2-sphere S 2 , or any finite product of those. Thus, for the manifolds that go beyond this simple form, other GVF constructions have to be used. With this, we finish introducing our models, and proceed to discuss Bayesian inference for them.",
+      "3.3_INFERENCE": "Like their Euclidean counterparts, residual deep GPs constitute complex non-Gaussian priors, making exact Bayesian inference with them impossible. However, the doubly stochastic variational inference approach described in Section 2.2 is applicable to them after a few adjustments we detail below. What is more, for compact manifolds, the approach can be further modified to use certain interdomain inducing variables, which, as Section 4 shows, tends to offer superior performance.",
+      "_text": "In this section, we introduce the new model class of residual deep Gaussian processes on manifolds.\nIt generalises the notion of deep GPs to Riemannian manifolds, allowing for the modelling of scalarand vector-valued functions, vector fields, and functions taking values in the input manifold itself."
+    },
+    "4_EXPERIMENTS": {
+      "4.1_SYNTHETIC_EXAMPLES": "Setup Deep GPs bear the promise of outperforming their shallow counterparts in modelling complex, irregular functions. To test this, we construct a benchmark function f * on the 2-sphere S 2 with multiple singularities, which is visualised in Figure 4a . We take N ∈ {100, 200, 400, 800, 1600} training inputs x on a Fibonacci lattice on S 2 and put y = f * (x) + ε, ε ∼ N (0, 10 -4 I). Then, we regress f * from x and y. On this problem, we compare different modifications of the residual deep GPs amongst themselves and to a baseline, in terms of the negative log predictive density (NLPD) and the mean squared error (MSE) metrics on the test set of 5000 points, also on a Fibonacci lattice. All runs are conducted 5 times with different random seeds for the observation noise ε.",
+      "4.2_GEOMETRY-AWARE_BAYESIAN_OPTIMISATION": "Motivation GPs are a widely used model class for Bayesian optimisation, a technique for optimising expensive-to-evaluate black-box functions that leverages uncertainty estimates to balance exploration and exploitation (Shahriari et al., 2016) . In robotics, such problems arise, for example, when a control policy needs to be fine-tuned to a specific real-world environment. This task\n(a) Irregular benchmark function. 1 50 100 150 200 Step -2 -1 0 log 10 Regret S 2 Irregular Deep Shallow 1 50 100 150 200 Step -2 -1 0 S 3 Ackley (b) Bayesian optimisation performance. was shown to benefit from treating the optimisation space as a manifold and using geometry-aware Gaussian processes to drive Bayesian optimisation (Jaquier et al., 2022) . The functions upon which the technique was tested are rather regular, which is not always the case in reality, especially when dealing with increasingly complex systems. Motivated by this challenge, we explore if residual deep GPs can offer improved performance in optimising complex irregular functions on manifolds.\nSetup We consider two target functions to optimise. The first is the irregular function from Section 4.1, visualised in Figure 4a , modified to have only one global minimum. The second is the much more regular Ackley function, projected onto S 3 , one of the benchmarks in Jaquier et al. (2022) . In each Bayesian optimisation run, we perform the first 180 iterations using a shallow geometry-aware GP, followed by 20 iterations using a residual deep GP-both employing the expected improvement acquisition function (see, e.g., Frazier ( 2018)). In this experiment, we showcase the coordinateframe-based GVFs, as described in Appendix A. We do not use deep GPs in the initial iterations because, as intuition suggests and Section 4.1 affirms, deep GPs start outperforming their shallow counterparts only when data becomes more abundant. Although deep GPs show comparable performance even for small datasets, training them is more computationally demanding, making their use less efficient in the early stages of optimisation. We repeat each run 15 times to account for the stochasticity of initialisation, optimisation of the acquisition function, and training of GP models.",
+      "4.3_WIND_INTERPOLATION_ON_THE_GLOBE": "Motivation Non-Euclidean geometry has a particularly pronounced effect on vector fields, such as wind velocity fields on the globe, more so than on scalar functions. For instance, the famous hairy ball theorem states that a smooth vector field must always have a zero somewhere on the 2sphere, i.e. there must always be a location where wind does not blow. Wind interpolation is thus an attractive use case for geometry-aware Gaussian vector fields, where they have been shown to perform well (Hutchinson et al., 2021; Robert-Nicoud et al., 2024) . Here, we show that residual deep GPs can improve the performance of probabilistic wind velocity models when the data contains complex irregular patterns, which naturally occur in wind fields at lower altitudes.",
+      "4.4_ACCELERATING_INFERENCE_FOR_EUCLIDEAN_DATA": "Motivation Inspired by their connection to infinitely wide neural networks, Dutordoir et al. (2020) showed that geometry-aware GPs on hyperspheres can be applied to inherently Euclidean data to accelerate variational inference. Specifically, they reported that approximate variational inference Solid lines show the mean, computed by averaging over 100 training steps, while the shaded areas span ±1 standard deviation. However, they are often too narrow to be visible.\nusing the shallow analogue of the interdomain inducing variables applied to data mappedfoot_4 from R d to the proxy manifold of S d can be significantly faster than inducing-location-based variational inference for a Euclidean GP on the original data, while achieving competitive predictive performance. We investigate whether this result can be extended to the case of deep Gaussian processes.\nSetup As Euclidean data, we use the same UCI datasets as Dutordoir et al. (2020) , and we use the same mapping from R d to the proxy manifold S d . We use projected GVFs to accommodate arbitrarily-dimensional hyperspheres. Overall, our experimental setup follows Dutordoir et al. (2020) , except that working with deep models required us to optimise ELBO directly instead of marginalising out the variational mean m and covariance S as in Titsias (2009) . Additionally, because of high memory requirements of L-BFGS (Nocedal, 1980) arising from the lack of marginalisation and depth, we switch to Adam (Kingma and Ba, 2015) . We use a single Intel i7-13700H CPU.",
+      "_text": "We begin this section by examining how various GVF and variational family choices impact the regression performance of residual deep GPs in synthetic experiments, as discussed in Section 4.1. Throughout, we compare our models to a baseline with Euclidean hidden layers. Next, in the robotics-inspired experiments of Section 4.2, we demonstrate that residual deep GPs can significantly enhance Bayesian optimisation on a manifold when the optimised function is irregular. Following this, in Section 4.3, we show state-of-the-art predictive and uncertainty calibration performance of residual deep GPs in wind velocity modelling on the globe, achieving interpretable patterns even at low altitudes where data is more complex and irregular. Finally, in Section 4.4, we explore potential avenues for using residual deep GPs to accelerate inference on inherently Euclidean data."
+    },
+    "5_CONCLUSION": "In this paper, we proposed a novel model class of residual deep Gaussian processes on manifolds. We reviewed practical Gaussian vector field constructions for building their hidden layers and discussed two variational inference techniques, including one tailored to the structure of Gaussian vector fields on compact manifolds and based on interdomain inducing variables. We evaluated our models in synthetic experiments, examining the impact of Gaussian vector field and variational family choices. These experiments supported favouring Hodge Gaussian vector fields and interdomain inducing variables. They also demonstrated that increasing the number of layers virtually never degrades our models' performance, though it can quickly saturate and plateau. We hypothesize that larger datasets will slow saturation, necessitating more layers' complexity. However, we leave this for future work to explore. In a robotics-motivated stylised experiment, our models significantly enhanced Bayesian optimisation for an irregular function on the sphere. For probabilistic interpolation of wind velocities, we achieved state-of-the-art performance, surpassing the recently proposed shallow Hodge Gaussian vector fields. Finally, we showed interdomain inducing variables to be superior in terms of inference time, compared to doubly stochastic variational inference for Euclidean deep Gaussian processes. This indicates potential future benefits for Euclidean data if suitable mappings from manifold data to proxy manifolds are found. We believe residual deep Gaussian processes will provide a powerful toolset for applications in climate modelling, robotics, and beyond."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Kernels for Vector-Valued Functions: A Review",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [
+            "A"
+          ],
+          "last": "Álvarez",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Rosasco",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "D"
+          ],
+          "last": "Lawrence",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Found. Trends Mach. Learn"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Stationary Kernels and Gaussian Processes on Lie Groups and their Homogeneous Spaces I: the compact case",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Azangulov",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Smolensky",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Terenin",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Borovitskiy",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Matérn Gaussian processes on graphs",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Borovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Azangulov",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Terenin",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Mostowsky",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Deisenroth",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Durrande",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Isotropic Gaussian Processes on Finite Spaces of Graphs",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Borovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "R"
+          ],
+          "last": "Karimi",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [
+            "R"
+          ],
+          "last": "Somnath",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Krause",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Matérn Gaussian processes on Riemannian manifolds",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Borovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Terenin",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Mostowsky",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "P"
+          ],
+          "last": "Deisenroth",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Gaussian process manifold interpolation for probabilistic atrial activation maps and uncertain conduction velocity",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Coveney",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Corrado",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "H"
+          ],
+          "last": "Roney",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "O'hare",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "E"
+          ],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "D"
+          ],
+          "last": "O'neill",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "A"
+          ],
+          "last": "Niederer",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "H"
+          ],
+          "last": "Clayton",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "E"
+          ],
+          "last": "Oakley",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "D"
+          ],
+          "last": "Wilkinson",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Deep Gaussian Processes",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Damianou",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "D"
+          ],
+          "last": "Lawrence",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Reproducing kernel Hilbert spaces on manifolds: Sobolev and diffusion spaces",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [
+            "De"
+          ],
+          "last": "Vito",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Mücke",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Rosasco",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Analysis and Applications"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Sparse Gaussian Processes with Spherical Harmonic Features",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Dutordoir",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Durrande",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hensman",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Implicit Manifold Gaussian Process Regression",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Fichera",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Borovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Krause",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Billard",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Deep Residual Learning for Image Recognition",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Vector-valued Gaussian Processes on Riemannian Manifolds via Gauge Independent Projected Kernels",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Hutchinson",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Terenin",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Borovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Takao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Teh",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Deisenroth",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Geometry-aware Bayesian Optimization in Robotics using Riemannian Matérn Kernels",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Jaquier",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Borovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Smolensky",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Terenin",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Asfour",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Rozo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Conference on Robot Learning"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Bringing motion taxonomies to continuous domains via GPLVM on hyperbolic manifolds",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Jaquier",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Rozo",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "González-Duque",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Borovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Asfour",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Data-Efficient Reinforcement Learning with Probabilistic Model Predictive Control"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Adam: A Method for Stochastic Optimization",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "P"
+          ],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International Conference for Learning Representations"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Geoopt: Riemannian Optimization in PyTorch",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Kochurov",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Karimov",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kozlukov",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Near-Optimal Sensor Placements in Gaussian Processes: Theory, Efficient Algorithms and Empirical Studies",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Krause",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Guestrin",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "An explicit link between Gaussian fields and Gaussian Markov random fields: the stochastic partial differential equation approach",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lázaro-Gredilla",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "R"
+          ],
+          "last": "Figueiras",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Vidal",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Scalable Gaussian process inference using variational methods",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "G D G"
+          ],
+          "last": "Matthews",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Updating Quasi-Newton Matrices With Limited Storage",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [
+            "L C"
+          ],
+          "last": "Mattos",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "C"
+          ],
+          "last": "Damianou",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Forth",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "D A"
+          ],
+          "last": "Barreto",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "D"
+          ],
+          "last": "Lawrence",
+          "suffix": ""
+        }
+      ],
+      "year": 1980,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Gaussian Processes for Machine Learning",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [
+            "E"
+          ],
+          "last": "Rasmussen",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "K"
+          ],
+          "last": "Williams",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "The Spaceborne Wind Lidar Mission ADM-Aeolus",
+      "authors": [
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Reitebuch",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Posterior Contraction Rates for Matérn Gaussian Processes on Riemannian Manifolds",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Rosa",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Borovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Terenin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Rousseau",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Doubly Stochastic Variational Inference for Deep Gaussian Processes",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Salimbeni",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "P"
+          ],
+          "last": "Deisenroth",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Taking the Human Out of the Loop: A Review of Bayesian Optimization",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Shahriari",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Swersky",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "P"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "De Freitas",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Variational Learning of Inducing Variables in Sparse Gaussian Processes",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [
+            "K"
+          ],
+          "last": "Titsias",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Pymanopt: A Python Toolbox for Optimization on Manifolds using Automatic Differentiation",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Townsend",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Koep",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Weichwald",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Efficiently sampling functions from Gaussian process posteriors",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Van Der Wilk",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Dutordoir",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "T"
+          ],
+          "last": "John",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Artemev",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Adam",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hensman",
+          "suffix": ""
+        }
+      ],
+      "year": 1963,
+      "venue": "Bulletin of the International Statistical Institute"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Pathwise Conditioning of Gaussian Processes",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "T"
+          ],
+          "last": "Wilson",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Borovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Terenin",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Mostowsky",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "P"
+          ],
+          "last": "Deisenroth",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Hodge-Compositional Edge Gaussian Processes",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Borovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Isufi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    }
+  ]
+}

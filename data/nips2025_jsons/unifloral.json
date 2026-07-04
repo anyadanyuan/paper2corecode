@@ -1,0 +1,1541 @@
+{
+  "paper_id": "unifloral",
+  "title": "A Clean Slate for Offline RL",
+  "authors": [
+    {
+      "first": "Matthew",
+      "middle": [
+        "T"
+      ],
+      "last": "Jackson",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Oxford",
+        "location": {}
+      }
+    },
+    {
+      "first": "Uljad",
+      "middle": [],
+      "last": "Berdica",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Oxford",
+        "location": {}
+      }
+    },
+    {
+      "first": "Jarek",
+      "middle": [],
+      "last": "Liesen",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Oxford",
+        "location": {}
+      }
+    },
+    {
+      "first": "Shimon",
+      "middle": [],
+      "last": "Whiteson",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Oxford",
+        "location": {}
+      }
+    },
+    {
+      "first": "Jakob",
+      "middle": [
+        "N"
+      ],
+      "last": "Foerster",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Oxford",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Progress in offline reinforcement learning (RL) has been impeded by ambiguous problem definitions and entangled algorithmic designs, resulting in inconsistent implementations, insufficient ablations, and unfair evaluations. Although offline RL explicitly avoids environment interaction, prior methods frequently employ extensive, undocumented online evaluation for hyperparameter tuning, complicating method comparisons. Moreover, existing reference implementations differ significantly in boilerplate code, obscuring their core algorithmic contributions. We address these challenges by first introducing a rigorous taxonomy and a transparent evaluation procedure that explicitly quantifies online tuning budgets. To resolve opaque algorithmic design, we provide clean, minimalistic, single-file implementations of various model-free and model-based offline RL methods, significantly enhancing clarity and achieving substantial speed-ups. Leveraging these streamlined implementations, we propose Unifloral, a unified algorithm that encapsulates diverse prior approaches within a single, comprehensive hyperparameter space, enabling algorithm development in a shared hyperparameter space. Using Unifloral with our rigorous evaluation procedure, we develop two novel algorithms-TD3-AWR (model-free) and MoBRAC (model-based)-which substantially outperform established baselines. All code for this project can be found in our public codebase.\n* Equal contribution.",
+  "body": {
+    "2._Limitations": "Question: Does the paper discuss the limitations of the work performed by the authors?\nAnswer: [Yes] Justification: We address lack of algorithmic clarity which is inherent in the field we are aiming to unify Section 1 and we acknowledge the limited number of evaluation environments Appendix C. In our full results for the two novel algorithms, Figure 15 and Figure 14 , we include challenging environments where our algorithms underperform. However, these results themselves are further evidence of the robustness and reliability of our evaluation procedure.\nGuidelines:\n• The answer NA means that the paper has no limitation while the answer No means that the paper has limitations, but those are not discussed in the paper.\n• The authors are encouraged to create a separate \"Limitations\" section in their paper.\n• The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be.\n• The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated.\n• The authors should reflect on the factors that influence the performance of the approach.\nFor example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon.\n• The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size.\n• If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness.\n• While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren't acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an important role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations.",
+    "1_Introduction": {
+      "1._Zero-shot": "Example: Autonomous search and rescue \n• Train one policy offline, then deploy online with no further adaptation.\n• No pre-deployment interaction, no post-deployment adaptation.\nQuestion: Do the main claims made in the abstract and introduction accurately reflect the paper's contributions and scope?\nAnswer: [Yes] Justification: We point out problems in offline RL, describe an informative taxonomy Figure 1 and propose an evaluation procedure, the results of which support our claims Section 3.3. We then provide extensive explanation on our implementations' design and performance (Section 4.1). The unified implementations (Appendix I) and the evaluation procedure (Section 3.2 are used to discover two new algorithm that we describe and test in Section 5.\nGuidelines:\n• The answer NA means that the abstract and introduction do not include the claims made in the paper.\n• The abstract and/or introduction should clearly state the claims made, including the contributions made in the paper and important assumptions and limitations. A No or NA answer to this question will not be perceived well by the reviewers.\n• The claims made should match theoretical and experimental results, and reflect how much the results can be expected to generalize to other settings.\n• It is fine to include aspirational goals as motivation as long as it is clear that these goals are not attained by the paper.",
+      "_text": "Offline reinforcement learning (RL)-the task of learning effective policies from pre-collected, static datasets-is critical for applying RL in real-world settings where online experimentation is expensive or risky. Despite significant interest [1] [2] [3] [4] [5] , the field has struggled to converge on clear, actionable insights. Algorithms and methods proliferate rapidly but no broadly agreed-upon conclusions or standardized benchmarks have emerged [6] . This undermines both practical application and theoretical progress. In this work, we identify and address two primary problems that contribute to stagnation and confusion in offline RL research: an ambiguous problem setting and opaque algorithmic design.\nProblem 1: Ambiguous Problem Setting Recent work in offline RL has lacked a rigorously articulated definition or standardized evaluation procedure. The broad mission statement, learning from a static dataset without direct environment interaction, is prone to misinterpretation that skews proposed methods towards impractical evaluation practices. Existing literature implicitly relaxes various definitions concerning critical details such as hyperparameter tuning allowances [4, 7] , the extent of post-deployment policy adaptation [8] , and the specifics of evaluation procedures [9] . Consequently, comparisons between methods are confounded as each study might assume fundamentally different experimental conditions. While some approaches restrict tuning based on related dataset performance [10] , most approaches extensively tune hyperparameters on the target environment [11, 5, 12] . Using the target environment to tune hyperparameters needs a large number of online evaluations, which is in conflict with the basic premise of offline RL."
+    },
+    "2.1_Reinforcement_Learning": "We apply RL to a finite-horizon Markov Decision Process (MDP) defined by the tuple ⟨S 0 , S, A, D, R, T ⟩. Here S is the state space, A is the action space, and T is the horizon. D : S × A → ∆ (S) is the transition dynamics, defining how the state changes given a state and the action taken on that state. ∆ (S) is the set of all possible distributions over s. The scalar reward function is R : S × A → R. The environments in this paper are all fully observable as the Markov state is directly observed at each timestep.\nA policy π maps a state in S to an action distribution over A. The policy is trained to maximize the expected return J π M for a given MDP M with trajectory length T : J π M := E a 0:T ∼π,s0∼S0,s 1:T ∼D T t=0 r t .\n(1)",
+    "2.2_Offline_Reinforcement_Learning": "Offline RL methods use a pre-collected dataset to optimize a target policy to maximize J π by, without online interactions in the environment. This dataset consists of transitions (s i , a i , r i , s i+1 , a i+1 ) for i = 1, . . . , N , where s i , s i+1 ∈ S, a i ∈ A, r i ∈ R are the current and next states, action, and reward, respectively. Here, initial states are drawn from the distribution s 0 ∼ S 0 and trajectories are gathered through a behaviour policy π b interacting with the environment. Since π b may be suboptimal, the resulting dataset might not contain sufficient coverage of the environment's state space to learn an effective policy.\nAn effective offline RL method must learn policies that generalize from this limited dataset to perform reliably when deployed in their environment. Typically, these methods require significant regularization to avoid overestimation bias. For model-free methods, this is commonly done with critic ensembles, where the minimum state value estimated by the ensemble is used for policy optimization. Model-based methods generalize by training a dynamics model D(s, a) to predict future states and rewards. This can be used to generate synthetic rollouts from the target policy, allowing for direct optimization of its performance.",
+    "3_Refining_Evaluation_in_Offline_RL": {
+      "3._OFFLINE-TO-ONLINE_RL": "• Train one policy offline, then deploy online and fine-tune the policy on online data.\n• Limited pre-deployment interaction and post-deployment adaptation via finetuning.\nMany offline RL papers implicitly perform pre-deployment policy selection (Setting 2a), as they report final performance after extensive hyperparameter tuning involving online evaluation [11, 5] . However, due to differences in the number of hyperparameters or computational resources, this tuning process varies in scope across studies. As a result, reported performances are often not directly comparable since they reflect not only algorithmic quality but also differences in tuning budgets. Furthermore, these procedures typically assume low-variance estimates of each policy's performance, determined by an indefinite number of online evaluations. This is rarely made explicit as hyperparameter tuning is often considered a technical detail and not part of the method, even though it can dramatically affect performance (Section 3.3).\nQuestion: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof?\nAnswer: [NA] .\nJustification: This paper does not have theoretical results.\nGuidelines:\n• The answer NA means that the paper does not include theoretical results.\n• All the theorems, formulas, and proofs in the paper should be numbered and crossreferenced.\n• All assumptions should be clearly stated or referenced in the statement of any theorems.\n• The proofs can either appear in the main paper or the supplemental material, but if they appear in the supplemental material, the authors are encouraged to provide a short proof sketch to provide intuition.\n• Inversely, any informal proof provided in the core of the paper should be complemented by formal proofs provided in appendix or supplemental material.\n• Theorems and Lemmas that the proof relies upon should be properly referenced.",
+      "3.1_Variants_of_Offline_RL": "The goal of offline RL is to train an agent using solely offline data, with the objective of maximizing performance from deployment, i.e., the point where the agent is evaluated online. In this setting, deployment marks a strict separation between the offline training phase and the online evaluation phase. However, some methods may relax this strict separation in two ways. Firstly, pre-deployment interaction allows the agent to take limited interactions with the environment before deployment to improve post-deployment performance. For instance, to tune hyperparameters before selecting a policy for deployment. Secondly, post-deployment adaptation allows the agent to continue learning after deployment, and the performance metric includes all returns collected after deployment. Examples include dataset aggregation from multiple online episodes [18] , selection from a set of policies trained offline [7, 9] , and fine-tuning a single policy [8] , all of which can be performed both before and after deployment. While any combination of these is possible, we identify four key settings.\nA Taxonomy of Offline RL",
+      "3.2_Proposed_Evaluation_Procedure": "We now propose a rigorous and practical evaluation procedure for offline RL with pre-deployment policy selection (Setting 2a), as it implicitly is the standard setting for evaluating offline RL methods (see Section 3.1). Our goal is to evaluate offline RL algorithms under a fixed budget of N predeployment environment interactions used for tuning. We measure this budget in terms of the number of evaluation episodes, reflecting practical deployment constraints where each online interaction can be costly. Whilst the tuning algorithm may be defined as part of the method, most research focuses on offline policy optimization prior to tuning. Therefore, we provide an upper confidence bound (UCB) bandit [19] in our implementation as the default tuning algorithm. Furthermore, to reflect real-world limitations, we assume that the expected return of each policy is not directly observable, with each pull from the bandit sampling a single episodic return from that policy's return distribution. This models the high-variance, sample-limited setting typical in real deployments, where evaluating a policy's performance requires interacting with the environment and yields only noisy, episodic feedback. The importance of this is demonstrated by the emergence of distractor policies, as discussed in Section 3.3.\nIn essence, our evaluation procedure repeatedly simulates hyperparameter tuning with a fixed online budget, using a bandit to select a single policy for final deployment. This procedure (Figure 2 ) has two steps: score collection and bandit evaluation. Step 1: Train Policies and Collect Scores Firstly, we collect a dataset of episodic evaluation scores from policies trained by the target algorithm. To do this, we sample P hyperparameter settings (with replacement and random seeds) from the range defined by the method, and then train P corresponding policies. These policies are evaluated online for a large number of episodes R and their episodic scores recorded. Following this, the policies may be discarded as only their episodic scores are required for bandit evaluation.\nStep 2: Run Bootstrapped Tuning Bandit Using our collected episodic evaluation dataset, we then repeatedly simulate hyperparameter tuning to measure algorithm performance at different tuning budgets. This is performed by subsampling K policiesfoot_0 (i.e., their corresponding episodic scores) and running a multi-armed bandit over them. In this bandit, each arm corresponds to a policy, with each pull sampling one episode's return from the corresponding policy. At each number of pulls N , we evaluate the performance of the algorithm by selecting the policy estimated to have the highest return by the bandit, and taking its true average return. We repeat this process B times to obtain a bootstrapped estimate of algorithm performance.\nRecommended Datasets It is essential to evaluate methods on a diverse distribution of tasks to ensure generality. Alarmingly, the majority of offline RL methods considered in this work were evaluated only on MuJoCo and Adroit tasks from the D4RL suite [20] . While computational budgets may be limited, we argue that they would be better spent considering a wider range of tasks and behaviour policies. In order to make environment selection consistent, we recommend starting with the following environments, where algorithms currently obtain non-trivial performance: hoppermedium, halfcheetah-medium-expert, and walker2d-medium-replay, as a representative subset of MuJoCo locomotion; pen-human, pen-cloned, and pen-expert, as algorithms often achieve zero or perfect performance on other Adroit environments; kitchen-mixed, maze2d-large, and antmaze-large-diverse, to provide diversity in the evaluated environments.",
+      "3.3_Results": "In Figure 3 , we evaluate a range of prior algorithms (list in Appendix A). For this, we uniformly sample from the hyperparameter tuning ranges specified in each algorithm's original paper or the union of ranges when multiple are provided. Generally, an algorithm performs better if its curve is closer to the top left corner of a plot, representing strong performance after few online interactions. Prior work has typically reported performance after unlimited online tuning, which is the limit of the score with an increasing number of policy evaluations, i.e., the top right corner.",
+      "_text": "This section describes our taxonomy of offline RL, illustrated in Figure 1 , which motivates our evaluation procedure in Figure 2 . We also outline the procedure in detail and use it to analyze the performance of a set of model-free and model-based algorithms in multiple environments."
+    },
+    "4_Elucidating_Algorithm_Design_in_Offline_RL": {
+      "4._Experimental_result_reproducibility": "Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)?\nAnswer: [Yes] Justification: We plan to open-source our library. Regardless, we have provided with exhaustive detail on algorithm similarity Section 4 and our code philosophy Appendix E. To encourage transparent and reliable scientific practices, we also provide snippets from the actual code to demonstrate our clean and consistent implementations Figure 12 and Figure 13 .\nGuidelines:\n• The answer NA means that the paper does not include experiments.\n• If the paper includes experiments, a No answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not.\n• If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable.\n• Depending on the contribution, reproducibility can be accomplished in various ways.\nFor example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed.\n• While NeurIPS does not require releasing code, the conference does require all submissions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm.\n(b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset). (d) We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility. In the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results. 5. Open access to data and code Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results, as described in supplemental material? Answer: [Yes] Justification: Yes, the paper features an anonymous repository and is built to optimize for transparent ablations, reproducibility and evaluations. We use standard D4RL [20] datasets available through their API.\nGuidelines:\n• The answer NA means that paper does not include experiments requiring code.\n• Please see the NeurIPS code and data submission guidelines (https://nips.cc/ public/guides/CodeSubmissionPolicy) for more details.\n• While we encourage the release of code and data, we understand that this might not be possible, so \"No\" is an acceptable answer. Papers cannot be rejected simply for not including code, unless this is central to the contribution (e.g., for a new open-source benchmark).\n• The instructions should contain the exact command and environment needed to run to reproduce the results. See the NeurIPS code and data submission guidelines (https: //nips.cc/public/guides/CodeSubmissionPolicy) for more details.\n• The authors should provide instructions on data access and preparation, including how to access the raw data, preprocessed data, intermediate data, and generated data, etc.\n• The authors should provide scripts to reproduce all experimental results for the new proposed method and baselines. If only a subset of experiments are reproducible, they should state which ones are omitted from the script and why.\n• At submission time, to preserve anonymity, the authors should release anonymized versions (if applicable).\n• Providing as much information as possible in supplemental material (appended to the paper) is recommended, but including URLs to data and code is permitted. 6.",
+      "4.2_A_Unified_Hyperparameter_Space_for_Offline_RL": "Implementation inconsistency and missing ablations are common flaws of offline RL research. The plethora of design decisions in each algorithm obfuscates evaluating how each feature contributes to the performance. To address this, we combine all components from a range of model-free and model-based algorithms (Appendix A) into a unified algorithm and single-file implementation, which we name Unifloral. We start by compiling a minimal subspace of components covering the model-free and model-based offline RL algorithms examined in this work (Appendix H). This has a range of hyperparameters in each of four broad design categories, which we identify from prior algorithms: model design, critic objective, actor objective, and dynamics modelling. A more detailed description of design category is in Appendix I.",
+      "_text": "In this section, we seek to simplify algorithm design in offline RL. Firstly, we present a genealogy of prior algorithms, using it to propose and implement a set of compositional reimplementations. Following this, we propose a unified algorithm, Unifloral, capable of expressing these methods-as well as any combination of their components-in a single hyperparameter space."
+    },
+    "5_Novel_Methods_Research_with_Unifloral": {
+      "5.1_TD3_with_Advantage_Weighted_Regression": "Hypothesis In Section 3.3, we show that one of two methods consistently outperformed existing baselines: ReBRAC [5] and IQL [21] . ReBRAC is derived from TD3-BC, meaning it optimizes its actor using TD3 value loss in combination with a BC loss term for regularization. In contrast, IQL uses only a BC loss but performs advantage weighted regression (AWR) by weighting the BC loss of each action by its estimated advantage. We hypothesise that substituting the BC term in ReBRAC with AWR, a method we name TD3-AWR, would combine the strengths of these methods and lead to improved performance overall.\nEvaluation We define TD3-AWR in Unifloral by using the AWR hyperparameters from IQL and the ReBRAC hyperparameters elsewhere. In Figure 6 , we show that TD3-AWR's performance curve strictly dominates ReBRAC on 6 out of 9 datasets and is dominated by ReBRAC in only 1. Interestingly, TD3-AWR achieves superior performance to ReBRAC under few policy evaluationssuch as in halfcheetah-medium-expert and pen-expert-despite searching over a wider range of hyperparameters. Similarly, TD3-AWR strictly dominates IQL on 7 datasets, thereby outperforming both of its source algorithms. ",
+      "5.2_Improving_Policy_Optimization_for_Model-Based_Offline_RL_Hypothesis": "In Section 3.3, we demonstrate the poor performance of model-based methods on non-locomotion environments. Whilst this is partially due to overfit hyperparameters, the design space of policy optimizers in model-based methods is underexplored, with all considered methods using SAC-N or CQL (Figure 5 ). Given the performance improvements from recent methods, we posit that these methods would be more competitive with an alternative policy optimizer. We therefore propose using ReBRAC with synthetic rollouts generated from a MOPO world model, which we name Model-based Behaviour Regularized Actor-Critic, or MoBRAC.\nEvaluation We implement MoBRAC in Unifloral, using the MOPO hyperparameters for dynamics model training and sampling, then using the ReBRAC hyperparameters elsewhere. Figure 7 shows how MoBRAC outperforms other model-based methods for all datasets, except for MOPO in maze2d-large-v1. Under a transparent evaluation budget, we find that MoBRAC outperforms the other model-based methods in 6 out of 9 datasets and is tied with MOPO for 3 others (Appendix K). ",
+      "_text": "Our unified algorithm and hyperparameter space enable researchers to combine different components and search through algorithm designs by only modifying the configuration of the unified implementation. To demonstrate the avenues our work opens up and encourage further research, we provide two \"mini-papers\" completed entirely by specifying configurations of the unified implementation, without any code changes. We examine a model-free and a model-based improvement."
+    },
+    "6_Related_Work": "Our work builds upon several foundational aspects of offline RL, including evaluation strategies, open-source implementations, and algorithmic unification. Existing evaluation regimes primarily address hyperparameter tuning either through limited online interactions [8, 9] or by estimating policy performance offline [4, 10, 22] . In contrast, our approach introduces an evaluation procedure that requires neither reference policies nor additional hyperparameters, offering broader applicability across the entire D4RL benchmark suite. Furthermore, our single-file implementations draw inspiration from projects such as CORL [17, 23] and CleanRL [24] , whilst our unified algorithm, Unifloral, is informed by prior unification attempts [25, 26, 15, 27] . For a comprehensive review, see Appendix L.",
+    "7_Conclusion": "In this work, we addressed critical challenges in problem formulation, evaluation, and algorithm unification in offline RL. We introduced a taxonomy that clearly distinguishes between offline RL variants-spanning zero-shot deployment to approaches with limited pre-deployment tuning or post-deployment adaptation. This categorization exposes the hidden online interactions, such as hyperparameter tuning, that have long confounded fair evaluation and reproducibility. To overcome these issues, we proposed a rigorous evaluation procedure that transparently quantifies the cost of online interactions via noisy, single-episode feedback. Additionally, by dissecting components of existing offline RL algorithms, we developed Unifloral, a novel unified offline RL algorithm that combines improvements of many previous methods, enabling seamless ablation of algorithmic components. We demonstrate this with two novel algorithms inside Unifloral, TD3-AWR and MoBRAC, which integrate the strengths of existing methods to achieve superior performance over a wide range of tasks. Collectively, our contributions set a new standard for addressing ambiguity in offline RL, promoting rigorous evaluation, and driving reproducible, impactful research in the field."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Offline Reinforcement Learning: Tutorial, Review, and Perspectives on Open Problems",
+      "authors": [
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Tucker",
+          "suffix": ""
+        },
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "MOPO: Model-based Offline Policy Optimization",
+      "authors": [
+        {
+          "first": "Tianhe",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Garrett",
+          "middle": [],
+          "last": "Thomas",
+          "suffix": ""
+        },
+        {
+          "first": "Lantao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "Tengyu",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "A Minimalist Approach to Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Fujimoto",
+          "suffix": ""
+        },
+        {
+          "first": "Shixiang",
+          "middle": [
+            "Shane"
+          ],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Hyperparameter Selection for Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Le Paine",
+          "suffix": ""
+        },
+        {
+          "first": "Cosmin",
+          "middle": [],
+          "last": "Paduraru",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [],
+          "last": "Michi",
+          "suffix": ""
+        },
+        {
+          "first": "Caglar",
+          "middle": [],
+          "last": "Gulcehre",
+          "suffix": ""
+        },
+        {
+          "first": "Konrad",
+          "middle": [],
+          "last": "Zolna",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Novikov",
+          "suffix": ""
+        },
+        {
+          "first": "Ziyu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Nando",
+          "middle": [],
+          "last": "De Freitas",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Revisiting the Minimalist Approach to Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Denis",
+          "middle": [],
+          "last": "Tarasov",
+          "suffix": ""
+        },
+        {
+          "first": "Vladislav",
+          "middle": [],
+          "last": "Kurenkov",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Nikulin",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "A survey on offline reinforcement learning: Taxonomy, review, and open problems",
+      "authors": [
+        {
+          "first": "Marcos",
+          "middle": [
+            "Roa"
+          ],
+          "last": "Rafael Figueiredo Prudencio",
+          "suffix": ""
+        },
+        {
+          "first": "Esther",
+          "middle": [
+            "Luna"
+          ],
+          "last": "Maximo",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Colombini",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE Transactions on Neural Networks and Learning Systems"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Active offline policy selection",
+      "authors": [
+        {
+          "first": "Ksenia",
+          "middle": [],
+          "last": "Konyushova",
+          "suffix": ""
+        },
+        {
+          "first": "Yutian",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Paine",
+          "suffix": ""
+        },
+        {
+          "first": "Caglar",
+          "middle": [],
+          "last": "Gulcehre",
+          "suffix": ""
+        },
+        {
+          "first": "Cosmin",
+          "middle": [],
+          "last": "Paduraru",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Daniel",
+          "suffix": ""
+        },
+        {
+          "first": "Misha",
+          "middle": [],
+          "last": "Mankowitz",
+          "suffix": ""
+        },
+        {
+          "first": "Nando",
+          "middle": [],
+          "last": "Denil",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "De Freitas",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Deployment-efficient reinforcement learning via model-based offline optimization",
+      "authors": [
+        {
+          "first": "Tatsuya",
+          "middle": [],
+          "last": "Matsushima",
+          "suffix": ""
+        },
+        {
+          "first": "Hiroki",
+          "middle": [],
+          "last": "Furuta",
+          "suffix": ""
+        },
+        {
+          "first": "Yutaka",
+          "middle": [],
+          "last": "Matsuo",
+          "suffix": ""
+        },
+        {
+          "first": "Ofir",
+          "middle": [],
+          "last": "Nachum",
+          "suffix": ""
+        },
+        {
+          "first": "Shixiang",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Showing Your Offline Reinforcement Learning Work: Online Evaluation Budget Matters",
+      "authors": [
+        {
+          "first": "Vladislav",
+          "middle": [],
+          "last": "Kurenkov",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "A strong baseline for batch imitation learning",
+      "authors": [
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Maystre",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenwen",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Kamil",
+          "middle": [],
+          "last": "Ciosek",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "MOReL : Model-Based Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Rahul",
+          "middle": [],
+          "last": "Kidambi",
+          "suffix": ""
+        },
+        {
+          "first": "Aravind",
+          "middle": [],
+          "last": "Rajeswaran",
+          "suffix": ""
+        },
+        {
+          "first": "Praneeth",
+          "middle": [],
+          "last": "Netrapalli",
+          "suffix": ""
+        },
+        {
+          "first": "Thorsten",
+          "middle": [],
+          "last": "Joachims",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Conservative Q-Learning for Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Aurick",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Tucker",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Uncertainty-Based Offline Reinforcement Learning with Diversified Q-Ensemble",
+      "authors": [
+        {
+          "first": "Seungyong",
+          "middle": [],
+          "last": "Gaon An",
+          "suffix": ""
+        },
+        {
+          "first": "Jang-Hyun",
+          "middle": [],
+          "last": "Moon",
+          "suffix": ""
+        },
+        {
+          "first": "Hyun",
+          "middle": [
+            "Oh"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "COMBO: Conservative Offline Model-Based Policy Optimization",
+      "authors": [
+        {
+          "first": "Tianhe",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Rafael",
+          "middle": [],
+          "last": "Rafailov",
+          "suffix": ""
+        },
+        {
+          "first": "Aravind",
+          "middle": [],
+          "last": "Rajeswaran",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Revisiting Design Choices in Offline Model-Based Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Cong",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [
+            "J"
+          ],
+          "last": "Ball",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Parker-Holder",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "A"
+          ],
+          "last": "Osborne",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [
+            "J"
+          ],
+          "last": "Roberts",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Offlinerl-kit: An elegant pytorch offline reinforcement learning library",
+      "authors": [
+        {
+          "first": "Yihao",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "CORL: Research-oriented deep offline reinforcement learning library",
+      "authors": [
+        {
+          "first": "Denis",
+          "middle": [],
+          "last": "Tarasov",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Nikulin",
+          "suffix": ""
+        },
+        {
+          "first": "Dmitry",
+          "middle": [],
+          "last": "Akimov",
+          "suffix": ""
+        },
+        {
+          "first": "Vladislav",
+          "middle": [],
+          "last": "Kurenkov",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "3rd Offline RL Workshop: Offline RL as a \"Launchpad"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "A reduction of imitation learning and structured prediction to no-regret online learning",
+      "authors": [
+        {
+          "first": "Stéphane",
+          "middle": [],
+          "last": "Ross",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Gordon",
+          "suffix": ""
+        },
+        {
+          "first": "Drew",
+          "middle": [],
+          "last": "Bagnell",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Proceedings of the fourteenth international conference on artificial intelligence and statistics"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Finite-time analysis of the multiarmed bandit problem",
+      "authors": [
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Auer",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolo",
+          "middle": [],
+          "last": "Cesa-Bianchi",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        }
+      ],
+      "year": 2002,
+      "venue": "Machine learning"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "D4rl: Datasets for deep data-driven reinforcement learning",
+      "authors": [
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Ofir",
+          "middle": [],
+          "last": "Nachum",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Tucker",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Offline Reinforcement Learning with Implicit Q-Learning",
+      "authors": [
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Kostrikov",
+          "suffix": ""
+        },
+        {
+          "first": "Ashvin",
+          "middle": [],
+          "last": "Nair",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "A Workflow for Offline Model-Free Robotic Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Anikait",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Jax-corl: Clean sigle-file implementations of offline rl algorithms in jax",
+      "authors": [
+        {
+          "first": "Soichiro",
+          "middle": [],
+          "last": "Nishimori",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Cleanrl: High-quality single-file implementations of deep reinforcement learning algorithms",
+      "authors": [
+        {
+          "first": "Shengyi",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Rousslan",
+          "middle": [],
+          "last": "Fernand",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Dossa",
+          "suffix": ""
+        },
+        {
+          "first": "Chang",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Braga",
+          "suffix": ""
+        },
+        {
+          "first": "Dipam",
+          "middle": [],
+          "last": "Chakraborty",
+          "suffix": ""
+        },
+        {
+          "first": "Kinal",
+          "middle": [],
+          "last": "Mehta",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Joãg",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Araãšjo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Rainbow: Combining improvements in deep reinforcement learning",
+      "authors": [
+        {
+          "first": "Matteo",
+          "middle": [],
+          "last": "Hessel",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Modayil",
+          "suffix": ""
+        },
+        {
+          "first": "Hado",
+          "middle": [],
+          "last": "Van Hasselt",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Schaul",
+          "suffix": ""
+        },
+        {
+          "first": "Georg",
+          "middle": [],
+          "last": "Ostrovski",
+          "suffix": ""
+        },
+        {
+          "first": "Will",
+          "middle": [],
+          "last": "Dabney",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Horgan",
+          "suffix": ""
+        },
+        {
+          "first": "Bilal",
+          "middle": [],
+          "last": "Piot",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Azar",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Silver",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Muesli: Combining improvements in policy optimization",
+      "authors": [
+        {
+          "first": "Matteo",
+          "middle": [],
+          "last": "Hessel",
+          "suffix": ""
+        },
+        {
+          "first": "Ivo",
+          "middle": [],
+          "last": "Danihelka",
+          "suffix": ""
+        },
+        {
+          "first": "Fabio",
+          "middle": [],
+          "last": "Viola",
+          "suffix": ""
+        },
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Guez",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Schmitt",
+          "suffix": ""
+        },
+        {
+          "first": "Laurent",
+          "middle": [],
+          "last": "Sifre",
+          "suffix": ""
+        },
+        {
+          "first": "Theophane",
+          "middle": [],
+          "last": "Weber",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Silver",
+          "suffix": ""
+        },
+        {
+          "first": "Hado",
+          "middle": [],
+          "last": "Van Hasselt",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Dual rl: Unification and new methods for reinforcement and imitation learning",
+      "authors": [
+        {
+          "first": "Harshit",
+          "middle": [],
+          "last": "Sikchi",
+          "suffix": ""
+        },
+        {
+          "first": "Qinqing",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Amy",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Niekum",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Soft actor-critic: Offpolicy maximum entropy deep reinforcement learning with a stochastic actor",
+      "authors": [
+        {
+          "first": "Tuomas",
+          "middle": [],
+          "last": "Haarnoja",
+          "suffix": ""
+        },
+        {
+          "first": "Aurick",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Addressing Function Approximation Error in Actor-Critic Methods",
+      "authors": [
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Fujimoto",
+          "suffix": ""
+        },
+        {
+          "first": "Herke",
+          "middle": [],
+          "last": "Hoof",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Meger",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 35th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Advantage-weighted regression: Simple and scalable off-policy reinforcement learning",
+      "authors": [
+        {
+          "first": "Xue Bin",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Grace",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Alvinn: An autonomous land vehicle in a neural network",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dean",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Pomerleau",
+          "suffix": ""
+        }
+      ],
+      "year": 1988,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Behavior regularized offline reinforcement learning",
+      "authors": [
+        {
+          "first": "Yifan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Tucker",
+          "suffix": ""
+        },
+        {
+          "first": "Ofir",
+          "middle": [],
+          "last": "Nachum",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Decision transformer: Reinforcement learning via sequence modeling",
+      "authors": [
+        {
+          "first": "Lili",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Aravind",
+          "middle": [],
+          "last": "Rajeswaran",
+          "suffix": ""
+        },
+        {
+          "first": "Kimin",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Grover",
+          "suffix": ""
+        },
+        {
+          "first": "Misha",
+          "middle": [],
+          "last": "Laskin",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "Aravind",
+          "middle": [],
+          "last": "Srinivas",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Mordatch",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "The Generalization Gap in Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Ishita",
+          "middle": [],
+          "last": "Mediratta",
+          "suffix": ""
+        },
+        {
+          "first": "Qingfei",
+          "middle": [],
+          "last": "You",
+          "suffix": ""
+        },
+        {
+          "first": "Minqi",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Roberta",
+          "middle": [],
+          "last": "Raileanu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Discovered policy optimisation",
+      "authors": [
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Jakub",
+          "middle": [],
+          "last": "Kuba",
+          "suffix": ""
+        },
+        {
+          "first": "Alistair",
+          "middle": [],
+          "last": "Letcher",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Metz",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Schroeder De Witt",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Foerster",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "No more pesky hyperparameters: Offline hyperparameter tuning for rl",
+      "authors": [
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Archit",
+          "middle": [],
+          "last": "Sakhadeo",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "White",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Bell",
+          "suffix": ""
+        },
+        {
+          "first": "Vincent",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xutong",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Puer",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Tadashi",
+          "middle": [],
+          "last": "Kozuno",
+          "suffix": ""
+        },
+        {
+          "first": "Alona",
+          "middle": [],
+          "last": "Fyshe",
+          "suffix": ""
+        },
+        {
+          "first": "Martha",
+          "middle": [],
+          "last": "White",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF36",
+      "title": "d3rlpy: An offline deep reinforcement library",
+      "authors": [
+        {
+          "first": "Takuma",
+          "middle": [],
+          "last": "Seno",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Stable-baselines3: Reliable reinforcement learning implementations",
+      "authors": [
+        {
+          "first": "Antonin",
+          "middle": [],
+          "last": "Raffin",
+          "suffix": ""
+        },
+        {
+          "first": "Ashley",
+          "middle": [],
+          "last": "Hill",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Gleave",
+          "suffix": ""
+        },
+        {
+          "first": "Anssi",
+          "middle": [],
+          "last": "Kanervisto",
+          "suffix": ""
+        },
+        {
+          "first": "Maximilian",
+          "middle": [],
+          "last": "Ernestus",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [],
+          "last": "Dormann",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Journal of machine learning research"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Spinning Up in Deep Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Joshua",
+          "middle": [],
+          "last": "Achiam",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "rejax",
+      "authors": [
+        {
+          "first": "Jarek",
+          "middle": [],
+          "last": "Liesen",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Lange",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    }
+  ]
+}

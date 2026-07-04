@@ -1,0 +1,1446 @@
+{
+  "paper_id": "MemoryMosaics",
+  "title": "Memory Mosaics at scale",
+  "authors": [
+    {
+      "first": "Jianyu",
+      "middle": [],
+      "last": "Zhang",
+      "affiliation": {}
+    },
+    {
+      "first": "Léon",
+      "middle": [],
+      "last": "Bottou",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "Memory Mosaics [Zhang et al., 2025] , networks of associative memories, have demonstrated appealing compositional and in-context learning capabilities on medium-scale networks (GPT-2 scale) and synthetic small datasets. This work shows that these favorable properties remain when we scale memory mosaics to large language model sizes (llama-8B scale) and real-world datasets. To this end, we scale memory mosaics to 10B size, we train them on one trillion tokens, we introduce a couple architectural modifications (\"memory mosaics v2\"), we assess their capabilities across three evaluation dimensions: training-knowledge storage, new-knowledge storage, and in-context learning. Throughout the evaluation, memory mosaics v2 match transformers on the learning of training knowledge (first dimension) and significantly outperforms transformers on carrying out new tasks at inference time (second and third dimensions). These improvements cannot be easily replicated by simply increasing the training data for transformers. A memory mosaics v2 trained on one trillion tokens still perform better on these tasks than a transformer trained on eight trillion tokens.\nTransformers show an interesting induction head mechanism [Olsson et al., 2022] , that is, predict b after sequence [. . . , a, b, . . . , a]. This mechanism contributes to their in-context learning ability. According to Bietti et al. [2023] , position encoding and asymmetric query-key extractors (e.g. 3 both keys and values shall be vectors in R d . 4 This Gaussian kernel smoothing not only converges to the true conditional expectation E(K|V ) when n → ∞ and β = √ n [Nadaraya, 1964 , Watson, 1964] , but also makes it easy to compute gradients. 5 For the easy of reading, we reuse the \"attention score\" notion to\nin associative memories.",
+  "body": {
+    "3._Theory_assumptions_and_proofs": "Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof? Answer: [NA] Justification: We do not include theorems.\nGuidelines:\n• The answer NA means that the paper does not include theoretical results.\n• All the theorems, formulas, and proofs in the paper should be numbered and crossreferenced.\n• All assumptions should be clearly stated or referenced in the statement of any theorems.\n• The proofs can either appear in the main paper or the supplemental material, but if they appear in the supplemental material, the authors are encouraged to provide a short proof sketch to provide intuition.\n• Inversely, any informal proof provided in the core of the paper should be complemented by formal proofs provided in appendix or supplemental material.\n• Theorems and Lemmas that the proof relies upon should be properly referenced.",
+    "1_Introduction": {
+      "1._Claims": "Question: Do the main claims made in the abstract and introduction accurately reflect the paper's contributions and scope?\nAnswer: [Yes] Justification: The main claims made in the abstract and introduction do accurately reflect the contribution and scope made by the paper.\nGuidelines:\n• The answer NA means that the abstract and introduction do not include the claims made in the paper.\n• The abstract and/or introduction should clearly state the claims made, including the contributions made in the paper and important assumptions and limitations. A No or NA answer to this question will not be perceived well by the reviewers.\n• The claims made should match theoretical and experimental results, and reflect how much the results can be expected to generalize to other settings.\n• It is fine to include aspirational goals as motivation as long as it is clear that these goals are not attained by the paper.",
+      "_text": "In Machine Learning, compositional capabilities and in-context/out-of-distribution learning capabilities have been continuously pursued but remain challenging. Early attempts to achieve these goals include pursuing disentanglement via various statistical \"independence\" [Comon, 1994 , Roth et al., 2022] , pursuing out-of-distribution/learning from the perspective of optimization on multiple environments [Finn et al., 2017 , Arjovsky et al., 2019 , Bengio et al., 2019] . In contrast, transformerbased models demonstrate certain compositional capabilities and early in-context learning abilities. However, we still lack a clear understanding of how current transformers achieve these capabilities, and why earlier models were unable to. Memory mosaics [Zhang et al., 2025] , networks of simple key-value associative memories (without position encoding), offer a comparatively transparent way to understand how composition or disentanglement occur. Trained and evaluated on medium-scale networks and synthetic datasets, memory mosaics reveal promising superior in-context learning abilities. Therefore, we ask \"To peruse a strong and general new task learning capability, how can we scale memory mosaics to large networks and real-world datasets?\"\nThe contribution of this work: 1) We successfully scale up memory mosaics to llama-8B scale, using one trillion real-world training tokens. The resulting network is named as Memory Mosaics v2.foot_0 foot_1 Compared to memory mosaics, memory mosaics v2 made three architectural modifications, including an adaptive bandwidth of associative memory, a gated time-variant key feature extractor, and a 3-level memory design. 2) We propose three evaluation dimensions to comprehensively assess model ability (from i.i.d. to o.o.d. scenarios) . 3) Our memory mosaics v2 demonstrate superior new-task learning capabilities (with fewer examples and less priori knowledge from human designers). This paper is organized as follows. Section 2 introduces background knowledge on associative memories. Section 3 presents the architecture of memory mosaics v2. Then section 4 describes the training process, section 5 evaluates memory mosaics v2 and transformers across three dimensionstraining (persistent) knowledge storage, new knowledge storage, and in-context learning. Section 6 discusses the failure of replicating memory mosaics v2 by simply increasing the training data (×8 more data) for transformers. Section 7 studies the advantage of memory mosaics v2 in fine-tuning. Finally, section 8 provides discussion and further directions."
+    },
+    "2_Background_on_Associative_Memory": {
+      "2._Limitations": "Question: Does the paper discuss the limitations of the work performed by the authors?\nAnswer: [Yes] Justification: Check Section \"Computation and # parameters concerns\" for example.\n\"Limitations\" section does discuss the limitations of the work performed by the authors, including scope of the claims made, strong assumptions, and how robust the results are to violations of the assumptions.\nGuidelines:\n• The answer NA means that the paper has no limitation while the answer No means that the paper has limitations, but those are not discussed in the paper.\n• The authors are encouraged to create a separate \"Limitations\" section in their paper.\n• The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be.\n• The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated.\n• The authors should reflect on the factors that influence the performance of the approach.\nFor example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon.\n• The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size.\n• If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness.\n• While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren't acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an important role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations.",
+      "_text": "General speaking, memory mosaics architecture [Zhang et al., 2025] replaces attention blocks in transformers [Vaswani et al., 2017] with associative memories. This section provides the background on associative memories, highlights the connection and differences between \"associative memory\" in memory mosaics and \"attention\" in transformers.\nAssociative Memory Associative memories have a long history in both psychology and computer science, referring to relationships between unrelated items. In this work, we follow the definition from Zhang et al. [2025] , according to which an associative memory is a device that can store key-value pairs {(k 1 , v 1 ) . . . (k n , v n )} and retrieve values given a corresponding key:\nEQUATION\nThe key-value pairs are stored in a set, and thus can be assumed to be permutation invariant. This exchangeability property suggests that we can view an associative memory as a device that estimates a conditional probability distribution P (V |K) on the basis of the sample (k 1 , v 1 ) . . . (k n , v n ) of keyvalue pairs. The retrieval function is then a conditional expectation over this estimated distribution:\nEQUATION\nThis conditional expectation can be estimated by kernel regression, e.g. Gaussian kernel regression: 4\nEQUATION\nwhere β controls the bandwidth of Guassian kernel."
+    },
+    "3.1_Adaptive_bandwidth_in_Gaussian_kernel_smoothing": "Memory mosaics use one fixed bandwidth parameter β for different sizes n of associative memory (Equation 1). It is well known that bandwidth controls the bias-variance trade-off [Hastie et al., 2009] of kernel regression (memory-based) methods. That is, for a given distribution, the optimal bandwidth depends on the number of examples (key-value pairs in associative memory). Inspired by the asymptotic Mean Integrated Squared Error kernel bandwidth estimation approach where [García-Portugués, 2024] , memory mosaics v2 schedule β in Equation 4 as:\n1/ √ β ∝ n -1/(p+4)\nEQUATION\nwhere β 0 ≥ 0, β 1 > 0, 1 > α > 0 are learnable parameters (Check Appendix Table 6 for reparameterization and initialization details). I.e., the more key-value pairs (examples), the smaller bandwidth 1/ √ β.",
+    "3.2_Gated_time-variant_key_feature_extractor": "Memory mosaics employs a simple time-invariant leaky averaging to extract key features:\nEQUATION\n)\nThe averaging weights in Equation 7 are fixed and independent of the semantic input x. As a result, semantically similar cases, such as \"tom-and-jerry\" and \"tom---and---jerry\", may receive different key features. Inspired by recurrent-style networks [Peng et al., 2023 , Gu and Dao, 2023 , Beck et al., 2025] , memory mosaics v2 utilize the following gated time-variant key feature extractor:foot_3 \nEQUATION\nwhere W φ , W g , W λ are learnable parameters, the averaging weights λ T ∈ R and the exponential gate g T ∈ R semantically depend on input x T . See Appendix Figure 9 for graphical illustrations.\nFor key feature extractor, memory mosaics v2 reuses the same convolutional key extractor as in memory mosaics:\nEQUATION\nwhere γ, α ψ ∈ R and W ψ are learnable parameters.",
+    "3.3_3-level_memory": "Transformer architecture [Vaswani et al., 2017] consists of attention blocks and feedforward neural network blocks. The former handles local contextual information from an input sequence, while the latter stores global persistent information shared by different training sequences. Memory mosaics [Zhang et al., 2025] simplify the attention and the feedforward network in transformer as contextual associative memory and persistent memory, respectively. This simplification reduces the dependence between the \"attention score\" and the token position, as shown in Figure 1 . Compared with transform- ers (Figure 1 left), the attention scores in memory mosaics (Figure 1 right) exhibit a structured pattern.\nThat is, attention scores on near-tokens (positions) heavily depend on positions, while attention scores on far-tokens are almost invariant to token positions. Inspired by this experimental discovery, memory mosaics v2 replace each contextual associative memory in memory mosaics with two associative memories, short-term memory and long-term memory, using distinct parameters (as in Figure 2 ).",
+    "4_Training": {
+      "4._Experimental_result_reproducibility": "Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)? Answer: [Yes] Justification: Check experimental setups Section 4, Section 5, and Appendix C. Guidelines: The paper clearly explains the training setup for experiments run in the paper. These explanations are sufficient to reproduce the experiments. The code will be released upon acceptance of the paper.\n• The answer NA means that the paper does not include experiments.\n• If the paper includes experiments, a No answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not.\n• If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable.\n• Depending on the contribution, reproducibility can be accomplished in various ways.\nFor example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed.\n• While NeurIPS does not require releasing code, the conference does require all submissions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm. (b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset). (d) We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility.\nIn the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results.\n5. Open access to data and code Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results, as described in supplemental material? Answer: [No] Guidelines:\n• The answer NA means that paper does not include experiments requiring code.\n• Please see the NeurIPS code and data submission guidelines (https://nips.cc/pu blic/guides/CodeSubmissionPolicy) for more details.\n• While we encourage the release of code and data, we understand that this might not be possible, so \"No\" is an acceptable answer. Papers cannot be rejected simply for not including code, unless this is central to the contribution (e.g., for a new open-source benchmark).\n• The instructions should contain the exact command and environment needed to run to reproduce the results. See the NeurIPS code and data submission guidelines (https: //nips.cc/public/guides/CodeSubmissionPolicy) for more details.\n• The authors should provide instructions on data access and preparation, including how to access the raw data, preprocessed data, intermediate data, and generated data, etc.\n• The authors should provide scripts to reproduce all experimental results for the new proposed method and baselines. If only a subset of experiments are reproducible, they should state which ones are omitted from the script and why.\n• At submission time, to preserve anonymity, the authors should release anonymized versions (if applicable).\n• Providing as much information as possible in supplemental material (appended to the paper) is recommended, but including URLs to data and code is permitted. 6. Experimental setting/details Question: Does the paper specify all the training and test details (e.g., data splits, hyperparameters, how they were chosen, type of optimizer, etc.) necessary to understand the results? Answer: [Yes] Justification: Check Experiment Section4 and Appendix C. Guidelines:\n• The answer NA means that the paper does not include experiments.\n• The experimental setting should be presented in the core of the paper to a level of detail that is necessary to appreciate the results and make sense of them.\n• The full details can be provided either with the code, in appendix, or as supplemental material. 7. Experiment statistical significance Question: Does the paper report error bars suitably and correctly defined or other appropriate information about the statistical significance of the experiments? Answer: [Yes] Justification: The in-context learning result figures show the performance of different evaluation configurations together with a fitting curve. The many accuracy results of different evaluation configurations provides a means to estimate variance. Guidelines:\n• The answer NA means that the paper does not include experiments.\n• The authors should answer \"Yes\" if the results are accompanied by error bars, confidence intervals, or statistical significance tests, at least for the experiments that support the main claims of the paper.\n• The factors of variability that the error bars are capturing should be clearly stated (for example, train/test split, initialization, random drawing of some parameter, or overall run with given experimental conditions).\n16. Declaration of LLM usage Question: Does the paper describe the usage of LLMs if it is an important, original, or non-standard component of the core methods in this research? Note that if the LLM is used only for writing, editing, or formatting purposes and does not impact the core methodology, scientific rigorousness, or originality of the research, declaration is not required. Answer: [NA] Justification: The core method development in this research does not involve LLMs as any important, original, or non-standard components. Guidelines: • The answer NA means that the core method development in this research does not involve LLMs as any important, original, or non-standard components. • Please refer to our LLM policy (https://neurips.cc/Conferences/2025/LLM)\nfor what should or should not be described.",
+      "_text": "We train two memory mosaics v2 of difference sizes (small/large). Memory mosaics v2 small (llama-1.5B scale) contains 24 layers, 2048 hidden dimensions, and 16 heads, trained on 200 billion tokens of a diverse datamix. Memory mosaics v2 large (llama-8B scale) increases the number of layers to 32, hidden dimensions to 4096, and the number of heads to 32, trained on 1 trillion tokens of the same datamix. Both models are trained on 4,096 context length, followed by a fine-tuning process on 32,768 context length. Other training details are provided in Appendix C."
+    },
+    "5_Three_evaluation_dimensions": {
+      "5.1_Persistent-knowledge_storage_and_retrieval": "Table 1 evaluates both memory mosaics v2 and baseline transformers on 19 commonly used language benchmarks, showing that they perform closely on these benchmarks.This is expected since both models share the same persistent memory architecture. How do we know whether these benchmarks access persistent-knowledge ability rather than newknowledge ability? To answer this question, we re-evaluate these benchmarks on memory mosaics v2 but with long-term memory being removed after training. The underlying reason is that if a task solely relies on the information stored in persistent memory and retrieved by short-term memory, removing long-term memory should not significantly affect performance.\nTable 2 shows that removing long-term memory after training does not degrade the performance of 13 common benchmarks. This suggests that these 13 tasks are almost exclusively based on information stored in persistent memory and retrieved by short-term memory. In contrast, Appendix Table 9 indicates that the other 6 benchmarks perform poorly when long-term memory is removed.\nBased on these findings, we use the 13 tasks to evaluate persistent knowledge storage and retrieval capability. The results (Table 1 ) show that memory mosaics v2 and transformers perform similarly in this evaluation dimension, suggesting that both models are capable of effectively storing and retrieving persistent knowledge. Computation and # parameters concerns Table 2 summarizes the size of parameters and computation required for transformers and memory mosaics v2. Interestingly, removing long-term memory from memory mosaics v2 after training achieves a comparable transformer performance on the 13 persistent-knowledge benchmarks, while using fewer parameters and computations.",
+      "5.2_New-knowledge_storage_and_retrieval": "The new-knowledge storage and retrieval ability is a prerequisite for learning new tasks via memorybased methods (e.g., Gaussian kernel regression), because the data of new tasks must be adequately \"stored\" before learning (Note that memory-based methods are lazy methods). To illustrate this point, consider a poor goldfish with 7-second memory -how can it possibly learn a 90-minute movie? Similarly, a model with limited new-knowledge storage ability will struggle to learn information that exceeds its storage (memory) capacity.\nTask description To assess this ability, we employ two \"multi-unrelated-documents questionanswering\" tasks from the RULER benchmark [Hsieh et al., 2024] . These tasks involve multiple concatenated realistic articles followed by a question related to one of these articles, requiring the model to find the correct answer based on the correct article. 9 A prompt example is:\nAnswer the question based on the given documents. The following are given documents. Document 1: [...] Document2: [...] [...] Document 20: [...] Question: What religion were the Normans? Answer:\nThese tasks are notably more challenging than typical 'needle-in-a-haystack' benchmarks [Kamradt, 2023] , owing to their high information entropy. The typical 'needle-in-a-haystack' task is too easy, resulting in many models achieving near-perfect performance. See Table 13 in Appendix for details.",
+      "5.3_In-context_learning": "Having demonstrated the new-knowledge storage and retrieval ability of memory mosaics v2, this section takes a step further to evaluate its capacity to learn new tasks or distributions at inference time. This ability is also commonly referred to as in-context learning.\nTasks description To assess the in-context learning ability, we employ classic multiclass classification problems, 12 adopted from Li et al. [2024] . The classification tasks include:\n• Banking77 [Casanueva et al., 2020] is a banking-intent classification task with 77 target categories.\nEach example has an average length of 24 tokens.\n• Tacred [Zhang et al., 2017] is a relation classification task of two objects in a sentence, extracted from newswire or webtext, with 41 target categories. Each example has an average length of 77 tokens.\n• Goemotion [Demszky et al., 2020] is an emotion classification task of Reddit comments with 28 target categories. Each example has an average length of 26 tokens.\nTo solely evaluate the ability to learn new tasks (reduce the influence of training knowledge), we create an anonymous version with anonymous target labels (e.g. \"class 1\", \"class 2\") for each classification task. The original classification setup with semantic labels (e.g. \"happy\", \"angry\") is referred to as semantic version.\nIn this section, we adopt a few-shot learning setup where each \"shot\" consists of one (x, y) example from each possible target label category. By collecting multiple shots, we create an n-shot classification task. To encode these (x, y) examples for memory mosaics v2 and transformers, we serialize the (x, y) pairs into a sequence followed by a test query x test . 13 A prompt example is: Main Results Figure 3 compares the performance of memory mosaics v2 and transformers in three classification tasks with semantic target labels. The horizontal axis represents the number of shots, while the vertical axis represents the classification accuracy on x test . We can observe two phenomena: 1) memory mosaics v2 consistently improve classification performance as it sees more demonstration shots (blue curves). In contrast, transformers struggle to maintain their performance and exhibit counterintuitively degraded performance as more demonstrations are provided (red curves). 2) Memory mosaics v2 significantly outperform transformers by more than 10%. Appendix H provides machine is intelligent, it often proves that human designers are intelligent. Please recall that a child does not prepare all questions before going to school. 11 The comparison ignores many memory compression and local window approaches [Press et al., 2021 , Beltagy et al., 2020] , because they fail on this evaluation by construction. 12 We choose classic classification problems over other fancy benchmarks for two reasons. Firstly, the mechanisms underlying classification are well-studied, allowing us to confidently attribute good or poor performance to the system's properties. Secondly, classification tasks can be designed to be arbitrarily different from the training set by changing the classification boundary, making it easier to measure the ability to learn new distributions. In contrast, as of this writing, many fancy benchmarks may not offer the same level of control and fine-grained analysis. 13 Transformers are known to be sensitive to the prompt strategies [Gupta et al., 2024 , Mirzadeh et al., 2024] , such as the delimiter before x and y, shuffling/not-shuffling the (x, y) examples within each shot. To reduce the influence of prompt strategies, we evaluate each classification task with different delimiters (\"[space]\" and \"\\n\"), shuffled/non-shuffled (x, y) examples. Then choose the best prompt strategy for each n-shot classification task. Check appendix I for prompt examples.\na similar comparison on a smaller model size (∼1.5B), with an even larger margin. Appendix E further summarizes the comparison under matched model size or computation (FLOPs). Figure 4 presents a similar comparison as Figure 3 , but on anonymous target labels. Again, memory mosaics v2 significantly outperforms transformers on all classification tasks.\n2 4 6 8 10 12 14 16 number of shots 0.725 0.750 0.775 0.800 0.825 0.850 0.875 0.900 Accuary banking77 with semantic label 2 3 4 5 6 7 8 9 10 number of shots 0.50 0.52 0.54 0.56 0.58 0.60 0.62 Accuary 10.2% tacred with semantic label 2 4 6 8 10 12 14 16 number of shots 0.26 0.27 0.28 0.29 0.30 0.31 Accuary goemotion with semantic label Transformer large Memory Mosaics v2 large Figure 3: Semantic label in-context learning comparison between memory mosaics v2 and transformer. Memory mosaics v2 significantly outperform transformers on in-context learning with a large margin (more than 10%). Meanwhile, memory mosaics v2 benefits from more demonstration shots (x-axis), unlike transformers. 2 4 6 8 10 12 14 16 number of shots 0.60 0.65 0.70 0.75 0.80 0.85 0.90 Accuary banking77 with anonymous label 2 3 4 5 6 7 8 9 10 number of shots 0.15 0.20 0.25 0.30 0.35 0.40 0.45 Accuary 15.5% tacred with anonymous label 2 4 6 8 10 12 14 16 number of shots 0.06 0.07 0.08 0.09 0.10 0.11 Accuary goemotion with anonymous label Transformer large Memory Mosaics v2 large Figure 4: Anonymous label in-context learning comparison between memory mosaics v2 and transformers. Memory mosaics v2 significantly outperform transformers on all classification tasks. In summary, the experiments demonstrate that memory mosaics v2 not only outperform transformer by a significant margin (more than 10%) on in-context learning, but also consistently improve performance as more demonstrations are provided. These results highlight the superior in-context learning ability of Memory Mosaics v2. 2 4 6 8 10 number of shots 0.25 0.30 0.35 0.40 0.45 Accuary tacred with semantic label 2 4 6 8 10 number of shots 0.05 0.10 0.15 0.20 0.25 0.30 Accuary tacred with anonymous label Transformer small Transformer small + long-short term attention Memory Mosaics v2 small Augment transformer with long-short term attention Memory mosaics (v2) contains several unique components that are not applicable to transformers, such as the symmetric key and query, and the adaptive bandwidth. One seemingly applicable component for transformers is the separation of long-term and short-term memories introduced in Section 3.3. However, Figure 5 shows that augmenting a transformer with long-short-term attention does not help it overcome the limitations of in-context learning. These phenomena imply that memory mosaics (v2) is not simply a transformer variation but represents a different architecture.\nComputation and Parameter Concerns On the last two evaluation dimensions (new knowledge storage and retrieval, and in-context learning), memory mosaics v2 outperform transformers by more than 10% with slightly more parameters. This 10% advantage holds even when comparing under the same number of parameters or the same computational budget. See Appendix Figure 12 for details.",
+      "_text": "The evaluation design provides a means to assess the specific properties of a system. Memory mosaics v2 aims at the ability to learn new tasks with fewer examples and less task-specific priori knowledge [Zhang, 2025] . Thus, to fully assess this capability, this section adopts three evaluation dimensions.\n• Persistent-knowledge storage and retrieval, the ability of persistent-memory to store and retrieve knowledge of training dataset. This capability prepares knowledge that could be reused in other tasks during inference. We use common language benchmarks to access this aspect.\n• New-knowledge storage and retrieval, the ability to store and retrieve new information of test dataset. It is a prerequisite for \"learning\" new tasks via memory-based methods. We employ \"multi-unrelated-documents storing and question-answering\" tasks to evaluate this aspect.\n• In-context Learning, directly evaluates the ability to learn new tasks with fewer examples and less task-specific priori knowledge. We use multiclass classification to assess this aspect."
+    },
+    "6_Risk-return_trade-off_of_frontier-model-sized_memory_mosaics_v2": {
+      "6.1_Comparison_of_two_approaches": "To answer this question, we compare the new tasks learning abilityfoot_10 of memory mosaics v2 and transformers trained on various amounts of data. Specifically, multiple transformer models are trained on 200B, 1T, and 8T training tokens, while a memory mosaics v2 is trained on 1T training tokens. New-knowledge storage and retrieval Table 5 shows the comparison on the new-knowledge storage and retrieval ability. Training on the same number of tokens (1T), transformers lag behind memory mosaics v2 by 12.3% (41.1% vs 53.4%). ×8 times more training tokens (8T) improves the performance of transformers. However, the resulting transformer (trained on 8T tokens) still lags behind memory mosaics v2 (trained on 1T tokens) by 6.5% (46.9% vs 53.4%). Although further increasing training data may improve the performance of transformers in this evaluation dimension, it comes at the cost of significantly larger training cost (time and resource). Moreover, a serious problem occurs: we are running out of data! In-context learning Figures 6 and 7 show the comparison on in-context learning ability. For semantic label tasks (Figure 6 ), ×8 times more training data helps transformers (8T data) match the performance of memory mosaics v2 (1T data). However, for the more challenging anonymous label tasks, more training data cannot help transformers. Contour-intuitively, transformers trained on more training data (8T) exhibit a degraded performance on anonymous label tasks (Figure 7 ). In summary, ×8 more training data helps transformers in certain new task learning benchmarks. However, the resulting transformers (8T data) still lag behind memory mosaics v2 trained on 1T data. More importantly, in anonymous label tasks that heavily rely on the new task learning ability, more training data cannot help transformers. These experiments answer the initial question: \"How much data does the transformer recipe approach need to match the performance of memory mosaics v2?\".\n7 Fine-tuning speed: who can fine-tune with one minibatch?\nDespite the strong in-context learning capability of memory mosaics v2 shown in Section 5.3, it may still be attractive to fine-tune a model for a specific domain in order to either reduce inference costs or improve in-domain performance. It is generally expected that such models can be efficiently fine-tuned for a new domain using a comparatively small number of examples. Figure 8 compares the fine-tuning speed (in terms of data size) of memory mosaics v2 and transformers. Both models, pre-trained on 4k context windows, were fine-tuned to 32k context length using the recipe described in Section 4 and evaluated on the same RULER tasks (32k task-length) described in Section 5.2. Surprisingly, a single fine-tuning mini-batch (one optimization step) on memory mosaics v2 yields a 22% accuracy improvement. Two fine-tuning mini-batches on memory mosaics v2 are sufficient to reach the optimal performance. In contrast, a transformer fine-tuned with 800 mini-batches still lags behind memory mosaics v2 fine-tuned with a single mini-batch.",
+      "_text": "Having demonstrated the superior new tasks learning ability of memory mosaics v2 up to 9.9 billion parameters and 1 trillion training tokens, this section analyzes the \"risk-return trade-off\" to further scale memory mosaics v2 to the size of the frontier model, unveiling potential benefits and challenges.\nTwo Approaches To train a large frontier foundational model, one can either:\n1) take a low-risk-low-return approach by investing more resources (GPUs and data) and reusing old recipes (e.g. architecture), or 2) take a middle-risk-high-return approach by trying new smart techniques.\nTaking the first approach, one can take advantage of existing software, hardware, experiences, and datasets to quickly \"reproduce\" a huge foundational model. However, this approach is unlikely to result in a model that stands out from others, as it is based on shared recipes. In contrast, taking the latter approach may require optimizing software and hardware, adapting techniques, a sharp sense of research direction, and possessing a keen sense of research direction along with strong problem solving abilities. 14 Despite the high requirements for personnel, this approach holds the potential for tremendous breakthroughs. Ultimately, the decision between these two approaches depends on the available resources and personnel. To aid in this decision-making process, this section provides a simple and brutal comparison:\nHow much more data does the transformer recipe approach need to match the performance of memory mosaics v2?"
+    },
+    "8_Discussion_and_future_direction": "This work scales memory mosaics (named memory mosaics v2) to llama-8B scale, demonstrating superior performance on new task learning, outperforming transformers by more than 10%. The three evaluation dimensions introduced in this work provide a transparent and controlled assessment of model capabilities, particularly focusing on the new task learning. The risk-return trade-off analysis reveals the weakness of the mainstream \"more data more computation\" belief, highlighting research opportunities on other smart techniques. One future direction is to reduce the computational cost for very long context lengths using fuzzy hashing Breitinger et al. [2014] , Chen et al. [2024] and hierarchical memory Yuan et al. [2025] , Lu et al. [2025] approaches."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Invariant risk minimization",
+      "authors": [
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Arjovsky",
+          "suffix": ""
+        },
+        {
+          "first": "Léon",
+          "middle": [],
+          "last": "Bottou",
+          "suffix": ""
+        },
+        {
+          "first": "Ishaan",
+          "middle": [],
+          "last": "Gulrajani",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Lopez-Paz",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Neural machine translation by jointly learning to align and translate",
+      "authors": [
+        {
+          "first": "Dzmitry",
+          "middle": [],
+          "last": "Bahdanau",
+          "suffix": ""
+        },
+        {
+          "first": "Kyunghyun",
+          "middle": [],
+          "last": "Cho",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "3rd International Conference on Learning Representations, ICLR 2015"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "xlstm: Extended long short-term memory",
+      "authors": [
+        {
+          "first": "Maximilian",
+          "middle": [],
+          "last": "Beck",
+          "suffix": ""
+        },
+        {
+          "first": "Korbinian",
+          "middle": [],
+          "last": "Pöppel",
+          "suffix": ""
+        },
+        {
+          "first": "Markus",
+          "middle": [],
+          "last": "Spanring",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Auer",
+          "suffix": ""
+        },
+        {
+          "first": "Oleksandra",
+          "middle": [],
+          "last": "Prudnikova",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Kopp",
+          "suffix": ""
+        },
+        {
+          "first": "Günter",
+          "middle": [],
+          "last": "Klambauer",
+          "suffix": ""
+        },
+        {
+          "first": "Johannes",
+          "middle": [],
+          "last": "Brandstetter",
+          "suffix": ""
+        },
+        {
+          "first": "Sepp",
+          "middle": [],
+          "last": "Hochreiter",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Longformer: The long-document transformer",
+      "authors": [
+        {
+          "first": "Iz",
+          "middle": [],
+          "last": "Beltagy",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [
+            "E"
+          ],
+          "last": "Peters",
+          "suffix": ""
+        },
+        {
+          "first": "Arman",
+          "middle": [],
+          "last": "Cohan",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "A meta-transfer objective for learning to disentangle causal mechanisms",
+      "authors": [
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Tristan",
+          "middle": [],
+          "last": "Deleu",
+          "suffix": ""
+        },
+        {
+          "first": "Nasim",
+          "middle": [],
+          "last": "Rahaman",
+          "suffix": ""
+        },
+        {
+          "first": "Rosemary",
+          "middle": [],
+          "last": "Ke",
+          "suffix": ""
+        },
+        {
+          "first": "Sébastien",
+          "middle": [],
+          "last": "Lachapelle",
+          "suffix": ""
+        },
+        {
+          "first": "Olexa",
+          "middle": [],
+          "last": "Bilaniuk",
+          "suffix": ""
+        },
+        {
+          "first": "Anirudh",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Pal",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Birth of a transformer: A memory viewpoint",
+      "authors": [
+        {
+          "first": "Alberto",
+          "middle": [],
+          "last": "Bietti",
+          "suffix": ""
+        },
+        {
+          "first": "Vivien",
+          "middle": [],
+          "last": "Cabannes",
+          "suffix": ""
+        },
+        {
+          "first": "Diane",
+          "middle": [],
+          "last": "Bouchacourt",
+          "suffix": ""
+        },
+        {
+          "first": "Herve",
+          "middle": [],
+          "last": "Jegou",
+          "suffix": ""
+        },
+        {
+          "first": "Leon",
+          "middle": [],
+          "last": "Bottou",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Approximate matching: Definition and terminology",
+      "authors": [
+        {
+          "first": "Frank",
+          "middle": [],
+          "last": "Breitinger",
+          "suffix": ""
+        },
+        {
+          "first": "Barbara",
+          "middle": [],
+          "last": "Guttman",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Mccarrin",
+          "suffix": ""
+        },
+        {
+          "first": "Vassil",
+          "middle": [],
+          "last": "Roussev",
+          "suffix": ""
+        },
+        {
+          "first": "Douglas",
+          "middle": [],
+          "last": "White",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Efficient intent detection with dual sentence encoders",
+      "authors": [
+        {
+          "first": "Iñigo",
+          "middle": [],
+          "last": "Casanueva",
+          "suffix": ""
+        },
+        {
+          "first": "Tadas",
+          "middle": [],
+          "last": "Temčinas",
+          "suffix": ""
+        },
+        {
+          "first": "Daniela",
+          "middle": [],
+          "last": "Gerz",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Henderson",
+          "suffix": ""
+        },
+        {
+          "first": "Ivan",
+          "middle": [],
+          "last": "Vulić",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Transformer flops",
+      "authors": [
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Casson",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Magicpig: Lsh sampling for efficient llm generation",
+      "authors": [
+        {
+          "first": "Zhuoming",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Ranajoy",
+          "middle": [],
+          "last": "Sadhukhan",
+          "suffix": ""
+        },
+        {
+          "first": "Zihao",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Jianyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Niklas",
+          "middle": [],
+          "last": "Nolte",
+          "suffix": ""
+        },
+        {
+          "first": "Yuandong",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "Matthijs",
+          "middle": [],
+          "last": "Douze",
+          "suffix": ""
+        },
+        {
+          "first": "Leon",
+          "middle": [],
+          "last": "Bottou",
+          "suffix": ""
+        },
+        {
+          "first": "Zhihao",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Independent component analysis, a new concept?",
+      "authors": [
+        {
+          "first": "Pierre",
+          "middle": [],
+          "last": "Comon",
+          "suffix": ""
+        }
+      ],
+      "year": 1994,
+      "venue": "Signal processing"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Goemotions: A dataset of fine-grained emotions",
+      "authors": [
+        {
+          "first": "Dorottya",
+          "middle": [],
+          "last": "Demszky",
+          "suffix": ""
+        },
+        {
+          "first": "Dana",
+          "middle": [],
+          "last": "Movshovitz-Attias",
+          "suffix": ""
+        },
+        {
+          "first": "Jeongwoo",
+          "middle": [],
+          "last": "Ko",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [],
+          "last": "Cowen",
+          "suffix": ""
+        },
+        {
+          "first": "Gaurav",
+          "middle": [],
+          "last": "Nemade",
+          "suffix": ""
+        },
+        {
+          "first": "Sujith",
+          "middle": [],
+          "last": "Ravi",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Model-agnostic meta-learning for fast adaptation of deep networks",
+      "authors": [
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Notes for Nonparametric Statistics",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "García-Portugués",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "The llama 3 herd of models",
+      "authors": [
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Grattafiori",
+          "suffix": ""
+        },
+        {
+          "first": "Abhimanyu",
+          "middle": [],
+          "last": "Dubey",
+          "suffix": ""
+        },
+        {
+          "first": "Abhinav",
+          "middle": [],
+          "last": "Jauhri",
+          "suffix": ""
+        },
+        {
+          "first": "Abhinav",
+          "middle": [],
+          "last": "Pandey",
+          "suffix": ""
+        },
+        {
+          "first": "Abhishek",
+          "middle": [],
+          "last": "Kadian",
+          "suffix": ""
+        },
+        {
+          "first": "Ahmad",
+          "middle": [],
+          "last": "Al-Dahle",
+          "suffix": ""
+        },
+        {
+          "first": "Aiesha",
+          "middle": [],
+          "last": "Letman",
+          "suffix": ""
+        },
+        {
+          "first": "Akhil",
+          "middle": [],
+          "last": "Mathur",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [],
+          "last": "Schelten",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Vaughan",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Mamba: Linear-time sequence modeling with selective state spaces",
+      "authors": [
+        {
+          "first": "Albert",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Tri",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Changing Answer Order Can Decrease MMLU Accuracy",
+      "authors": [
+        {
+          "first": "Vipul",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Pantoja",
+          "suffix": ""
+        },
+        {
+          "first": "Candace",
+          "middle": [],
+          "last": "Ross",
+          "suffix": ""
+        },
+        {
+          "first": "Adina",
+          "middle": [],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "Megan",
+          "middle": [],
+          "last": "Ung",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "The elements of statistical learning",
+      "authors": [
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Hastie",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Tibshirani",
+          "suffix": ""
+        },
+        {
+          "first": "Jerome",
+          "middle": [],
+          "last": "Friedman",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Ruler: What's the real context size of your long-context language models",
+      "authors": [
+        {
+          "first": "Cheng-Ping",
+          "middle": [],
+          "last": "Hsieh",
+          "suffix": ""
+        },
+        {
+          "first": "Simeng",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Kriman",
+          "suffix": ""
+        },
+        {
+          "first": "Shantanu",
+          "middle": [],
+          "last": "Acharya",
+          "suffix": ""
+        },
+        {
+          "first": "Dima",
+          "middle": [],
+          "last": "Rekesh",
+          "suffix": ""
+        },
+        {
+          "first": "Fei",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Boris",
+          "middle": [],
+          "last": "Ginsburg",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Needle in a haystack -pressure testing llms",
+      "authors": [
+        {
+          "first": "Gregory",
+          "middle": [],
+          "last": "Kamradt",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Long-context llms struggle with long in-context learning",
+      "authors": [
+        {
+          "first": "Tianle",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Ge",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Quy",
+          "middle": [],
+          "last": "Duc Do",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Yue",
+          "suffix": ""
+        },
+        {
+          "first": "Wenhu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Moba: Mixture of block attention for long-context llms",
+      "authors": [
+        {
+          "first": "Enzhe",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhejun",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Jingyuan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yulun",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Shaowei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Weiran",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Enming",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Yuzhi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "GSM-Symbolic: Understanding the Limitations of Mathematical Reasoning in Large Language Models",
+      "authors": [
+        {
+          "first": "Iman",
+          "middle": [],
+          "last": "Mirzadeh",
+          "suffix": ""
+        },
+        {
+          "first": "Keivan",
+          "middle": [],
+          "last": "Alizadeh",
+          "suffix": ""
+        },
+        {
+          "first": "Hooman",
+          "middle": [],
+          "last": "Shahrokhi",
+          "suffix": ""
+        },
+        {
+          "first": "Oncel",
+          "middle": [],
+          "last": "Tuzel",
+          "suffix": ""
+        },
+        {
+          "first": "Samy",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Mehrdad",
+          "middle": [],
+          "last": "Farajtabar",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "On estimating regression",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Nadaraya",
+          "suffix": ""
+        }
+      ],
+      "year": 1964,
+      "venue": "Theory of Probability and Its Applications"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "In-context learning and induction heads",
+      "authors": [
+        {
+          "first": "Catherine",
+          "middle": [],
+          "last": "Olsson",
+          "suffix": ""
+        },
+        {
+          "first": "Nelson",
+          "middle": [],
+          "last": "Elhage",
+          "suffix": ""
+        },
+        {
+          "first": "Neel",
+          "middle": [],
+          "last": "Nanda",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Joseph",
+          "suffix": ""
+        },
+        {
+          "first": "Nova",
+          "middle": [],
+          "last": "Dassarma",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Yuntao",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Rwkv: Reinventing rnns for the transformer era",
+      "authors": [
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Alcaide",
+          "suffix": ""
+        },
+        {
+          "first": "Quentin",
+          "middle": [],
+          "last": "Anthony",
+          "suffix": ""
+        },
+        {
+          "first": "Alon",
+          "middle": [],
+          "last": "Albalak",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Arcadinho",
+          "suffix": ""
+        },
+        {
+          "first": "Huanqi",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Chung",
+          "suffix": ""
+        },
+        {
+          "first": "Matteo",
+          "middle": [],
+          "last": "Grella",
+          "suffix": ""
+        },
+        {
+          "first": "Kranthi",
+          "middle": [],
+          "last": "Kiran",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "V"
+          ],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Train short, test long: Attention with linear biases enables input length extrapolation",
+      "authors": [
+        {
+          "first": "Ofir",
+          "middle": [],
+          "last": "Press",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Disentanglement of correlated factors via hausdorff factorized support",
+      "authors": [
+        {
+          "first": "Karsten",
+          "middle": [],
+          "last": "Roth",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Ibrahim",
+          "suffix": ""
+        },
+        {
+          "first": "Zeynep",
+          "middle": [],
+          "last": "Akata",
+          "suffix": ""
+        },
+        {
+          "first": "Pascal",
+          "middle": [],
+          "last": "Vincent",
+          "suffix": ""
+        },
+        {
+          "first": "Diane",
+          "middle": [],
+          "last": "Bouchacourt",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "GLU variants improve transformer",
+      "authors": [
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Augmenting self-attention with persistent memory",
+      "authors": [
+        {
+          "first": "Sainbayar",
+          "middle": [],
+          "last": "Sukhbaatar",
+          "suffix": ""
+        },
+        {
+          "first": "Edouard",
+          "middle": [],
+          "last": "Grave",
+          "suffix": ""
+        },
+        {
+          "first": "Guillaume",
+          "middle": [],
+          "last": "Lample",
+          "suffix": ""
+        },
+        {
+          "first": "Herve",
+          "middle": [],
+          "last": "Jegou",
+          "suffix": ""
+        },
+        {
+          "first": "Armand",
+          "middle": [],
+          "last": "Joulin",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Principles of risk minimization for learning theory",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Vapnik",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Niki",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Llion",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Łukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Illia",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Smooth regression analysis",
+      "authors": [
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "S"
+          ],
+          "last": "Watson",
+          "suffix": ""
+        }
+      ],
+      "year": 1964,
+      "venue": "Sankhyā: The Indian Journal of Statistics, Series A"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Native sparse attention: Hardware-aligned and natively trainable sparse attention",
+      "authors": [
+        {
+          "first": "Jingyang",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Huazuo",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Damai",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Junyu",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengyan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenda",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "X"
+          ],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Lean",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiping",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Ai for the open-world: the learning principles",
+      "authors": [
+        {
+          "first": "Jianyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Memory mosaics",
+      "authors": [
+        {
+          "first": "Jianyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Niklas",
+          "middle": [],
+          "last": "Nolte",
+          "suffix": ""
+        },
+        {
+          "first": "Ranajoy",
+          "middle": [],
+          "last": "Sadhukhan",
+          "suffix": ""
+        },
+        {
+          "first": "Beidi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Léon",
+          "middle": [],
+          "last": "Bottou",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "The Thirteenth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Positionaware attention and supervised data improve slot filling",
+      "authors": [
+        {
+          "first": "Yuhao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Danqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Gabor",
+          "middle": [],
+          "last": "Angeli",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the 2017 Conference on Empirical Methods in Natural Language Processing (EMNLP 2017)"
+    }
+  ]
+}

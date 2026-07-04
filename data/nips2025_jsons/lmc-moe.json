@@ -1,0 +1,3546 @@
+{
+  "paper_id": "lmc-moe",
+  "title": "On Linear Mode Connectivity of Mixture-of-Experts Architectures",
+  "authors": [
+    {
+      "first": "Viet-Hoang",
+      "middle": [],
+      "last": "Tran",
+      "affiliation": {}
+    },
+    {
+      "first": "Van-Hoan",
+      "middle": [],
+      "last": "Trinh",
+      "affiliation": {}
+    },
+    {
+      "first": "Vinh",
+      "middle": [],
+      "last": "Khanh",
+      "affiliation": {}
+    },
+    {
+      "first": "",
+      "middle": [],
+      "last": "Bui",
+      "affiliation": {}
+    },
+    {
+      "first": "Tan",
+      "middle": [
+        "M"
+      ],
+      "last": "Nguyen",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "Linear Mode Connectivity (LMC) is a notable phenomenon in the loss landscapes of neural networks, wherein independently trained models have been observed to be connected-up to permutation symmetries-by linear paths in parameter space along which the loss remains consistently low. This observation challenges classical views of non-convex optimization and has implications for model ensembling, generalization, and our understanding of neural loss geometry. Inspired by recent studies on LMC in standard neural networks, we systematically investigate this phenomenon within Mixture-of-Experts (MoE) architectures-a class of models known for their scalability and computational efficiency, which combine traditional neural networks-referred to as experts-through a learnable gating mechanism. We begin by conducting a comprehensive analysis of both dense and sparse gating regimes, demonstrating that the symmetries inherent to MoE architectures are fully characterized by permutations acting on both the expert components and the gating function. Building on these foundational findings, we propose a matching algorithm that enables alignment between independently trained MoEs, thereby facilitating the discovery of LMC. Finally, we empirically validate the presence of LMC using our proposed algorithm across diverse MoE configurations-including dense, sparse, and shared-expert variants-under a wide range of model settings and datasets of varying scales and modalities. Our results confirm the existence of LMC in MoE architectures and offer fundamental insights into the functional landscape and optimization dynamics of deep learning models. The code is publicly available at https://github.com/MLResearchX/lmc-moe.",
+  "body": {
+    "1_Introduction": "Despite the high-dimensional and non-convex nature of deep neural network (DNN) training, stochastic optimization methods-such as stochastic gradient descent (SGD) and its variants-consistently find solutions that generalize well. This empirical success contrasts with the theoretical complexity of the loss landscape, which contains many local minima. A growing body of work has uncovered a surprising phenomenon known as mode connectivity, wherein minima found by independent SGD runs can often be connected by continuous low-loss paths.\nMode Connectivity. Related work on mode connectivity includes [34, 45, 67, 85, 61, 76, 91, 94] . Empirical studies demonstrate low-loss connections between independently trained models on MNIST and CIFAR- 10 [31, 33, 21] , and have shown that nearly any two solutions can be linked by a lowerror curve [32] . The implications of mode connectivity extend beyond theoretical curiosity. It provides insight into why weight-space ensembling techniques, such as Stochastic Weight Averaging, yield improved generalization [39, 65, 89] . Moreover, it has proven useful in studying adversarial robustness [93] , generalization theory [63, 44, 55] , and the geometry of loss landscapes [35, 87, 56] . A more restrictive and analytically convenient variant of this phenomenon is linear mode connectivity (LMC), where two models are connected by a linear interpolation in parameter space along which the loss remains low [30, 24] .\nPermutation Invariance. A central challenge in observing LMC stems from the permutation invariance of neural networks: permuting neurons within a hidden layer leaves the network function unchanged [7, 23, 29, 9, 60] . Consequently, two functionally equivalent models may appear disconnected in parameter space unless one is suitably permuted. To address this, recent work considers LMC up to permutation, wherein a low-loss linear path exists after aligning hidden units [71, 2, 36] . Optimal Transport (OT) [86, 82, 78, 79, 80] methods have been proposed to compute soft matchings between neurons [71, 72] , enabling applications such as model fusion in federated learning. Empirically, OT-based alignment achieves near-zero error barrier LMC between independently trained ResNets on CIFAR-10 [2] , with connectivity improving with width and degrading with depth. Theoretically, dropout-stable networks have been shown to exhibit mode connectivity [48, 70] , and [24] demonstrate that LMC up to permutation can already arise at initialization, especially in the NTK regime [41] . [28] further provide formal guarantees for LMC under OT alignment. These insights support the convexity conjecture [25] , which posits that the SGD solution set is approximately convex once symmetries are accounted for. This view is strengthened by [68] , who propose simultaneous linear connectivity, where a single model aligns linearly with multiple others. Additional studies explore the geometry of the solution space [3, 90] and identify star-shaped regions conducive to LMC [73] .\nFunctional Equivalence. Prior work on LMC has primarily focused on feedforward and convolutional architectures, owing to the well-characterized permutation symmetries in these models [11, 62, 13, 77, 88] . In contrast, the symmetry structures of more modern architectures-such as Transformers [84, 19, 12] and Mixture-of-Experts [40, 69, 52, 26] -remain relatively underexplored. The study of these symmetries falls under the broader concept of functional equivalence, which aims to characterize when different parameter configurations yield identical input-output behavior [37, 15, 27, 50, 5, 6] . Recent work has extended this analysis to attention-based models, with [83, 46] examining symmetries in attention mechanisms, particularly permutations of heads and group actions induced by the general linear group. A rigorous understanding of functional equivalence is essential for uncovering and formalizing LMC in such complex, structured architectures.",
+    "2_Preliminaries": {
+      "2.1_Linear_Mode_Connectivity": "Let f (•; θ) be a function parameterized by θ ∈ Θ, where Θ denotes the weight space. Given a non-negative loss function L(θ), we seek to minimize L(θ) over Θ. The notion of the loss barrier was originally introduced by [30] and later formalized by [24] as follows: for θ A , θ B ∈ Θ, define\nEQUATION\nθ A and θ B are said to be linearly mode connected if their loss barrier is negligible, i.e., B(θ A , θ B ) ≈ 0.\nIn many architectures, the function f (•; θ) is invariant under certain permutations of the weight spacenamely, for a permutation g and all θ ∈ Θ, we have f (•; θ) = f (•; gθ). Therefore, θ A and θ B are said to be linearly mode connected up to permutation if there exists a permutation g such that B(θ A , gθ B ) ≈ 0. Any such permutation g is referred to as a winning permutation [24] .",
+      "2.2_Mixture-of-Experts_Architectures": "A Mixture-of-Experts (MoE) is a neural network architecture that combines the outputs of multiple models into a single prediction through a gating mechanism that assigns input-dependent weights.\nThe two most commonly used gating strategies are dense and sparse gating. While we provide a brief overview of these concepts here, a comprehensive and formal treatment is deferred to Appendix A.\nExpert. Let d denote the input dimension. We define an Expert as a function E(•; θ) : R d R d , parameterized by θ ∈ R e , where e ∈ N represents the total number of trainable parameters of E. In this work, we consider each expert E(•; θ) to be a feedforward neural network with ReLU activation functions. Unless stated otherwise, all experts are assumed to share the same architecture.",
+      "_text": "This section provides an overview of Linear Mode Connectivity and Mixture-of-Experts architectures."
+    },
+    "3_Group_Action_on_Weight_Space_of_Mixture-of-Experts": {
+      "3.1_Weight_Space_of_Mixture-of-Experts": "The map D is parameterized by:\nEQUATION\nHere, Φ(n) is called the weight space of a Mixture-of-n-Experts. Varying the number of experts leads to a general Mixture-of-Experts weight space that spans across expert sets of different sizes, denoted by Φ = ⊔ n>0 Φ(n). Note that the weight space of E coincides with that of S, since the map Top-k does not introduce any new trainable parameters.",
+      "3.2_Group_Action_on_Weight_Space_of_Mixture-of-Experts": "We define the group G(n) as the direct product G(n) = R d × R × S n of the groups R d , R with addition, and the permutation group S n . Each element g ∈ G(n) is of the form g = (c W , c b , τ ), where c W ∈ R d , c b ∈ R and τ ∈ S n . The group G(n) acts on the weight space Φ(n) as follows. For g ∈ G(n) and ϕ ∈ Φ(n) presented as in Equation ( 4), define:\nEQUATION\nThe result below establishes that this group action preserves the MoE map. ",
+      "_text": "In this section, we introduce the formal notion of the weight space associated with MoE models. Furthermore, we define a group action on this space that preserves the functionality of MoE. A complete and rigorous exposition of these definitions and their implications is provided in Appendix A."
+    },
+    "4_Symmetries_and_Functional_Equivalence_in_Mixture-of-Experts": {
+      "4.1_Functional_Equivalence_in_Mixture-of-Experts": "We aim to characterize the conditions under which distinct parameter sets yield functionally equivalent MoE models. The central result of this section is that the symmetries of the gating mechanism are fully characterized by the group action of G(n), as defined in Equation ( 5). Given the fundamentally different structural and analytical characteristics of the two gating mechanisms, we treat each case independently in the analysis. In addition, we introduce a set of assumptions, the motivations for which are discussed in detail in the following subsection. We begin with the case of dense gating.\nTheorem 4.1 (Functional equivalence in Mixture-of-Experts with Dense Gating). Suppose ϕ, ϕ ′ define the same MoE function, i.e., D(•; ϕ) = D(•; ϕ ′ ). Assume that the following conditions hold: 1. Both {E(•; θ i )} n i=1 and {E(•; θ ′ i )} n ′ i=1 consist of pairwise distinct functions; 2. Both {W i -W j } 1≤i<j≤n and\n{W ′ i -W ′ j } 1≤i<j≤n ′ consist of pairwise distinct vectors in R d .\nThen n = n ′ , and there exists g = (c W , c b , τ ) ∈ G(n) such that for all i = 1, . . . , n, we have\nW ′ i = W τ (i) + c W , b ′ i = b τ (i) + c b , and E(•; θ ′ i ) = E(•; θ τ (i) ) on R d .\nFor the case of sparse gating, we require the notion of the strongly distinct property. Specifically, two functions f and g defined on R d are said to be strongly distinct if the set {x ∈ R\nd : f (x) ̸ = g(x)} is dense in R d . For\ninstance, distinct polynomials are strongly distinct, whereas distinct ReLU networks are not strongly distinct in general. A formal definition of this property, along with illustrative examples, is provided in Definition C.1 and Example C.2. We now state a result that parallels Theorem 4.1, adapted to the sparse gating regime with k > 1, and established under a set of assumptions that are stronger than those previously required. Theorem 4.2 (Functional equivalence in Mixture-of-Experts with Sparse Gating). Suppose ϕ, ϕ ′ define the same SMoE function, i.e., S(•; ϕ) = S(•; ϕ ′ ). Assume that the following conditions hold: 1. Both {E(•; θ i )} n i=1 and {E(•; θ ′ i )} n ′ i=1 consist of pairwise strongly distinct functions; 2. Both {W i-1 -W i } n i=2 and\n{W ′ i-1 -W ′ i } n ′ i=2\nare linearly independent subsets of R d . Then n = n ′ , and there exists g = (c W , c b , τ ) ∈ G(n) such that for all i = 1, . . . , n, we have\nW ′ i = W τ (i) + c W , b ′ i = b τ (i) + c b , and E(x; θ ′ i ) = E(x; θ τ (i) ) for all x ∈ Ω({W i , b i } n i=1 ) such that τ (i) ∈ Top-k((W j x + b j ) n j=1 ).\nThe proofs of Theorems 4.1 and 4.2 are provided in Appendix B and Appendix C, respectively. Both arguments build upon two essential ingredients: a result establishing the linear independence of exponential functions, as formulated in Lemma B.3, and a key observation on the piecewise affine structure of ReLU networks, discussed in Appendix B.1.\nRemark 4.3. While Theorem 4.2 shares a conceptual parallel with Theorem 4.1, it is important to underscore that the sparse gating case presents significantly deeper mathematical difficulties. The core source of complexity lies in the discontinuous behavior of the Top-k operator, which induces nontrivial discontinuities in the gating function, thereby disrupting smoothness and complicating the functional analysis required to establish equivalence. As a result, standard analytical techniques used in the dense setting become insufficient, necessitating more delicate arguments to account for the combinatorial and piecewise structure inherent to sparse gating.\nTheorems 4.1 and 4.2 provide a rigorous characterization of functional equivalence in both dense and sparse MoE models, with particular attention given to the role and structure of the gating mechanism. Nonetheless, it is important to note that these results do not account for all potential symmetries inherent in the MoE and SMoE mappings defined in Equations ( 2) and (3). Notably, further symmetries may exist within the expert networks, especially when they are implemented as ReLU neural networks. Given that this work is primarily concerned with the MoE architecture itself, our analysis is restricted to the behavior of the gating mechanism. Consequently, we treat the experts as black-box functions and abstract away from their internal parameterizations.",
+      "4.2_Necessity_and_Implications_of_Technical_Assumptions": "At a conceptual level, symmetry analysis aims to identify universal invariances-those that persist regardless of specific parameter values-while explicitly excluding singular symmetries, which emerge only under special, degenerate configurations of the model parameters. The assumptions introduced in our results are designed precisely to rule out such singularities, which do not represent inherent structural invariances of the architecture but instead arise from pathological or measure-zero subsets of parameter space. We provide a brief overview of the motivation behind these assumptions here; a more detailed justification, along with illustrative examples, is given in Remarks B.6 and C.8.\nThe case of dense gating. Assumption 1 is introduced to eliminate degenerate scenarios in which two experts compute identical functions and receive identical gating scores-situations where permuting the corresponding experts has no effect on the model's output. By excluding linear dependencies among the gating weight vectors, Assumption 2 ensures that expert activations remain distinguishablethereby preventing the emergence of non-structural, symmetry-like artifacts.\nThe case of sparse gating. Theorem 4.2 relies on a stronger set of assumptions than those required in Theorem 4.1. This added strength is necessary due to a key feature of sparse gating: an expert's behavior on inputs where it is not selected is unconstrained, meaning that the expert can act arbitrarily outside its region of activation. Consequently, different sets of expert functions may result in the same overall model output, provided their outputs agree where they are active.\nThe case of k = 1. In the particular case where k = 1, the SMoE architecture employs a Top-1 gating mechanism that activates only the expert associated with the highest gating score. Consequently, the softmax output reduces to a one-hot vector, with a single component equal to 1. Under this regime, the SMoE map exhibits additional nontrivial symmetries, specifically invariance under the multiplicative group R >0 . That is, for any positive scalar c > 0, the following identity holds:\nEQUATION\nThis invariance holds because the argmax used for expert selection is unaffected by positive scaling, i.e., argmax i=1,...,n (W i x + b i ) = argmax i=1,...,n (cW i x + cb i ), for all x ∈ Ω({W i , b i } n i=1 ). Additionally, since only a single expert contributes to the output, the model lacks any form of explicit aggregation across experts. Due to the analytical challenges posed by these additional invariances, we do not consider k = 1 in our primary results and instead defer its investigation to future work.",
+      "_text": "In the remainder of this section, we let ϕ ∈ Φ(n) and ϕ ′ ∈ Φ(n ′ ) denote the parameters of two Mixture-of-Experts models with n and n ′ experts, respectively:\nEQUATION"
+    },
+    "5_Linear_Mode_Connectivity_of_Mixture-of-Experts_Architectures": {
+      "5.1_Permutation_Invariance_Sufficiency_in_Linear_Mode_Connectivity_of_Mixture-of-Experts": "Theorems 4.1 and 4.2 show that the group action as in Equation (5) suffices to uncover LMC between two MoE models. Each group element g = (c W , c b , τ ) ∈ G(n) consists of two components: a translation term (c W , c b ) ∈ R d × R applied to the gating function, and a permutation τ that reorders both the experts and their associated gating scores. Observe that the translation component does not affect the barrier loss defined in Equation (1) . Indeed, for any h = (c W , c b , id n ) ∈ G(n)-with id n denoting the identity permutation in S n -the loss barrier remains unchanged:\nEQUATION\nThis invariance, established in Proposition D.1, indicates that only the permutation component τ influences LMC behavior. Combined with prior work showing that permutation symmetries are sufficient to induce LMC in standard neural networks [24, 28] , this suggests that analyzing permutations alone suffices to capture LMC in MoE models.",
+      "5.2_Permutation_Alignment_Algorithm_for_Mixture-of-Experts": "We propose the Permutation Alignment Algorithm to align MoEs. Inspired by the data-independent Weight Matching algorithm [3] , our method operates in the parameter space of two MoEs, enabling efficient permutation alignment tailored to MoE architectures in large-scale settings. One Billion Word Figure 1 : LMC curves for ViT (subplots 1-3) and GPT-2 (subplot 4) with a 4-expert MoE replacement at the first Transformer layer, on CIFAR-100, ImageNet21k CIFAR-100, ImageNet-1k, and One Billion Word datasets, respectively. Plots show consistent low-loss linear interpolation paths between fine-tuned models, indicating strong linear mode connectivity.",
+      "5.3_Weight_Matching_Algorithm": "We propose a Weight Matching Algorithm designed to align MoEs by addressing permutation invariance in expert ordering and internal parameters, as detailed in Algorithm 1. The algorithm employs gate-based and expert-based methods to optimally permute experts, with both performing comparably well in loss barrier evaluations during model interpolation (see Section 6.3). Operating solely in parameter space, the algorithm avoids data-dependent computational overhead, with a complexity of O(n 3 + nh 3 ), ensuring scalability for large-scale MoE alignment tasks. Lnaive-Ltop1 × 10 2 across layer placements, averaged over 10 checkpoint pairs. Please refer to Tables 8 and 9 for SMoE and DeepSeekMoE variants. Dataset Layer replaced Expert Weight Matching Gate Weight Matching Dataset Layer replaced Expert Weight Matching Gate Weight Matching Rank L Rank L Rank L Rank L CIFAR-10 1 2.50 ± 1.50 2.12 ± 0.42 3.00 ± 1.00 3.42 ± 0.55 CIFAR-100 1 2.80 ± 0.40 3.17 ± 0.25 2.90 ± 0.70 2.73 ± 1.03 4 2.10 ± 0.50 1.04 ± 0.32 2.60 ± 0.92 1.54 ± 0.44 4 3.60 ± 1.20 1.15 ± 0.55 2.70 ± 1.00 2.03 ± 0.93 8 2.70 ± 0.46 0.60 ± 0.27 2.90 ± 0.30 0.74 ± 0.17 8 3.30 ± 0.78 0.67 ± 0.14 3.20 ± 0.87 1.13 ± 0.55 12 4.60 ± 2.00 0.13 ± 0.05 3.80 ± 1.66 0.09 ± 0.03 12 3.40 ± 0.92 0.07 ± 0.03 4.20 ± 0.89 0.11 ± 0.04 Model 1 Model 2 0.5 1.0 1.5 2.0 2.5 Test Loss CIFAR-10 Naive Expert Gating Others Model 1 Model 2 0.06 0.08 0.10 0.12 0.14 CIFAR-10 Model 1 Model 2 1 2 3 4 5 CIFAR-100 Model 1 Model 2 0.4 0.5 0.6 0.7 0.8 0.9",
+      "_text": "This section outlines the theoretical foundations of LMC in MoE architectures. We first show that permutation invariance suffices to explain the existence of LMC in MoEs, then propose an algorithm to identify such permutations, which we later employ to empirically assess LMC in MoE models."
+    },
+    "6.2_Linear_Mode_Connectivity_Verification_Experimental_Objective.": "We analyze LMC in pretrained Transformer models where the FFN of a Transformer layer is replaced with an MoE. Our study focuses on two configurations: replacing the FFN in the first, last and all Transformer layers. For each configuration, we fine-tune three independently initialized models. We vary the number of experts (e.g., 2, 4, 6, 8, 16) and the number of Transformer layers to assess LMC under different architectural scales. LMC is evaluated by linearly interpolating between all model pairs using our proposed algorithm (Algorithm 1).\nResults. Table 1 shows results for first-layer MoE replacement, with full details for three MoE variants in Table 5 . The results for both the last-layer and all-layer configurations are provided in Appendix G.2 and G.3. LMC persists in all cases, but is less pronounced in the last layer due to greater stability and reduced influence on convergence. Early layers strongly shape the solution basin, making first-layer changes more revealing of connectivity. This depth-dependent effect is also demonstrated in Section 6.4 and Appendix E. Figure 1 presents representative LMC curves across our testing cases.\n6.3 Expert Order Matching Method Experimental Objective. We evaluate two Expert Order Matching methods (Step 1, Algorithm 1)-Expert Weight Matching and Gate Weight Matching-using 12-layer ViT models with 4-expert MoE replacements. The methods are assessed by ranking the selected permutation among all 24 possible expert permutations after Weight Matching (Step 2), with MoE integrations at layers 1, 4, 8, or 12 on CIFAR-10 and CIFAR-100, repeated five times. We report the rank and a scaled metric ",
+    "6.4_Ablation_Study_on_Number_of_Layers": "This study investigates the impact of the number of Transformer layers on LMC in MoE models on CIFAR-10. We evaluate models with 2, 4, and 6 layers, incorporating MoE at all possible layer positions. Employing Algorithm 1, we compute ratios for four metrics-loss barrier, loss Area Under the Curve (AUC, relative to the straight line connecting the metrics of the two endpoint models), accuracy barrier, and accuracy AUC, relative to linear interpolation-across five repeated experiments, evaluating ten model pairs per configuration. Table 3 reports results for MoE, showing significant reduction ratios across all configurations. Corresponding results for SMoE and DeepSeekMoE are provided in Table 11 , with detailed loss and accuracy metrics presented in Tables 12 and 13 .",
+    "7_Conclusion": "This paper presents a systematic analysis of LMC in MoE models. We show that functional equivalence via permutation symmetries is sufficient to construct low-loss linear paths-when they existbetween independently trained models. To enable this, we introduce an algorithm for identifying such permutations. Empirical evaluations confirm the presence of LMC across a wide range of MoE configurations-including dense, sparse, and shared-expert variants-under diverse hyperparameter settings and across datasets of varying scales and modalities. While our method does not provide theoretical bounds on the loss barrier, this remains a common limitation across prior LMC studies. Overall, our work offers a principled foundation for extending LMC analysis to other architectures, such as Transformers and State Space Models.\nTable of Notation R d d-dimensional Euclidean space S d-1 (d -1)-dimensional hypersphere ∥ • ∥ 2 Euclidean norm ∥ • ∥ F Frobenius norm E Expert function D Mixture-of-Experts with Dense gating S Mixture-of-Experts with Sparse gating Top-k(•) The Top-k map θ, θ ′ parameter of Expert functions Θ weight space of Expert functions ϕ, ϕ ′ parameter of Mixture-of-Experts Φ(n) weight space of Mixture-of-n-Experts S n permutation group of order n τ element of permutation group c W , c b elements of additive group of Euclidean space G, G(n) group act on weight space of Mixture-of-n-Experts Ω, Ω 1 , Ω 2 sets with specific purposes B barrier loss C, C ij cost matrix and its entries A, B, u, v weight and bias of Expert functions P permutation matrix ∂ boundary of a set in a topological space σ, ReLU rectifier activation function H space of holomorphic functions F space of meromorphic functions C[x], C[x 1 , . . . , x n ] polynomial ring in complex variables C(x), C(x 1 , . . . , x n ) field of rational functions p i , r i polynomial Appendix of \"On Linear Mode Connectivity of Mixture-of-Experts Architectures\" Table of Contents A On the Weight Spaces of Mixture-of-Experts Architecture A.1 Weight Space of Mixture-of-Experts . . . . . . . . . . . . . . . . . . . . . . . . . A.2 Group Action on Weight Spaces of Mixture-of-Experts . . . . . . . . . . . . . . . B Results on Mixture-of-Experts with Dense Gating B.1 A Structural Property of Neural Networks with ReLU Activation . . . . . . . . . . B.2 A Technical Lemma on Holomorphic Functions in C n . . . . . . . . . . . . . . . . B.3 Functional Equivalence in Mixture-of-Experts with Dense Gating . . . . . . . . . C Results on Mixture-of-Experts with Sparse Gating C.1 Strongly Distinctness Property . . . . . . . . . . . . . . . . . . . . . . . . . . . . C.2 Functional Equivalence in Mixture-of-Experts with Sparse Gating . . . . . . . . . D Technical Details for Sections 5 and 6 D.1 Proof for the Sufficiency of Permutation Invariance in LMC of MoE . . . . . . . . D.2 Proof of the Permutation-Invariant Property for Equation (11) . . . . . . . . . . . . D.3 Formal formulation of DeepSeekMoE . . . . . . . . . . . . . . . . . . . . . . . . E Impact of Feedforward Reinitialization on Pretrained Transformer Performance F Experimental Details and Hyperparameters G Experimental Results G.1 Verification of Linear Mode Connectivity across diverse configurations . . . . . . . G.1.1 Dense Mixture-of-Experts . . . . . . . . . . . . . . . . . . . . . . . . . . G.1.2 Sparse Mixture-of-Experts . . . . . . . . . . . . . . . . . . . . . . . . . . G.1.3 DeepSeek Mixture-of-Experts . . . . . . . . . . . . . . . . . . . . . . . . G.2 Linear Mode Connectivity Analysis: Last Layer . . . . . . . . . . . . . . . . . . . G.3 Linear Mode Connectivity Analysis: All Layer . . . . . . . . . . . . . . . . . . . G.4 Expert Matching Method . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . G.5 Ablation Study on Number of Layers . . . . . . . . . . . . . . . . . . . . . . . . ."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Complex Analysis",
+      "authors": [
+        {
+          "first": "Lars",
+          "middle": [
+            "V"
+          ],
+          "last": "Ahlfors",
+          "suffix": ""
+        }
+      ],
+      "year": 1979,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Git re-basin: Merging models modulo permutation symmetries",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Samuel K Ainsworth",
+          "suffix": ""
+        },
+        {
+          "first": "Siddhartha",
+          "middle": [],
+          "last": "Hayase",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Srinivasa",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Git Re-Basin: Merging Models modulo Permutation Symmetries",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Samuel",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ainsworth",
+          "suffix": ""
+        },
+        {
+          "first": "Siddhartha",
+          "middle": [],
+          "last": "Hayase",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Srinivasa",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Wasserstein barycenter-based model fusion and linear mode connectivity of neural networks",
+      "authors": [
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Kumar Akash",
+          "suffix": ""
+        },
+        {
+          "first": "Sixu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolás",
+          "middle": [],
+          "last": "García",
+          "suffix": ""
+        },
+        {
+          "first": "Trillos",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "For neural networks, function determines form",
+      "authors": [
+        {
+          "first": "Francesca",
+          "middle": [],
+          "last": "Albertini",
+          "suffix": ""
+        },
+        {
+          "first": "Eduardo",
+          "middle": [
+            "D"
+          ],
+          "last": "Sontag",
+          "suffix": ""
+        }
+      ],
+      "year": 1993,
+      "venue": "Neural networks"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Identifiability of discrete-time neural networks",
+      "authors": [
+        {
+          "first": "Francesca",
+          "middle": [],
+          "last": "Albertini",
+          "suffix": ""
+        },
+        {
+          "first": "Eduardo",
+          "middle": [
+            "D"
+          ],
+          "last": "Sontag",
+          "suffix": ""
+        }
+      ],
+      "year": 1993,
+      "venue": "Proc. European Control Conference"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "A convergence theory for deep learning via over-parameterization",
+      "authors": [
+        {
+          "first": "Zeyuan",
+          "middle": [],
+          "last": "Allen-Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zhao",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Dbpedia: A nucleus for a web of open data",
+      "authors": [
+        {
+          "first": "Sören",
+          "middle": [],
+          "last": "Auer",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Bizer",
+          "suffix": ""
+        },
+        {
+          "first": "Georgi",
+          "middle": [],
+          "last": "Kobilarov",
+          "suffix": ""
+        },
+        {
+          "first": "Jens",
+          "middle": [],
+          "last": "Lehmann",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Cyganiak",
+          "suffix": ""
+        },
+        {
+          "first": "Zachary",
+          "middle": [],
+          "last": "Ives",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "international semantic web conference"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Reconciling modern machinelearning practice and the classical bias-variance trade-off",
+      "authors": [
+        {
+          "first": "Mikhail",
+          "middle": [],
+          "last": "Belkin",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Hsu",
+          "suffix": ""
+        },
+        {
+          "first": "Siyuan",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Soumik",
+          "middle": [],
+          "last": "Mandal",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Network optimization: continuous and discrete models",
+      "authors": [
+        {
+          "first": "Dimitri",
+          "middle": [],
+          "last": "Bertsekas",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Weight-space symmetry in deep networks gives rise to permutation saddles, connected by equal-loss valleys across the loss landscape",
+      "authors": [
+        {
+          "first": "Johanni",
+          "middle": [],
+          "last": "Brea",
+          "suffix": ""
+        },
+        {
+          "first": "Berfin",
+          "middle": [],
+          "last": "Simsek",
+          "suffix": ""
+        },
+        {
+          "first": "Bernd",
+          "middle": [],
+          "last": "Illing",
+          "suffix": ""
+        },
+        {
+          "first": "Wulfram",
+          "middle": [],
+          "last": "Gerstner",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Language models are few-shot learners",
+      "authors": [
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Tom B Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Nick",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Melanie",
+          "middle": [],
+          "last": "Ryder",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [],
+          "last": "Subbiah",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "Arvind",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Pranav",
+          "middle": [],
+          "last": "Neelakantan",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Shyam",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Functional vs. parametric equivalence of relu networks",
+      "authors": [
+        {
+          "first": "Phuong",
+          "middle": [],
+          "last": "Bui",
+          "suffix": ""
+        },
+        {
+          "first": "Thi",
+          "middle": [],
+          "last": "Mai",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Lampert",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "8th International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "One billion word benchmark for measuring progress in statistical language modeling",
+      "authors": [
+        {
+          "first": "Ciprian",
+          "middle": [],
+          "last": "Chelba",
+          "suffix": ""
+        },
+        {
+          "first": "Tomas",
+          "middle": [],
+          "last": "Mikolov",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [],
+          "last": "Schuster",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Ge",
+          "suffix": ""
+        },
+        {
+          "first": "Thorsten",
+          "middle": [],
+          "last": "Brants",
+          "suffix": ""
+        },
+        {
+          "first": "Phillipp",
+          "middle": [],
+          "last": "Koehn",
+          "suffix": ""
+        },
+        {
+          "first": "Tony",
+          "middle": [],
+          "last": "Robinson",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "On the geometry of feedforward neural network error surfaces",
+      "authors": [
+        {
+          "first": "An",
+          "middle": [],
+          "last": "Mei Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Haw-Minn",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Hecht-Nielsen",
+          "suffix": ""
+        }
+      ],
+      "year": 1993,
+      "venue": "Neural computation"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Functions of One Complex Variable",
+      "authors": [
+        {
+          "first": "John",
+          "middle": [
+            "B"
+          ],
+          "last": "Conway",
+          "suffix": ""
+        }
+      ],
+      "year": 1978,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "On implementing 2d rectangular assignment algorithms",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "David F Crouse",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "IEEE Transactions on Aerospace and Electronic Systems"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Imagenet: A largescale hierarchical image database",
+      "authors": [
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        },
+        {
+          "first": "Li-Jia",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Bert: Pre-training of deep bidirectional transformers for language understanding",
+      "authors": [
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Devlin",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Wei",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Kenton",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Kristina",
+          "middle": [],
+          "last": "Toutanova",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "An image is worth 16x16 words: Transformers for image recognition at scale",
+      "authors": [
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "Dirk",
+          "middle": [],
+          "last": "Weissenborn",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "Mostafa",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Minderer",
+          "suffix": ""
+        },
+        {
+          "first": "Georg",
+          "middle": [],
+          "last": "Heigold",
+          "suffix": ""
+        },
+        {
+          "first": "Sylvain",
+          "middle": [],
+          "last": "Gelly",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Essentially no barriers in neural network energy landscape",
+      "authors": [
+        {
+          "first": "Felix",
+          "middle": [],
+          "last": "Draxler",
+          "suffix": ""
+        },
+        {
+          "first": "Kambis",
+          "middle": [],
+          "last": "Veschgini",
+          "suffix": ""
+        },
+        {
+          "first": "Manfred",
+          "middle": [],
+          "last": "Salmhofer",
+          "suffix": ""
+        },
+        {
+          "first": "Fred",
+          "middle": [],
+          "last": "Hamprecht",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 35th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Glam: Efficient scaling of language models with mixture-of-experts",
+      "authors": [
+        {
+          "first": "Nan",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Yanping",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "M"
+          ],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Tong",
+          "suffix": ""
+        },
+        {
+          "first": "Dmitry",
+          "middle": [],
+          "last": "Lepikhin",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhong",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Maxim",
+          "middle": [],
+          "last": "Krikun",
+          "suffix": ""
+        },
+        {
+          "first": "Yanqi",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Adams",
+          "middle": [
+            "Wei"
+          ],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Orhan",
+          "middle": [],
+          "last": "Firat",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Gradient descent finds global minima of deep neural networks",
+      "authors": [
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Haochuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Liwei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiyu",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "The role of permutation invariance in linear mode connectivity of neural networks",
+      "authors": [
+        {
+          "first": "Rahim",
+          "middle": [],
+          "last": "Entezari",
+          "suffix": ""
+        },
+        {
+          "first": "Hanie",
+          "middle": [],
+          "last": "Sedghi",
+          "suffix": ""
+        },
+        {
+          "first": "Olga",
+          "middle": [],
+          "last": "Saukh",
+          "suffix": ""
+        },
+        {
+          "first": "Behnam",
+          "middle": [],
+          "last": "Neyshabur",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "The Role of Permutation Invariance in Linear Mode Connectivity of Neural Networks",
+      "authors": [
+        {
+          "first": "Rahim",
+          "middle": [],
+          "last": "Entezari",
+          "suffix": ""
+        },
+        {
+          "first": "Hanie",
+          "middle": [],
+          "last": "Sedghi",
+          "suffix": ""
+        },
+        {
+          "first": "Olga",
+          "middle": [],
+          "last": "Saukh",
+          "suffix": ""
+        },
+        {
+          "first": "Behnam",
+          "middle": [],
+          "last": "Neyshabur",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Switch transformers: Scaling to trillion parameter models with simple and efficient sparsity",
+      "authors": [
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Fedus",
+          "suffix": ""
+        },
+        {
+          "first": "Barret",
+          "middle": [],
+          "last": "Zoph",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Recovering a feed-forward net from its output",
+      "authors": [
+        {
+          "first": "Charles",
+          "middle": [],
+          "last": "Fefferman",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Markel",
+          "suffix": ""
+        }
+      ],
+      "year": 1993,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Proving linear mode connectivity of neural networks via optimal transport",
+      "authors": [
+        {
+          "first": "Damien",
+          "middle": [],
+          "last": "Ferbach",
+          "suffix": ""
+        },
+        {
+          "first": "Baptiste",
+          "middle": [],
+          "last": "Goujaud",
+          "suffix": ""
+        },
+        {
+          "first": "Gauthier",
+          "middle": [],
+          "last": "Gidel",
+          "suffix": ""
+        },
+        {
+          "first": "Aymeric",
+          "middle": [],
+          "last": "Dieuleveut",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "The lottery ticket hypothesis: Finding sparse, trainable neural networks",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Frankle",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Carbin",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Linear mode connectivity and the lottery ticket hypothesis",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Frankle",
+          "suffix": ""
+        },
+        {
+          "first": "Karolina",
+          "middle": [],
+          "last": "Gintare",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Dziugaite",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Carbin",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Topology and geometry of half-rectified network optimization",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Daniel",
+          "suffix": ""
+        },
+        {
+          "first": "Freeman",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Joan",
+          "middle": [],
+          "last": "Bruna",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Loss Surfaces, Mode Connectivity, and Fast Ensembling of DNNs",
+      "authors": [
+        {
+          "first": "Timur",
+          "middle": [],
+          "last": "Garipov",
+          "suffix": ""
+        },
+        {
+          "first": "Pavel",
+          "middle": [],
+          "last": "Izmailov",
+          "suffix": ""
+        },
+        {
+          "first": "Dmitrii",
+          "middle": [],
+          "last": "Podoprikhin",
+          "suffix": ""
+        },
+        {
+          "first": "Dmitry",
+          "middle": [],
+          "last": "Vetrov",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Gordon",
+          "suffix": ""
+        },
+        {
+          "first": "Wilson",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Loss surfaces, mode connectivity, and fast ensembling of dnns",
+      "authors": [
+        {
+          "first": "Timur",
+          "middle": [],
+          "last": "Garipov",
+          "suffix": ""
+        },
+        {
+          "first": "Pavel",
+          "middle": [],
+          "last": "Izmailov",
+          "suffix": ""
+        },
+        {
+          "first": "Dmitrii",
+          "middle": [],
+          "last": "Podoprikhin",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Dmitry",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "G"
+          ],
+          "last": "Vetrov",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wilson",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Qualitatively characterizing neural network optimization problems",
+      "authors": [
+        {
+          "first": "Ian",
+          "middle": [
+            "J"
+          ],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "Oriol",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "M"
+          ],
+          "last": "Saxe",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Using mode connectivity for loss landscape analysis",
+      "authors": [
+        {
+          "first": "Akhilesh",
+          "middle": [],
+          "last": "Gotmare",
+          "suffix": ""
+        },
+        {
+          "first": "Nitish",
+          "middle": [],
+          "last": "Shirish Keskar",
+          "suffix": ""
+        },
+        {
+          "first": "Caiming",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Re-basin via implicit Sinkhorn differentiation",
+      "authors": [
+        {
+          "first": "Fidel",
+          "middle": [
+            "A"
+          ],
+          "last": "Guerrero Peña",
+          "suffix": ""
+        },
+        {
+          "first": "Rapela",
+          "middle": [],
+          "last": "Heitor",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Medeiros",
+          "suffix": ""
+        },
+        {
+          "first": "Masih",
+          "middle": [],
+          "last": "Dubail",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Aminbeidokhti",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Granger",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Pedersoli",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "On the algebraic structure of feedforward network weight spaces",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Hecht-Nielsen",
+          "suffix": ""
+        }
+      ],
+      "year": 1990,
+      "venue": "Advanced Neural Computers"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "The human knowledge compression contest",
+      "authors": [
+        {
+          "first": "Marcus",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Averaging weights leads to wider optima and better generalization",
+      "authors": [
+        {
+          "first": "Pavel",
+          "middle": [],
+          "last": "Izmailov",
+          "suffix": ""
+        },
+        {
+          "first": "Dmitrii",
+          "middle": [],
+          "last": "Podoprikhin",
+          "suffix": ""
+        },
+        {
+          "first": "Timur",
+          "middle": [],
+          "last": "Garipov",
+          "suffix": ""
+        },
+        {
+          "first": "Dmitry",
+          "middle": [],
+          "last": "Vetrov",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Gordon",
+          "suffix": ""
+        },
+        {
+          "first": "Wilson",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Adaptive mixtures of local experts",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [
+            "A"
+          ],
+          "last": "Jacobs",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "I"
+          ],
+          "last": "Jordan",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [
+            "J"
+          ],
+          "last": "Nowlan",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 1991,
+      "venue": "Neural computation"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Neural tangent kernel: Convergence and generalization in neural networks",
+      "authors": [
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Jacot",
+          "suffix": ""
+        },
+        {
+          "first": "Franck",
+          "middle": [],
+          "last": "Gabriel",
+          "suffix": ""
+        },
+        {
+          "first": "Clément",
+          "middle": [],
+          "last": "Hongler",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "A shortest augmenting path algorithm for dense and sparse linear assignment problems",
+      "authors": [
+        {
+          "first": "Roy",
+          "middle": [],
+          "last": "Jonker",
+          "suffix": ""
+        },
+        {
+          "first": "Ton",
+          "middle": [],
+          "last": "Volgenant",
+          "suffix": ""
+        }
+      ],
+      "year": 1988,
+      "venue": "DGOR/NSOR: Papers of the 16th Annual Meeting of DGOR in Cooperation with NSOR/Vorträge der 16. Jahrestagung der DGOR zusammen mit der NSOR"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Hierarchical mixtures of experts and the em algorithm",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Michael",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [
+            "A"
+          ],
+          "last": "Jordan",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Jacobs",
+          "suffix": ""
+        }
+      ],
+      "year": 1994,
+      "venue": "Neural computation"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Linear connectivity reveals generalization strategies",
+      "authors": [
+        {
+          "first": "Jeevesh",
+          "middle": [],
+          "last": "Juneja",
+          "suffix": ""
+        },
+        {
+          "first": "Rachit",
+          "middle": [],
+          "last": "Bansal",
+          "suffix": ""
+        },
+        {
+          "first": "Kyunghyun",
+          "middle": [],
+          "last": "Cho",
+          "suffix": ""
+        },
+        {
+          "first": "João",
+          "middle": [],
+          "last": "Sedoc",
+          "suffix": ""
+        },
+        {
+          "first": "Naomi",
+          "middle": [],
+          "last": "Saphra",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "On large-batch training for deep learning: Generalization gap and sharp minima",
+      "authors": [
+        {
+          "first": "Nitish",
+          "middle": [],
+          "last": "Shirish Keskar",
+          "suffix": ""
+        },
+        {
+          "first": "Dheevatsa",
+          "middle": [],
+          "last": "Mudigere",
+          "suffix": ""
+        },
+        {
+          "first": "Jorge",
+          "middle": [],
+          "last": "Nocedal",
+          "suffix": ""
+        },
+        {
+          "first": "Mikhail",
+          "middle": [],
+          "last": "Smelyanskiy",
+          "suffix": ""
+        },
+        {
+          "first": "Ping",
+          "middle": [],
+          "last": "Tak",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Accelerating training with neuron interaction and nowcasting networks",
+      "authors": [
+        {
+          "first": "Boris",
+          "middle": [],
+          "last": "Knyazev",
+          "suffix": ""
+        },
+        {
+          "first": "Abhinav",
+          "middle": [],
+          "last": "Moudgil",
+          "suffix": ""
+        },
+        {
+          "first": "Guillaume",
+          "middle": [],
+          "last": "Lajoie",
+          "suffix": ""
+        },
+        {
+          "first": "Eugene",
+          "middle": [],
+          "last": "Belilovsky",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Lacoste-Julien",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Learning multiple layers of features from tiny images",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Krizhevsky",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Explaining landscape connectivity of low-cost solutions for multilayer nets",
+      "authors": [
+        {
+          "first": "Rohith",
+          "middle": [],
+          "last": "Kuditipudi",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Holden",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiyuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Rong",
+          "middle": [],
+          "last": "Ge",
+          "suffix": ""
+        },
+        {
+          "first": "Sanjeev",
+          "middle": [],
+          "last": "Arora",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "The hungarian method for the assignment problem",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Harold W Kuhn",
+          "suffix": ""
+        }
+      ],
+      "year": 1955,
+      "venue": "Naval research logistics quarterly"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Functionally equivalent feedforward neural networks",
+      "authors": [
+        {
+          "first": "Vera",
+          "middle": [],
+          "last": "Kurkova",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Paul C Kainen",
+          "suffix": ""
+        }
+      ],
+      "year": 1994,
+      "venue": "Neural Computation"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Gradient-based learning applied to document recognition",
+      "authors": [
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        },
+        {
+          "first": "Léon",
+          "middle": [],
+          "last": "Bottou",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Haffner",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": "Proceedings of the IEEE"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Gshard: Scaling giant models with conditional computation and automatic sharding",
+      "authors": [
+        {
+          "first": "Dmitry",
+          "middle": [],
+          "last": "Lepikhin",
+          "suffix": ""
+        },
+        {
+          "first": "Hyoukjoong",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhong",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Dehao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Orhan",
+          "middle": [],
+          "last": "Firat",
+          "suffix": ""
+        },
+        {
+          "first": "Yanping",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Maxim",
+          "middle": [],
+          "last": "Krikun",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Zhifeng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghui",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Visualizing the loss landscape of neural nets",
+      "authors": [
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Gavin",
+          "middle": [],
+          "last": "Taylor",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Studer",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Goldstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Deepseek-v2: A strong, economical, and efficient mixture-of-experts language model",
+      "authors": [
+        {
+          "first": "Aixin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Bei",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Bingxuan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chenggang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Chengqi",
+          "middle": [],
+          "last": "Dengr",
+          "suffix": ""
+        },
+        {
+          "first": "Chong",
+          "middle": [],
+          "last": "Ruan",
+          "suffix": ""
+        },
+        {
+          "first": "Damai",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Daya",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Mechanistic mode connectivity",
+      "authors": [
+        {
+          "first": "Ekdeep",
+          "middle": [],
+          "last": "Singh Lubana",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "J"
+          ],
+          "last": "Bigelow",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [
+            "P"
+          ],
+          "last": "Dick",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Krueger",
+          "suffix": ""
+        },
+        {
+          "first": "Hidenori",
+          "middle": [],
+          "last": "Tanaka",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Analyzing monotonic linear interpolation in neural network loss landscapes",
+      "authors": [
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Lucas",
+          "suffix": ""
+        },
+        {
+          "first": "Juhan",
+          "middle": [],
+          "last": "Bae",
+          "suffix": ""
+        },
+        {
+          "first": "Stanislav",
+          "middle": [],
+          "last": "Michael R Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Fort",
+          "suffix": ""
+        },
+        {
+          "first": "Roger",
+          "middle": [],
+          "last": "Zemel",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Grosse",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Learning word vectors for sentiment analysis",
+      "authors": [
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Maas",
+          "suffix": ""
+        },
+        {
+          "first": "Raymond",
+          "middle": [
+            "E"
+          ],
+          "last": "Daly",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "T"
+          ],
+          "last": "Pham",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "Y"
+          ],
+          "last": "Ng",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Potts",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Proceedings of the 49th annual meeting of the association for computational linguistics: Human language technologies"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Building a large annotated corpus of english: The penn treebank",
+      "authors": [
+        {
+          "first": "Mitch",
+          "middle": [],
+          "last": "Marcus",
+          "suffix": ""
+        },
+        {
+          "first": "Beatrice",
+          "middle": [],
+          "last": "Santorini",
+          "suffix": ""
+        },
+        {
+          "first": "Mary",
+          "middle": [
+            "Ann"
+          ],
+          "last": "Marcinkiewicz",
+          "suffix": ""
+        }
+      ],
+      "year": 1993,
+      "venue": "Computational linguistics"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Pointer sentinel mixture models",
+      "authors": [
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Merity",
+          "suffix": ""
+        },
+        {
+          "first": "Caiming",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Towards understanding the role of over-parametrization in generalization of neural networks",
+      "authors": [
+        {
+          "first": "Zhiyuan",
+          "middle": [],
+          "last": "Behnam Neyshabur",
+          "suffix": ""
+        },
+        {
+          "first": "Srinadh",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Bhojanapalli",
+          "suffix": ""
+        },
+        {
+          "first": "Nathan",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Srebro",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF61",
+      "title": "What is being transferred in transfer learning?",
+      "authors": [
+        {
+          "first": "Hanie",
+          "middle": [],
+          "last": "Behnam Neyshabur",
+          "suffix": ""
+        },
+        {
+          "first": "Chiyuan",
+          "middle": [],
+          "last": "Sedghi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Sensitivity and generalization in neural networks: an empirical study",
+      "authors": [
+        {
+          "first": "Roman",
+          "middle": [],
+          "last": "Novak",
+          "suffix": ""
+        },
+        {
+          "first": "Yasaman",
+          "middle": [],
+          "last": "Bahri",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Daniel A Abolafia",
+          "suffix": ""
+        },
+        {
+          "first": "Jascha",
+          "middle": [],
+          "last": "Pennington",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Sohl-Dickstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Deep networks on toroids: removing symmetries reveals the structure of flat regions in the landscape geometry",
+      "authors": [
+        {
+          "first": "Fabrizio",
+          "middle": [],
+          "last": "Pittorino",
+          "suffix": ""
+        },
+        {
+          "first": "Antonio",
+          "middle": [],
+          "last": "Ferraro",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriele",
+          "middle": [],
+          "last": "Perugini",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Feinauer",
+          "suffix": ""
+        },
+        {
+          "first": "Carlo",
+          "middle": [],
+          "last": "Baldassi",
+          "suffix": ""
+        },
+        {
+          "first": "Riccardo",
+          "middle": [],
+          "last": "Zecchina",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Language models are unsupervised multitask learners",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Rewon",
+          "middle": [],
+          "last": "Child",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Luan",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "OpenAI blog"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Diverse weight averaging for out-of-distribution generalization",
+      "authors": [
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Rame",
+          "suffix": ""
+        },
+        {
+          "first": "Matthieu",
+          "middle": [],
+          "last": "Kirchmeyer",
+          "suffix": ""
+        },
+        {
+          "first": "Thibaud",
+          "middle": [],
+          "last": "Rahier",
+          "suffix": ""
+        },
+        {
+          "first": "Alain",
+          "middle": [],
+          "last": "Rakotomamonjy",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Gallinari",
+          "suffix": ""
+        },
+        {
+          "first": "Matthieu",
+          "middle": [],
+          "last": "Cord",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Real and Complex Analysis",
+      "authors": [
+        {
+          "first": "Walter",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        }
+      ],
+      "year": 1987,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Empirical analysis of the hessian of over-parametrized neural networks",
+      "authors": [
+        {
+          "first": "Levent",
+          "middle": [],
+          "last": "Sagun",
+          "suffix": ""
+        },
+        {
+          "first": "Utku",
+          "middle": [],
+          "last": "Evci",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Ugur Guney",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Dauphin",
+          "suffix": ""
+        },
+        {
+          "first": "Leon",
+          "middle": [],
+          "last": "Bottou",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Simultaneous linear connectivity of neural networks modulo permutation",
+      "authors": [
+        {
+          "first": "Ekansh",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "Devin",
+          "middle": [],
+          "last": "Kwok",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Denton",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Daniel",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        },
+        {
+          "first": "Gintare",
+          "middle": [],
+          "last": "Rolnick",
+          "suffix": ""
+        },
+        {
+          "first": "Dziugaite",
+          "middle": [],
+          "last": "Karolina",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Outrageously large neural networks: The sparsely-gated mixture-of-experts layer",
+      "authors": [
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Azalia",
+          "middle": [],
+          "last": "Mirhoseini",
+          "suffix": ""
+        },
+        {
+          "first": "Kelsey",
+          "middle": [],
+          "last": "Maziarz",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Davis",
+          "suffix": ""
+        },
+        {
+          "first": "Quoc",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Dean",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Landscape connectivity and dropout stability of sgd solutions for over-parameterized neural networks",
+      "authors": [
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Shevchenko",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Mondelli",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "Model fusion via optimal transport",
+      "authors": [
+        {
+          "first": "Pal",
+          "middle": [],
+          "last": "Sidak",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Jaggi",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF72",
+      "title": "Model Fusion via Optimal Transport",
+      "authors": [
+        {
+          "first": "Pal",
+          "middle": [],
+          "last": "Sidak",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Jaggi",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF73",
+      "title": "Do deep neural network solutions form a star domain",
+      "authors": [
+        {
+          "first": "Ankit",
+          "middle": [],
+          "last": "Sonthalia",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Rubinstein",
+          "suffix": ""
+        },
+        {
+          "first": "Ehsan",
+          "middle": [],
+          "last": "Abbasnejad",
+          "suffix": ""
+        },
+        {
+          "first": "Seong Joon",
+          "middle": [],
+          "last": "Oh",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF74",
+      "title": "Complex Analysis, volume 2 of Princeton Lectures in Analysis",
+      "authors": [
+        {
+          "first": "Elias",
+          "middle": [
+            "M"
+          ],
+          "last": "Stein",
+          "suffix": ""
+        },
+        {
+          "first": "Rami",
+          "middle": [],
+          "last": "Shakarchi",
+          "suffix": ""
+        }
+      ],
+      "year": 2003,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF75",
+      "title": "How to train your vit? data, augmentation, and regularization in vision transformers",
+      "authors": [
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Steiner",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Wightman",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF76",
+      "title": "Optimizing mode connectivity via neuron alignment",
+      "authors": [
+        {
+          "first": "Norman",
+          "middle": [],
+          "last": "Tatro",
+          "suffix": ""
+        },
+        {
+          "first": "Pin-Yu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Payel",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Melnyk",
+          "suffix": ""
+        },
+        {
+          "first": "Prasanna",
+          "middle": [],
+          "last": "Sattigeri",
+          "suffix": ""
+        },
+        {
+          "first": "Rongjie",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF77",
+      "title": "Monomial matrix group equivariant neural functional networks",
+      "authors": [
+        {
+          "first": "Thieu",
+          "middle": [],
+          "last": "Hoang Tran",
+          "suffix": ""
+        },
+        {
+          "first": "Tho",
+          "middle": [],
+          "last": "Vo",
+          "suffix": ""
+        },
+        {
+          "first": "An",
+          "middle": [],
+          "last": "Huu",
+          "suffix": ""
+        },
+        {
+          "first": "Tan",
+          "middle": [],
+          "last": "Nguyen The",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF79",
+      "title": "Spherical tree-sliced Wasserstein distance",
+      "authors": [
+        {
+          "first": "Thanh",
+          "middle": [],
+          "last": "Hoang V Tran",
+          "suffix": ""
+        },
+        {
+          "first": "Minh-Khoi",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nguyen-Nhat",
+          "suffix": ""
+        },
+        {
+          "first": "Trang",
+          "middle": [],
+          "last": "Huyen",
+          "suffix": ""
+        },
+        {
+          "first": "Tam",
+          "middle": [],
+          "last": "Pham",
+          "suffix": ""
+        },
+        {
+          "first": "Tan",
+          "middle": [
+            "Minh"
+          ],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "The Thirteenth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF80",
+      "title": "Distance-based tree-sliced Wasserstein distance",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Hoang",
+          "suffix": ""
+        },
+        {
+          "first": "Minh-Khoi",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nguyen-Nhat",
+          "suffix": ""
+        },
+        {
+          "first": "Trang",
+          "middle": [],
+          "last": "Huyen",
+          "suffix": ""
+        },
+        {
+          "first": "Thanh",
+          "middle": [],
+          "last": "Pham",
+          "suffix": ""
+        },
+        {
+          "first": "Tam",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "Tan",
+          "middle": [
+            "Minh"
+          ],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "The Thirteenth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF81",
+      "title": "Tree-sliced Wasserstein distance: A geometric perspective",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Hoang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "Trang",
+          "middle": [],
+          "last": "Huyen",
+          "suffix": ""
+        },
+        {
+          "first": "Tho",
+          "middle": [],
+          "last": "Pham",
+          "suffix": ""
+        },
+        {
+          "first": "Tran",
+          "middle": [],
+          "last": "Huu",
+          "suffix": ""
+        },
+        {
+          "first": "Minh-Khoi",
+          "middle": [],
+          "last": "Nguyen-Nhat",
+          "suffix": ""
+        },
+        {
+          "first": "Thanh",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "Tam",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "Tan",
+          "middle": [
+            "Minh"
+          ],
+          "last": "Nguyen",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Forty-second International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF82",
+      "title": "A clifford algebraic approach to e (n)-equivariant high-order graph neural networks",
+      "authors": [
+        {
+          "first": "Hoang-Viet",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "Thieu",
+          "middle": [
+            "N"
+          ],
+          "last": "Vo",
+          "suffix": ""
+        },
+        {
+          "first": "Tho",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Tran",
+          "middle": [],
+          "last": "Huu",
+          "suffix": ""
+        },
+        {
+          "first": "Tan",
+          "middle": [
+            "Minh"
+          ],
+          "last": "Nguyen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF83",
+      "title": "Tree-sliced Wasserstein distance with nonlinear projection",
+      "authors": [
+        {
+          "first": "Thanh",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Hoang",
+          "suffix": ""
+        },
+        {
+          "first": "Thanh",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "Trang",
+          "middle": [],
+          "last": "Huyen",
+          "suffix": ""
+        },
+        {
+          "first": "Laurent",
+          "middle": [],
+          "last": "Pham",
+          "suffix": ""
+        },
+        {
+          "first": "Tam",
+          "middle": [],
+          "last": "Ghaoui",
+          "suffix": ""
+        },
+        {
+          "first": "Tan",
+          "middle": [
+            "Minh"
+          ],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Forty-second International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF84",
+      "title": "Equivariant neural functional networks for transformers",
+      "authors": [
+        {
+          "first": "Thieu",
+          "middle": [
+            "N"
+          ],
+          "last": "Viet-Hoang Tran",
+          "suffix": ""
+        },
+        {
+          "first": "An",
+          "middle": [],
+          "last": "Vo",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nguyen The",
+          "suffix": ""
+        },
+        {
+          "first": "Tran",
+          "middle": [],
+          "last": "Tho",
+          "suffix": ""
+        },
+        {
+          "first": "Minh-Khoi",
+          "middle": [],
+          "last": "Huu",
+          "suffix": ""
+        },
+        {
+          "first": "Thanh",
+          "middle": [],
+          "last": "Nguyen-Nhat",
+          "suffix": ""
+        },
+        {
+          "first": "Duy-Tung",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "Tan",
+          "middle": [
+            "Minh"
+          ],
+          "last": "Pham",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF85",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Niki",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Llion",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Lukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Illia",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF86",
+      "title": "Spurious valleys in one-hidden-layer neural network optimization landscapes",
+      "authors": [
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Venturi",
+          "suffix": ""
+        },
+        {
+          "first": "Afonso",
+          "middle": [
+            "S"
+          ],
+          "last": "Bandeira",
+          "suffix": ""
+        },
+        {
+          "first": "Joan",
+          "middle": [],
+          "last": "Bruna",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF87",
+      "title": "Optimal Transport: Old and New",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Villani",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF88",
+      "title": "What can linear interpolation of neural network loss landscapes tell us?",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tiffany",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Vlaar",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Frankle",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF89",
+      "title": "Equivariant polynomial functional networks",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Thieu",
+          "suffix": ""
+        },
+        {
+          "first": "Viet-Hoang",
+          "middle": [],
+          "last": "Vo",
+          "suffix": ""
+        },
+        {
+          "first": "Tho",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "Tran",
+          "middle": [],
+          "last": "Huu",
+          "suffix": ""
+        },
+        {
+          "first": "An",
+          "middle": [],
+          "last": "Nguyen The",
+          "suffix": ""
+        },
+        {
+          "first": "Thanh",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "Minh-Khoi",
+          "middle": [],
+          "last": "Nguyen-Nhat",
+          "suffix": ""
+        },
+        {
+          "first": "Duy-Tung",
+          "middle": [],
+          "last": "Pham",
+          "suffix": ""
+        },
+        {
+          "first": "Tan",
+          "middle": [
+            "Minh"
+          ],
+          "last": "Nguyen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF90",
+      "title": "Model soups: averaging weights of multiple fine-tuned models improves accuracy without increasing inference time",
+      "authors": [
+        {
+          "first": "Mitchell",
+          "middle": [],
+          "last": "Wortsman",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Ilharco",
+          "suffix": ""
+        },
+        {
+          "first": "Ya",
+          "middle": [],
+          "last": "Samir",
+          "suffix": ""
+        },
+        {
+          "first": "Rebecca",
+          "middle": [],
+          "last": "Gadre",
+          "suffix": ""
+        },
+        {
+          "first": "Raphael",
+          "middle": [],
+          "last": "Roelofs",
+          "suffix": ""
+        },
+        {
+          "first": "Ari",
+          "middle": [
+            "S"
+          ],
+          "last": "Gontijo-Lopes",
+          "suffix": ""
+        },
+        {
+          "first": "Hongseok",
+          "middle": [],
+          "last": "Morcos",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Namkoong",
+          "suffix": ""
+        },
+        {
+          "first": "Yair",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Carmon",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kornblith",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF91",
+      "title": "A compact representation for bayesian neural networks by removing permutation symmetry",
+      "authors": [
+        {
+          "first": "Weiyang",
+          "middle": [],
+          "last": "Tim Z Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bamler",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF92",
+      "title": "On convexity and linear mode connectivity in neural networks",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Yunis",
+          "suffix": ""
+        },
+        {
+          "first": "Kshitij",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Pedro",
+          "middle": [],
+          "last": "Patel",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Henrique Pamplona",
+          "suffix": ""
+        },
+        {
+          "first": "Gal",
+          "middle": [],
+          "last": "Savarese",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Vardi",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Frankle",
+          "suffix": ""
+        },
+        {
+          "first": "Karen",
+          "middle": [],
+          "last": "Walter",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Livescu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Maire",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "OPT 2022: Optimization for Machine Learning (NeurIPS 2022 Workshop)"
+    },
+    {
+      "id": "BIBREF93",
+      "title": "Character-level convolutional networks for text classification",
+      "authors": [
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Junbo",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF94",
+      "title": "Bridging mode connectivity in loss landscapes and adversarial robustness",
+      "authors": [
+        {
+          "first": "Pu",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Pin-Yu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Payel",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "Karthikeyan",
+          "middle": [],
+          "last": "Natesan Ramamurthy",
+          "suffix": ""
+        },
+        {
+          "first": "Xue",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF95",
+      "title": "Going beyond linear mode connectivity: The layerwise linear feature connectivity",
+      "authors": [
+        {
+          "first": "Zhanpeng",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Yongyi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaojiang",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Junchi",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    }
+  ]
+}

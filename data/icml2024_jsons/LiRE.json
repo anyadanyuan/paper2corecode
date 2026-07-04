@@ -1,0 +1,2628 @@
+{
+  "paper_id": "LiRE",
+  "title": "Listwise Reward Estimation for Offline Preference-based Reinforcement Learning",
+  "authors": [
+    {
+      "first": "Heewoong",
+      "middle": [],
+      "last": "Choi",
+      "affiliation": {}
+    },
+    {
+      "first": "Sangwon",
+      "middle": [],
+      "last": "Jung",
+      "affiliation": {}
+    },
+    {
+      "first": "Hongjoon",
+      "middle": [],
+      "last": "Ahn",
+      "affiliation": {}
+    },
+    {
+      "first": "Taesup",
+      "middle": [],
+      "last": "Moon",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "In Reinforcement Learning (RL), designing precise reward functions remains to be a challenge, particularly when aligning with human intent. Preference-based RL (PbRL) was introduced to address this problem by learning reward models from human feedback. However, existing PbRL methods have limitations as they often overlook the second-order preference that indicates the relative strength of preference. In this paper, we propose Listwise Reward Estimation (LiRE), a novel approach for offline PbRL that leverages secondorder preference information by constructing a Ranked List of Trajectories (RLT), which can be efficiently built by using the same ternary feedback type as traditional methods. To validate the effectiveness of LiRE, we propose a new offline PbRL dataset that objectively reflects the effect of the estimated rewards. Our extensive experiments on the dataset demonstrate the superiority of LiRE, i.e., outperforming state-of-the-art baselines even with modest feedback budgets and enjoying robustness with respect to the number of feedbacks and feedback noise. Our code is available",
+  "body": {
+    "2.1._Offline_Preference-based_RL": "Due to the difficulty of defining rewards in reinforcement learning (Sutton & Barto, 2018; McKinney et al., 2023) , PbRL uses comparison information between trajectories to learn a reward function (Christiano et al., 2017; Fürnkranz et al., 2012; Wilson et al., 2012; Akrour et al., 2012; Ouyang et al., 2022; Stiennon et al., 2020) . However, the human preference feedback required for PbRL is expensive to obtain. Thus, several PbRL approaches have been devised to reduce the number of expensive human feedbacks, such as using additional expert demonstrations (Ibarz et al., 2018) , meta-learning (Hejna III & Sadigh, 2023) , semi-supervised learning or data augmentation (Park et al., 2021) , unsupervised pre-training (Lee et al., 2021b) , exploration based on reward uncertainty (Liang et al., 2021) , and using sequen-tial preference ranking (Hwang et al., 2023) . Offline PbRL assumes a more challenging problem setting where agents cannot interact with the environment, unlike online PbRL where preference feedback can be obtained while interacting with the environment.\nIn offline PbRL, the two kinds of data are provided: offline data obtained from an unknown policy and preference feedbacks on the pairs of trajectories. Also, traditional offline PbRL methods have two phases; they train a reward model using the preference feedback and then perform RL with the trained reward model without interacting with the environment. On the other hand, recent works propose performing offline PbRL without the reward model by directly optimizing policies (An et al., 2023; Kang et al., 2023) , or learning state-action value function or regret from preference labels (Hejna & Sadigh, 2024; Hejna et al., 2023) . However, due to the constraint of no interaction with the environment, obtaining the most informative preference feedback from the offline dataset is as important as developing a new training method without the reward model or designing the structure of the reward model well (e.g., non-Markovian reward modeling (Kim et al., 2022) ). An active query selection method has been proposed to obtain informative preference pairs (Shin et al., 2022) , but their method did not attempt to obtain second-order preference.\nMost offline PbRL papers have validated their algorithms on the D4RL dataset (Fu et al., 2020 ). However, it has been shown that typical offline RL algorithms can produce good policies on D4RL even with a completely wrong reward (e.g., zero, random, negative reward) due to the pessimism and survival instinct of offline RL algorithms (Shin et al., 2022; Li et al., 2023) . Hence, to properly evaluate how well offline PbRL algorithms learn the reward model, we need to validate them on a new dataset, on which the policy cannot be easily learned due to survival instincts.",
+    "2.2._Second-order_Preference_Feedback": "While typical approaches in PbRL only focus on the firstorder preference (i.e., ternary labels including bad, equal, and good), several approaches in the NLP and RL domains have recently been proposed to utilize second-order preference about the relative difference between preferences.\nOne approach is to directly obtain a relative rating for each trajectory pair (e.g., significantly better or slightly better) or an absolute rating for each trajectory (e.g., very good or good) (Touvron et al., 2023; Cao et al., 2021; White et al., 2023) . However, the more granular the preferences are, the more expensive they are than just ternary labels.\nThere is a rich Learning-to-Rank literature that learns the ranking given second-order preference feedback in the form of absolute ratings (Burges et al., 2005; Xia et al., 2008; Xu & Li, 2007; Swezey et al., 2021) , but they do not address how to obtain second-order preference only with ternary labels. Another approach is to obtain the second-order preference between samples from a fully-ranked list for multiple trajectories (Chen et al., 2022; Palan et al., 2019; Zhu et al., 2023; Song et al., 2024; Myers et al., 2022; Bıyık et al., 2019; Brown et al., 2019) . However, they do not address how to efficiently obtain the fully-ranked list in terms of the number of feedbacks. Since naively constructing a fullyranked list would require a large number of feedbacks that increase quadratically with the number of trajectories, developing a more efficient list construction method is crucial.\nAccordingly, some recent studies have developed how to obtain partially-ranked lists that only know the rankings among a few trajectories (Zhao et al., 2023; Hwang et al., 2023) . Perhaps, one of the closest research to ours is Sequential Preference Ranking (SeqRank) (Hwang et al., 2023) , which sequentially collects the preference feedback between a newly observed segment and a previously collected segment. However, since their method builds partially-ranked lists rather than fully-ranked lists, the short length of the lists limits the ability to fully utilize second-order information.",
+    "5.4.4._IMPACT_OF_FEEDBACK_GRANULARITY": "In Figure 5 , we compare the performance of LiRE based on the threshold that determines the tie between the segments. Specifically, we adjust the threshold value for the reward difference that indicates whether two segments are equally preferred. Namely, a higher threshold value means that more segment pairs are labeled as equally preferred, result- constructing RLT and leveraging second-order preference is effective for locomotion as well as manipulation tasks.",
+    "5.1._Settings": "Dataset Previous offline PbRL papers are evaluated mainly on D4RL (Fu et al., 2020) , but D4RL has the problem that RL performance can be high even when wrong rewards are used (Li et al., 2023; Shin et al., 2022) . To that end, we newly collect the offline PbRL dataset with Meta-World (Yu et al., 2020) and DeepMind Control Suite (DMControl) (Tassa et al., 2018) following the protocols of previous work: medium-replay dataset, e.g., (Yu et al., 2021a; Mazoure et al., 2023; Gulcehre et al., 2020) and medium-expert dataset, e.g., (Yu et al., 2021b; Sinha et al., 2022; Hejna & Sadigh, 2024; Li et al., 2023) .\nThe medium-replay dataset collects data from replay buffers used in online RL algorithms, such as the SAC (Haarnoja et al., 2018) , and the medium-expert dataset collects trajectories generated by the noisy perturbed expert policy. We experiment on both datasets while our main analyses are done on medium-replay; see Appendix C.2 for complete details on constructing them. The prior works (Shin et al., 2022; Zhang, 2023) have created datasets that consider survival instinct. However, their dataset was evaluated with only 100 or fewer preference feedbacks, whereas we use 500, 1000, or more feedbacks.\nBaselines In our experiments, we consider five baselines: Markovian Reward (MR), Preference Transformer (PT) (Kim et al., 2022) , Offline Preference-based Reward Learning (OPRL) (Shin et al., 2022) , Inverse Preference Learning (IPL) (Hejna & Sadigh, 2024) , and Direct Preference-based Policy Optimization (DPPO) (An et al., 2023) . MR refers to the method trained with the MLP layer with the Markovian reward assumption, which is the baseline model used in PT. OPRL learns multiple reward models to select the query actively with the highest preference disagreement. Lastly, IPL and DPPO are algorithms that learn policies without the reward model.\nAll the above five baselines belong to pairwise PbRL because they all train based on the BT model given first-order preference feedbacks sampled as independent pairs. In addition to pairwise PbRL, we also compare with the sequential pairwise comparison method proposed by SeqRank (Hwang et al., 2023) .\nImplementation details For LiRE, we use the linear score function and set Q = 100 as the default feedback budget for each list. Therefore, if the total number of feedbacks is 500, then five RLTs will be constructed. All baseline methods, including ours, can be applied to any offline RL algorithm, but, as in previous works, we use IQL (Kostrikov et al., 2021) . The hyperparameters for each algorithm and the criteria for the equally preferred label threshold of scripted teacher can be found in the Appendix C.4.\nTable 2: Average success rates on medium-replay dataset over six random seeds. We use 500 and 1000 preference feedbacks and report the average performance of the last five trained policies. The yellow and gray shading represent the best and second-best performances, respectively.\n# of feedbacks Algorithm button-press -topdown box-close dial-turn sweep button-press -topdown-wall sweep-into drawer-open lever-pull -IQL with GT rewards 88.33 ± 4.76 93.40 ± 3.10 75.40 ± 5.47 98.33 ± 1.87 56.27 ± 6.32 78.80 ± 7.96 100.00 ± 0.00 98.47 ± 1.77 500 MR 9.60 ± 5.74 10.33 ± 8.23 50.20 ± 8.51 79.80 ± 13.36 0.13 ± 0.50 24.80 ± 5.28 98.07 ± 3.20 50.53 ± 8.55 PT (Kim et al., 2022) 22.87 ± 9.06 0.33 ± 1.16 68.67 ± 12.39 43.07 ± 24.57 0.87 ± 1.43 20.53 ± 8.26 88.73 ± 11.64 82.40 ± 22.69 OPRL (Shin et al., 2022) 12.13 ± 5.75 4.73 ± 3.24 54.33 ± 11.47 94.13 ± 5.95 0.20 ± 0.60 25.87 ± 8.58 94.13 ± 6.41 54.67 ± 12.79 DPPO (An et al., 2023) 3.93 ± 4.34 10.20 ± 11.47 26.67\n± 22.23 10.47 ± 15.84 0.80 ± 1.51 23.07 ± 7.02 35.93 ± 11.18 10.13 ± 12.19 IPL (Hejna & Sadigh, 2024) 34.73 ± 13.92 5.93 ± 5.81 31.53 ± 12.50 27.20 ± 23.81 8.93 ± 9.84 32.20 ± 7.35 19.00 ± 13.63 31.20 ± 15.76 SeqRank (Hwang et al., 2023) 17.6 ± 11.94 13.2 ± 12.72 65.6 ± 12.84 83.4 ± 9.76 1.73 ± 1.98 25.67 ± 11.02 99.53 ± 0.36 95.67 ± 4.04 LiRE (ours) 67.20 ± 18.97 51.53 ± 18.48 79.07 ± 10.96 77.53 ± 10.50 79.13 ± 15.19 49.13 ± 15.85 99.40 ± 1.65 95.67 ± 6.26 1000 MR 9.27 ± 5.30 17.07 ± 9.56 59.07 ± 7.57 90.80 ± 9.74 0.60 ± 1.87 26.07 ± 8.57 96.47 ± 4.02 50.87 ± 10.89 PT (Kim et al., 2022) 18.27 ± 10.62 2.27 ± 2.86 68.80 ± 5.50 29.13 ± 14.55 2.13 ± 2.96 20.27 ± 7.84 95.40 ± 7.27 72.93 ± 10.16 OPRL (Shin et al., 2022) 11.00 ± 7.84 15.07 ± 11.19 51.33 ± 10.08 85.53 ± 5.43 0.33 ± 0.75 28.27 ± 6.40 99.20 ± 1.42 53.20 ± 6.67 DPPO (An et al., 2023) 3.20 ± 3.04 9.33 ± 9.60 36.40 ± 21.95 8.73 ± 16.37 0.27 ± 0.85 23.33 ± 7.80 36.47 ± 7.30 8.53 ± 9.96 IPL (Hejna & Sadigh, 2024) 36.67 ± 17.40 6.73 ± 8.41 43.93 ± 13.37 38.33 ± 24.87 14.07 ± 11.47 30.40 ± 7.74 28.53 ± 18.37 40.40 ± 17.38 SeqRank (Hwang et al., 2023) 13. ",
+    "7._Concluding_Remarks": "In this paper, we propose a novel Listwise Reward Estimation (LiRE) method for offline preference-based RL. While obtaining second-order preference from a traditional framework is challenging, we demonstrate that LiRE efficiently exploits second-order preference by constructing an RLT using ordinary, simple ternary feedback. Our experiments demonstrate the significant performance gains achieved by LiRE on our new offline PbRL dataset, specifically designed to objectively reflect the effect of estimated rewards. Notably, the reward model trained with LiRE outperforms traditional pairwise feedback methods, even with fewer preference feedbacks, highlighting the importance of second-order preference information. Moreover, our findings suggest that constructing ranked lists can be straightforward without complex second-order preference feedback, indicating the broad applicability of LiRE to more challenging tasks and real-world applications.",
+    "5.3.2._EFFECT_OF_RLT_AND_SCORE_FUNCTION_ON_REWARD_ESTIMATION": "We examine the estimated reward values of the learned reward models. . Namely, by constructing the RLT, LiRE exploits the second-order preference, and the high and low reward segments are more clearly distinguished by the reward estimates than vanilla MR. Additionally, when training the reward model with the linear score function, there is a larger gap in the estimated rewards within the reward region for higher GT rewards, as shown in Figure 2(d ). We speculate that using the linear score function and RLT makes the estimated reward discern the optimal and suboptimal segments (with respect to the GT rewards) more clearly, hence, the policy learned with the estimated reward turns out to perform much better.",
+    "5.2._Evaluation_on_the_Offline_PbRL_Benchmark": "We compare LiRE with the baselines mainly on the Meta-World medium-replay dataset. Table 2 summarizes the results of offline RL performance using ground-truth (GT) rewards and preference feedbacks respectively. For many tasks, such as button-press-topdown and box-close, MR performs poorly compared to training with GT rewards, even with 1000 preference feedbacks. The problem of poor performance remains even if we replace the reward model with a more complex transformer architecture, PT. PT improves performance in dial-turn and lever-pull tasks, but for other tasks, the performance worsens. OPRL generally performs better than MR due to the increased consistency of the reward models, but the performance improvement is small. Lastly, DPPO and IPL perform better than MR on only a few tasks. We note that existing offline PbRL methods are rarely better than MR when validated on our new dataset.\nIn contrast, LiRE shows a significant performance improvement over MR except for the sweep task. We demonstrate the importance of RLT and the linear score function by achieving high performance even when compared to SeqRank, which is also not an independent pairwise method. In addition, policies trained with preference data outperform policies trained with GT rewards on the buttonpress-topdown-wall task, suggesting that reward models trained with preference data may be more effective, as also reported in prior works (Christiano et al., 2017; Kim et al., 2022; An et al., 2023) . The results of the Meta-World medium-expert dataset and full learning curves are shown in the Appendix A.",
+    "4.1._Constructing_a_Ranked_List_of_Trajectories_(RLT)": "Our goal is to obtain an RLT in which the segments σ are ordered by their level of preference. We represent RLT, L, in the following form:\nL = [g 1 ≺ g 2 ≺ • • • ≺ g s ], in which g i = {σ i1 , • • • , σ i k } is a group of segments with\nthe same preference level and s is the number of groups in the list. Namely, if m > n, we note any segment σ i ∈ g m is preferred over any segment σ j ∈ g n .\nSince we assume to have exactly the same type of ternary feedback defined in Section 3, we cannot build RLT by obtaining the listwise feedback at once. Hence, we construct by sequentially obtaining the labels as we describe below.\nWe start with an initial list [{σ 1 }] by selecting a random segment σ 1 from D s . We then repeat the process of sequentially sampling the new segment σ 2 , σ 3 , • • • ∈ D s and placing it in the appropriate position in the list until the feedback budget limit is reached. To place a newly sampled σ i in the RLT, we compare it with a segment σ k ∈ g m for some group g m in the list and obtain the ternary preference feedback.\nDepending on the feedback, we proceed as follows:\nTable 1 : Feedback efficiency and sample diversity of independent pairwise sampling, SeqRank, and RLT.\nIndependent SeqRank RLT Feedback efficiency 1 1.392 O(M/ log M ) Sample diversity 2 O(1) O(1/ log M ) • If σ i = σ k , add σ i to the group g m . • If σ i ≺ σ k , find the position within g 1 , • • • , g m-1 . • If σ i ≻ σ k , find the position within g m+1 , • • • , g s .\nFor the latter two cases, we use a binary search so that we can recursively find the correct group for each segment. Namely, the RLT construction algorithm is based on a binary insertion sort and the pseudocode is summarized in Algorithm 1 (Appendix). We note that while we can also adopt merge sort or quick sort to construct an RLT after collecting multiple segments, if we already have a partially constructed RLT, binary insertion sort would be more feedback-efficient.",
+    "5.4.6._COMPATIBILITY_WITH_OTHER_METHODS": "To check the compatibility of LiRE with other methods, we tested the performance of LiRE when combined with OPRL and PT, respectively. First, to apply OPRL and LiRE simultaneously, we trained a reward model each time an RLT was newly constructed, and then actively sampled based on the disagreement of the reward models (following the method of OPRL) when constructing the next RLT. In Figure 6(a), we observe that LiRE+OPRL outperforms LiRE in sweep-into and lever-pull tasks but performs worse in button-press-topdown task. This discrepancy suggests that while the OPRL method enhances the consistency of the reward model, it may lead to oversampling similar segments that are challenging to distinguish depending on the task. Second, as shown in Figure 6 (b), LiRE does not necessarily gain improvements when combined with PT. That is, since PT was originally designed to capture temporal dependencies of segments in reward modeling, it seems to struggle in accurately capturing the second-order preference information from RLT possibly due to overfitting to the sequence of past segments.",
+    "4.2._Listwise_Reward_Estimation_from_RLT": "Once the RLT is constructed, we construct the preference dataset,\nD l = {(σ i1 , σ i2 , l i )} K\ni=1 with all the pairs we can obtain from the RLT. Specifically, when σ i1 ∈ g m and σ i2 ∈ g n , the preference label l i is as follows: l i = 0.5 if m = n, l i = 0 if m > n, and l i = 1 if m < n. The key difference from traditional pairwise PbRL methods is that, instead of independently sampling segment pairs, we derive preference pairs from the RLT. To compare with the independent sampling, suppose that the RLT has segments with the relationship, σ a < σ b < σ c . If we sample all pairs from the RLT, then (σ a , σ b , 1), (σ b , σ c , 1), (σ a , σ c , 1) ∈ D l . From these preference pairs, it can be inferred that the degree to which σ c is preferred over σ a is stronger than the degree to which σ c is preferred over σ b . Consequently, the reward model trained with pairwise loss in (2) can learn second-order preference between each pair of segments. In contrast, the reward model learned from independent sampling cannot learn second-order preference because each segment is not compared to multiple other segments.\nWe use pairwise loss in our main experiments, but we can also train the reward model with listwise loss since the segments are ranked in the RLT. To train the reward model with listwise loss, we assume the segments follow a Plackett-Luce model (Plackett, 1975) which defines the probability distribution of objects in a ranked list. We discuss listwise loss more in detail in Appendix A.3 -but, our experimental results show that training with pairwise loss performs better than listwise loss in most cases.\nOur proposed LiRE trains the reward model with linear score function ϕ(x) = x in (1). The choice of linear score function has the same effect as setting the reward to be the exponent of the optimal reward value obtained through training with an exponential score function ϕ(x) = exp(x). Therefore, the linear score function amplifies the difference in reward values, particularly in regions with high reward values, compared to the exponential score function.\nBounding reward model If ϕ(x) = exp(x), then adding a constant to the reward function rθ does not affect the resulting probability distribution. To align the scaling of the learned rθ in ensemble reward models, a common choice for the reward model is using the Tanh activation, i.e., rθ (σ) = t rθ (s t , a t ) = t tanh(f θ (s t , a t )) (Lee et al., 2021b; Hejna & Sadigh, 2024) , to bound the output of the reward model.\nIn the case of ϕ(x) = x, scaling the reward function by a constant does not affect the probability distribution. Similarly, we use the same Tanh activation function for ϕ(x) = x to bound the output of the reward model. Specifically, we set rθ (σ) = t 1 + tanh(f θ (s t , a t )) > 0 to ensure that the probability defined in (1) is positive.",
+    "6._Limitation": "We believe there are two limitations of LiRE. First, LiRE lacks the ability to parallelize the construction of RLT since there are dependencies between the order in which feedbacks are obtained to construct a fully-ranked list. Therefore, in scenarios where parallel feedback collection is feasible, constructing an RLT could be more time-consuming compared to collecting preference feedbacks independently in pairs. Nevertheless\n, the results presented in Appendix A.2 show that LiRE with only 200 feedbacks outperforms the independent pairwise sampling method using 1000 feedbacks, suggesting the importance of constructing RLT. Second, LiRE relies on the transitivity assumption outlined in Assumption 4.1. Although our experiments with feedback noise indicate LiRE's robustness to noise that violates this assumption, transitivity violations can occur even with noiseless labels in real-world applications. This issue is not unique to LiRE but affects other preference-based RL methods as well. Addressing transitivity violation remains a challenge for scalar reward models, so future research could explore solutions by using multi-dimensional preference feedback to construct RLTs for each dimension.",
+    "5.4.2._VARYING_Q_BUDGET": "In Section 4.1, we described that multiple RLTs can be constructed by putting the budget limit (Q) in order to increase the sample diversity. In this subsection, we show the effect of Q.\nTable 4 shows the performance change of LiRE when varying the Q budget to 1, 2, 10, 20, 50, 100, and 500 while setting the total number of preference feedbacks to 500. Hence, for example, Q = 100 results in five lists, and Q = 500 results in a single list. Table 4 also shows the result of SeqRank (with linear score function). From the table, we observe that since the utilization of the secondorder information increases with higher values of Q, the offline PbRL performance correspondingly improves, as expected. We also note that the performance of SeqRank is similar to that of LiRE with Q = 2 since SeqRank creates approximately 2.3 groups in the ranked list, as detailed in Table 5 . This result indicates that SeqRank does not fully utilize second-order preference due to only building partially-ranked lists. A more in-depth comparison with SeqRank is given in Section 5.4.5.",
+    "4._LiRE:_Listwise_Reward_Estimation": "As mentioned in Section 1, the conventional offline PbRL approaches cannot utilize the second-order information of the preference feedback. In order to describe our method, we begin by stating the mild assumptions we make.\nAssumption 4.1. (Completeness) For any two segments σ i , σ j , the human feedbacks are provided in the following three ways,\nσ i ≻ σ j or σ i ≺ σ j or σ i = σ j .\n(Transitivity) For any three segments σ i , σ j , and σ k , if σ i = σ j and σ j = σ k , then σ i = σ k . Also, if σ i ≻ σ j and σ j ≻ σ k , then σ i ≻ σ k .\nRemarks: These assumptions are a generalization of Se-qRank (Hwang et al., 2023) to include equal labels. While the transitivity assumption may not always hold in practice, we demonstrate that our method is robust both in the presence of feedback noise (Section 5.4.3) and in real human experiments (Section 5.5), even when the transitivity assumption may not hold.",
+    "5.4.3._ROBUSTNESS_TO_FEEDBACK_NOISE": "If the preference feedback used in PbRL models human preference labeling, it would be reasonable to assume that the preference feedback may be noisy. To that end, we experiment to assess the robustness of the offline PbRL performance of LiRE with respect to the preference feedback noise. We assume that the preference feedback can be noisy with probability p (i.e., if l i = 0 or 1, the label is flipped to 1 -l i with probability p, and for tie labels, we flip to l i = 0 or 1 with probability p/2, respectively). We varied the noise probability p from 0 to 0.3, and Figure 4 compares the success rates of MR w/ linear and LiRE. From the figure, we confirm that the performance of LiRE does not drop as severely as MR w/ linear when p increases. In particular, for lever-pull task, we observe that LiRE with feedback noise of p = 0.3 even results in a higher success rate than MR w/ linear with no noise, highlighting the robustness of LiRE with respect to feedback noise.",
+    "5.5._Human_Experiments": "Table 7 presents the results with real human preference feedback on the new button-press-topdown offline RL dataset, which is distinct from the dataset used in Table 2. Namely, we collected 200 preference feedbacks from one of the authors for each of the three feedback collection methods: MR, SeqRank, and LiRE. For LiRE, we used the feedback budget of Q = 100, resulting in two RLTs. The results again indicate that LiRE dominates other baselines and gets stronger when the linear score function is used. We believe this result shows the potential of LiRE that it can be very effective in practical scenarios with real human preference feedback, as in LLM alignment.",
+    "3._Preliminaries": "An RL algorithm considers a Markov decision process (MDP) and aims to find the optimum policy that maximizes the cumulative discounted rewards. MDP is defined by a tuple (S, A, P, r, γ) where S, A are state, action space, P = P (•|s, a) is the environment transition dynamics, r = r(s, a) is reward function, and γ is discount factor. In offline PbRL, we assume that we do not know the true reward r, but we have a pre-collected dataset that is a set of tuples, D o := {(s, a, s ′ )|(s, a) ∼ µ, s ′ ∼ P (•|s, a)}.\nIn general, the policy µ from which the data was collected is unknown. We are allowed to ask for preference feedbacks to obtain preference labels for two distinct trajectory segments sampled from D s := {σ | σ = (s 0 , a 0 , s 1 , a 1 , • • • , s T -1 , a T -1 ), (s t , a t , s t+1 ) ∈ D o }. Annotators assign a ternary label l given a pair of segments σ 1 , σ 2 ∈ D s ; l = 0 indicates that σ 1 is preferred over σ 2 (i.e., σ 1 ≻ σ 2 ), l = 1 indicates the opposite preference (i.e., σ 1 ≺ σ 2 ), and l = 0.5 indicates that σ 1 and σ 2 are equally preferred (i.e., σ 1 = σ 2 ).\nThe goal of acquiring preference labels is to learn the unknown reward function. Conventional offline PbRL methods use a preference model that defines the probability that one segment is better than the other as\nEQUATION\n)\nin which r θ (σ i ) = (st,at)∈σi r θ (s t , a t ) and θ is the parameter of the reward model. The score function ϕ(x) = exp(x) is commonly used in the BT model (Bradley & Terry, 1952) . Given the trajectory segment preference dataset, D pref := {(σ i1 , σ i2 , l i )} K i=1 , the parameter θ is learned by minimizing following cross-entropy loss:\nL(θ) = - E (σi 1 ,σi 2 ,li) ∈D pref (1 -l i ) log P θ (σ i1 ≻ σ i2 ) + l i log P θ (σ i1 ≺ σ i2 ) . (2)",
+    "5.3.1._FACTORS_OF_PERFORMANCE_IMPROVEMENT": "We conduct an ablation study to verify if the performance improvement of LiRE is due to two factors: the linear score function and the RLT construction. Table 3 brings a significant performance improvement compared to the default exponential score function (first two rows). Additionally, the bottom two rows of Table 3 show that constructing RLT improves performance by constructing the preference list and exploiting the second-order information.\nIn particular, using the linear score function with RLT has a synergistic effect, resulting in even greater improvement.",
+    "5.4.1._VARYING_THE_NUMBER_OF_FEEDBACKS": "We evaluate how the performances of the offline PbRL algorithms are affected by the number of feedbacks. Namely, we measure the average success rate of the sweep-into, box-close, and button-press-topdown-wall tasks of the medium-replay dataset while varying the number of the preference feedbacks from 50 to 2000. We note that most previous works (Kim et al., 2022; Hejna & Sadigh, 2024; An et al., 2023) using D4RL only use up to 500 preference feedbacks. As shown in Figure 3 , we observe that the typical baseline, MR with exponential score function (denoted as MR w/ exp), cannot achieve a success rate higher than 50% for all three tasks even with 2000 preference feedbacks.\nWhen we instead use the linear score function, we observe that MR w/ linear performs much better than MR w/ exp, but the success rates sometimes still remain to be low (e.g., box-close with 500 feedbacks and button-press-topdownwall for most of the times). In contrast, it is evident that LiRE mostly surpasses the two baselines with large margins, even with fewer number of preference feedbacks. Specifically, for the button-press-topdown-wall task, LiRE with only 100 feedbacks outperforms not only the baselines with 2000 feedbacks but also the policy learned using the GT reward. Again, we can confirm that the high feedback efficiency enabled by RLT makes LiRE very effective even with a smaller number of feedbacks.",
+    "1._Introduction": "Reinforcement Learning (RL) has demonstrated considerable success in various domains such as robotics (Haarnoja et al., 2018; Kalashnikov et al., 2018) , game (Silver et al., 2017; Mnih et al., 2013; Vinyals et al., 2019) , autonomous driving (Kiran et al., 2021) , and real-world tasks (Tan et al., 2018; Chebotar et al., 2019 ). An essential component of RL is to define suitable and precise reward functions so that an RL agent can be trained successfully (Wirth et al., 2017) .\nHowever, designing the reward function is time-consuming, especially if we want to align it with human intent (Hejna & Sadigh, 2024) .\nThis shortcoming has led to research on learning the reward model from human feedback without explicitly designing the reward function. While expert demonstration is one type of human feedback (Abbeel & Ng, 2004) , recent papers use preference feedback on which of a pair of trajectory segments is preferred since it is a significantly easier type of feedback to collect (Kaufmann et al., 2023; Casper et al., 2023) . More specifically, the common approach for the Preference-based RL (PbRL) consists of two steps: (1) learn a reward model using preference feedback from trajectory segment pairs, then (2) apply ordinary RL algorithms with the learned reward model. After successfully training a robot agent with PbRL (Christiano et al., 2017) , it was shown that novel behaviors aligned with human intent, e.g., backflips, can also be learned (Lee et al., 2021b) , while learning such behavior would be extremely hard from explicitly hand-coded rewards. The PbRL framework has gained popularity in both online (Park et al., 2021; Liang et al., 2021) and offline (Kim et al., 2022; Shin et al., 2022; An et al., 2023; Hejna & Sadigh, 2024) settings, in which the former allows the agents to interact with their environments, while the latter does not.\nIn this paper, we focus on the offline PbRL setting, in which the goal is to find an optimal policy solely from the previously collected preference feedbacks on the pairs of trajectories obtained from some past, fixed policy. This setting is challenging since the preference feedback cannot be actively collected on the trajectories generated by the current, updated policy. Hence, developing effective methods for collecting maximally informative preference feedback data from the past policy as well as devising efficient reward learning schemes is indispensable.\nThe current norm is to collect ternary preference feedback (i.e., more/less/equally preferred) for independently sampled pairs of trajectories, and then employ the standard Bradley-Terry (BT) model (Bradley & Terry, 1952) on the collected data to learn the reward function. While the above approach was shown to be effective to some extent, a critical limitation also exists. Namely, due to the independent sampling of the pairs of trajectories and simple ternary feedback, the secondorder preference, which stands for the relative strengths of the preferences, cannot be utilized. There exists a long line of work in several areas asserting that utilizing such second-order preference is indeed effective for more accurate learning (Xia et al., 2008; Touvron et al., 2023; Hwang et al., 2023; Song et al., 2024) . However, the majority of these works presume the availability of more sophisticated preference feedback types, which are considerably more laborious and expensive to obtain than the above-mentioned ternary feedback.\nTo that end, we propose to construct a Ranked List of Trajectories (RLT) while collecting preference feedback data to exploit the second-order preference when learning a reward function. The key novelty and strength of our method is to use exactly the same feedback type and budget as before and not require any additional sophistication in collecting the preference feedback. As outlined in Figure 1 , the main idea of building such a ranked list is to sample a trajectory and sequentially obtain the preference feedback by comparing it with existing trajectories in the ranked list multiple times to find its correct rank in the list. Hence, our method ends up sampling fewer trajectories for a fixed feedback budget compared to the conventional independent pair sampling. However, once the complete RLT is built, the second-order preference can be extracted and exploited for estimating the reward function, which, as we show in our experiments, results in a significant performance boost of offline PbRL.\nThe superiority of our method, dubbed as LiRE (Listwise Reward Estimation), is demonstrated through extensive experimental validation. We first created an offline RL dataset using Meta-World (Yu et al., 2020) and DeepMind Control Suite (DMControl) (Tassa et al., 2018) environments that can objectively compare the reward estimation quality of offline PbRL methods. This is motivated by (Li et al., 2023) , which pointed out that the offline RL performance can be high in some popular benchmark datasets even with wrong or constant reward functions. On our proposed datasets, we show that many tasks cannot be properly learned with existing offline PbRL methods, even with a large preference feedback budget. In contrast, we showcase our LiRE can outperform those baselines on most of the tasks with significant margins even with a modest preference feedback budget. We conduct comprehensive experimental analyses to investigate the impact of several factors, including the score function of the BT model, the number of preference feedbacks, and the number of trajectories in the RLT. The experimental results show that the degree to which secondorder information is utilized has a significant positive impact on the performance of offline PbRL. Furthermore, the results of the real human preference feedback experiments, along with experiments on the level of preference feedback noise and feedback granularity, demonstrate the effectiveness of LiRE in practical scenarios. These analyses provide substantial evidence supporting the strength and robustness of LiRE."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Apprenticeship Learning via Inverse Reinforcement Learning",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "Y"
+          ],
+          "last": "Ng",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "APRIL: Active Preference-learning based Reinforcement Learning",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Akrour",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Schoenauer",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Sebag",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "European Conference on Machine Learning and Principles and Practice of Knowledge Discovery in Databases (ECML PKDD)"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Direct Preference-based Policy Optimization without Reward Modeling",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "An",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zuo",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Kosaka",
+          "suffix": ""
+        },
+        {
+          "first": "K.-M",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "O"
+          ],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "The Green Choice: Learning and Influencing Human Decisions on Shared Roads",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Bıyık",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "A"
+          ],
+          "last": "Lazar",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Sadigh",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Pedarsani",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "IEEE Conference on Decision and Control (CDC)"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Rank Analysis of Incomplete Block Designs: I. The Method of Paired Comparisons",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "A"
+          ],
+          "last": "Bradley",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "E"
+          ],
+          "last": "Terry",
+          "suffix": ""
+        }
+      ],
+      "year": 1952,
+      "venue": "Biometrika"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Extrapolating Beyond Suboptimal Demonstrations via Inverse Reinforcement Learning from Observations",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Goo",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Nagarajan",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Niekum",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Learning to Rank using Gradient Descent",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Burges",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Shaked",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Renshaw",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lazier",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Deeds",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Hamilton",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Hullender",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Weak Human Preference Supervision For Deep Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        },
+        {
+          "first": "C.-T",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE Transactions on Neural Networks and Learning Systems"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Open Problems and Fundamental Limitations of Reinforcement Learning from Human Feedback",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Casper",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Davies",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "K"
+          ],
+          "last": "Gilbert",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Scheurer",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Rando",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Freedman",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Korbak",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Lindner",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Freire",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Closing the Sim-to-Real Loop: Adapting Simulation Randomization with Real World Experience",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chebotar",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Handa",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Makoviychuk",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Macklin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Issac",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Ratliff",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Fox",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Conference on Robotics and Automation (ICRA)"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Human-in-the-loop: Provably Efficient Preference-based Reinforcement Learning with General Function Approximation",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Deep Reinforcement Learning from Human Preferences",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [
+            "F"
+          ],
+          "last": "Christiano",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Leike",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Martic",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Legg",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "D4RL: Datasets for Deep Data-Driven Reinforcement Learning",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Nachum",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Tucker",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Preference-based Reinforcement Learning: A Formal Framework and a Policy Iteration Algorithm",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Fürnkranz",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hüllermeier",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "S.-H",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Machine Learning"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "RL Unplugged: A Suite of Benchmarks for Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Gulcehre",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Novikov",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Paine",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gómez",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Zolna",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "S"
+          ],
+          "last": "Merel",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "J"
+          ],
+          "last": "Mankowitz",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Paduraru",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Soft Actor-Critic: Off-policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Haarnoja",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Inverse Preference Learning: Preference-based RL without a Reward Function",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hejna",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Sadigh",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Contrastive Preference Learning: Learning from Human Feedback without RL",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hejna",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Rafailov",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Sikchi",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Niekum",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [
+            "B"
+          ],
+          "last": "Knox",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Sadigh",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Few-Shot Preference Learning for Human-in-the-Loop RL",
+      "authors": [
+        {
+          "first": "Iii",
+          "middle": [],
+          "last": "Hejna",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "J"
+          ],
+          "last": "Sadigh",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Conference on Robot Learning (CoRL)"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Sequential Preference Ranking for Efficient Reinforcement Learning from Human Feedback",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Hwang",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Kee",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "W"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Oh",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Reward Learning from Human Preferences and Demonstrations in Atari",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Ibarz",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Leike",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Pohlen",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Irving",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Legg",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Scalable Deep Reinforcement Learning for Vision-Based Robotic Manipulation",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Kalashnikov",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Irpan",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Pastor",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ibarz",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Herzog",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Quillen",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Holly",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Kalakrishnan",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Vanhoucke",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Conference on Robot Learning (CoRL)"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Beyond Reward: Offline Preference-guided Policy Optimization",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Kang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "A Survey of Reinforcement Learning from Human Feedback",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Kaufmann",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Weng",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Bengs",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hüllermeier",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Preference Transformer: Modeling Human Preferences using Transformers for RL",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "A Method for Stochastic Optimization",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "P"
+          ],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Adam",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Deep Reinforcement Learning for Autonomous Driving: A Survey",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [
+            "R"
+          ],
+          "last": "Kiran",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Sobh",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Talpaert",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Mannion",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "A"
+          ],
+          "last": "Al Sallab",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Yogamani",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Pérez",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE Transactions on Intelligent Transportation Systems (TITS)"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Offline Reinforcement Learning with Implicit Q-Learning",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Kostrikov",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Nair",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems Workshop (NeurIPS Workshop)"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "B-Pref: Benchmarking Preference-Based Reinforcement Learning",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dragan",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Pebble: Feedback-Efficient Interactive Reinforcement Learning via Relabeling Experience and Unsupervised Pre-training",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "M"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Survival Instinct in Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Misra",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kolobov",
+          "suffix": ""
+        },
+        {
+          "first": "C.-A",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Reward Uncertainty for Exploration in Preference-based Reinforcement Learning",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Shu",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Decoupled Weight Decay Regularization",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Loshchilov",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Contrastive Value Learning: Implicit Models for Simple Offline RL",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Mazoure",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Eysenbach",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Nachum",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tompson",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Conference on Robot Learning (CoRL)"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "On The Fragility of Learned Reward Functions",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Mckinney",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Krueger",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gleave",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Playing Atari with Deep Reinforcement Learning",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Mnih",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Kavukcuoglu",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Silver",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Graves",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Antonoglou",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Wierstra",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Riedmiller",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Learning Multimodal Rewards from Rankings",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Myers",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Biyik",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Anari",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Sadigh",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Conference on Robot Learning (CoRL)"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Training Language Models to Follow Instructions with Human Feedback",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Almeida",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Wainwright",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Slama",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ray",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Learning Reward Functions by Integrating Human Demonstrations and Preferences",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Palan",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Shevchuk",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Charles Landolfi",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Sadigh",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Robotics: Science and Systems"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "SURF: Semi-supervised Reward Learning with Data Augmentation for Feedback-efficient Preference-based Reinforcement Learning",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Seo",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "The Analysis of Permutations",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "L"
+          ],
+          "last": "Plackett",
+          "suffix": ""
+        }
+      ],
+      "year": 1975,
+      "venue": "Journal of the Royal Statistical Society Series C: Applied Statistics"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Benchmarks and Algorithms for Offline Preference-Based Reward Learning",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dragan",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "S"
+          ],
+          "last": "Brown",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Transactions on Machine Learning Research (TMLR)"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Mastering the Game of Go without Human Knowledge",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Silver",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schrittwieser",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Simonyan",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Antonoglou",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Guez",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Hubert",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Baker",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bolton",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "S4RL: Surprisingly Simple Self-Supervision for Offline Reinforcement Learning in Robotics",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sinha",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mandlekar",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Garg",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Conference on Robot Learning (CoRL)"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Preference Ranking Optimization for Human Alignment",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Association for the Advancement of Artificial Intelligence (AAAI)"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Learning to Summarize from Human Feedback",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Stiennon",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Ziegler",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Lowe",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Voss",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Christiano",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "F"
+          ],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Reinforcement Learning: An Introduction",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "S"
+          ],
+          "last": "Sutton",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "G"
+          ],
+          "last": "Barto",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Scalable Learning to Rank via Differentiable Sorting",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Swezey",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Grover",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Charron",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Pirank",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Sim-to-Real: Learning Agile Locomotion for Quadruped Robots",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Coumans",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Iscen",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Hafner",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bohez",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Vanhoucke",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF49",
+      "title": "CORL: Research-oriented Deep Offline Reinforcement Learning Library",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Tarasov",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Nikulin",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Akimov",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Kurenkov",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS) Datasets and Benchmarks Track"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "DeepMind Control Suite",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Tassa",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Doron",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Muldal",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Erez",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "D L"
+          ],
+          "last": "Casas",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Budden",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Abdolmaleki",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Merel",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lefrancq",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Llama 2: Open Foundation and Fine-Tuned Chat Models",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Albert",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Almahairi",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Babaei",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Bashlykov",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bhargava",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bhosale",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Grandmaster level in StarCraft II using multi-agent reinforcement learning",
+      "authors": [
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Babuschkin",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [
+            "M"
+          ],
+          "last": "Czarnecki",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Mathieu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dudzik",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Chung",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "H"
+          ],
+          "last": "Choi",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Powell",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Ewalds",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Georgiev",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Rating-based Reinforcement Learning",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "White",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Novoseller",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Lawhern",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "R"
+          ],
+          "last": "Waytowich",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning Workshop (ICML Workshop)"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "A Bayesian Approach for Policy Learning from Trajectory Preference Queries",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Wilson",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Fern",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Tadepalli",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "A Survey of Preference-Based Reinforcement Learning Methods",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Wirth",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Akrour",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Neumann",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Fürnkranz",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Listwise Approach to Learning to Rank: Theory and Algorithm",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "T.-Y",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "A Boosting Algorithm for Information Retrieval",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Adarank",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "International ACM SIGIR Conference on Research and Development in Information Retrieval (SIGIR)"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Meta-World: A Benchmark and Evaluation for Multi-Task and Meta Reinforcement Learning",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Quillen",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Julian",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Hausman",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Conference on Robot Learning (CoRL)"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Conservative Data Sharing for Multi-Task Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chebotar",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Hausman",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Conservative Offline Model-Based Policy Optimization",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Rafailov",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rajeswaran",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Combo",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Efficient Offline Preference-Based Reinforcement Learning with Transition-Dependent Discounting",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF63",
+      "title": "SLiC-HF: Sequence Likelihood Calibration with Human Feedback",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Joshi",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Khalman",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Saleh",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "J"
+          ],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Principled Reinforcement Learning with Human Feedback from Pairwise or K-wise Comparisons",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jordan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Jiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning (ICML)"
+    }
+  ]
+}

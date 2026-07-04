@@ -1,0 +1,2920 @@
+{
+  "paper_id": "JDR",
+  "title": "JOINT GRAPH REWIRING AND FEATURE DENOISING VIA SPECTRAL RESONANCE",
+  "authors": [
+    {
+      "first": "Jonas",
+      "middle": [],
+      "last": "Linkerhägner",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Basel",
+        "location": {}
+      }
+    },
+    {
+      "first": "Cheng",
+      "middle": [],
+      "last": "Shi",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Basel",
+        "location": {}
+      }
+    },
+    {
+      "first": "Ivan",
+      "middle": [],
+      "last": "Dokmanić",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Basel",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "When learning from graph data, the graph and the node features both give noisy information about the node labels. In this paper we propose an algorithm to jointly denoise the features and rewire the graph (JDR), which improves the performance of downstream node classification graph neural nets (GNNs). JDR works by aligning the leading spectral spaces of graph and feature matrices. It approximately solves the associated non-convex optimization problem in a way that handles graphs with multiple classes and different levels of homophily or heterophily. We theoretically justify JDR in a stylized setting and show that it consistently outperforms existing rewiring methods on a wide range of synthetic and real-world node classification tasks.",
+  "body": {
+    "1_INTRODUCTION": "Graph neural networks (GNNs) are a powerful deep learning tool for graph-structured data, with applications in physics (Mandal et al., 2022; Linkerhägner et al., 2023) , chemistry (Gilmer et al., 2017) , biology (Gligorijević et al., 2021) and beyond (Zhou et al., 2020) . Typical tasks across disciplines include graph classification (Duvenaud et al., 2015; Xu et al., 2019) , node classification (Kipf and Welling, 2017; Li et al., 2019) and link prediction (Pan et al., 2022) .\nGraph datasets contain two distinct types of information: the graph structure and the node features. The graph encodes interactions between entities and thus the classes or communities they belong to, similarly to the features. Recent work demonstrates that rewiring the graph by judiciously adding and removing edges may improve downstream GNN performance. That work argues that in a GNN, the graph serves not only to encode interactions but also to organize message passing computations (Battaglia et al., 2018) . Even when it correctly encodes interactions it may not be an effective computational graph-rewiring it may then facilitate information flow.\nGraph rewiring methods can be categorized into preprocessing and end-to-end. Preprocessing methods rewire the graph by relating its geometric and spectral properties to information flow (Topping et al., 2022; Nguyen et al., 2023; Karhadkar et al., 2023) . End-to-end methods (Giraldo et al., 2023; Gutteridge et al., 2023; Qian et al., 2024) dynamically rewire the graph during training, leveraging both the graph and the node features. Unlike preprocessing methods, they do not output an improved graph which restricts their interpretability and reusability. Our focus is on the preprocessing methods.\nThere are thus two mechanisms that hurt performance of GNNs: (1) real-world graphs and features are noisy (the graph has spurious and missing links), and (2) geometric properties of the graph impede message passing. In this paper we focus on (1) and ask a natural question: can simple, joint feature and graph denoising improve performance of a downstream GNN?\nWe propose a new rewiring scheme that also uses node features to produce an enhanced graph. We leverage the fact that both the graph and the features are correlated with the labels. This is explicit in high-quality stylized models of graphs with features, including community models such as the contextual stochastic block model (cSBM) (Deshpande et al., 2018) and neighborhood graphs on In this example, we consider a noisy graph as it occurs in many different real-world scenarios, in the sense that it contains edges between and within classes and its node features are not fully aligned with the labels. The graph's adjacency matrix A and binary node features X are decomposed via spectral decomposition and singular value decomposition (SVD). The rewiring of A is performed by combining the information of its own eigenvectors V and the singular vectors U from X. The same applies vice versa for denoising, and both are performed iteratively K times. We synthesize the rewired graph Ã and the denoised features X by multiplying back with the final V (K) and U (K) . To get specific properties like sparsity or binarity we can perform an UPDATE step, e.g. by thresholding (as done here). The resulting denoised and rewired graph is displayed on the right. Its structure now better represents the communities and the first entry of the features indicates the class assignment.\npoints from low-dimensional manifolds. This fact motivates various spectral clustering and nonlinear dimensionality reduction methods (Shi and Malik, 2000; Ng et al., 2001) . In the cSBM, seminal theoretical work shows that jointly leveraging the graph (stochastic block model (SBM)) and the features (a Gaussian mixture model (GMM)) improves over unsupervised clustering using either piece of information alone. However, the associated efficient inference algorithms based on belief propagation (Deshpande et al., 2018; Duranthon and Zdeborová, 2023) rely on perfect knowledge of the distribution of the cSBM and cannot be applied to arbitrary real-world data.\nOur contributions are as follows:\n1. We take inspiration from work on the cSBM to design a practical algorithm for joint graph rewiring and feature denoising, which can improve the node classification performance of any downstream GNN on real-world data. We achieve this by adapting the graph and the features so as to maximize alignment between their leading eigenspaces. If these spaces are well-aligned we say that the graph and the features are in resonance.\n2. We design an alternating optimization algorithm, joint denoising and rewiring (JDR), which approximates alignment maximization on spectrally-complex real-world graph data with multiple classes, possibly homophilic or heterophilic. We prove that JDR improves alignment between the graph and the features, but also with the labels, on a stylized generative model with noise from the Gaussian orthogonal ensemble (GOE); a recent conjecture in the literature suggests that this generalizes to cSBM.\n3. We run extensive experiments to show that JDR outperforms existing preprocessing rewiring strategies while being guided solely by denoising.\nThis last point suggests that although there exist graphs with topological and geometrical characteristics which make existing rewiring schemes beneficial, a greater issue in real-world graphs is noise in the sense of missing and spurious links. This is true even when the graphs correctly reflect the ground truth information. In a citation network, for example, citations that should exist may be missing because of incomplete scholarship. Conversely, citations that should not exist may be present because the authors engaged in bibliographic ornamentation. Our method is outlined in Figure 1 and the code repository is available onlinefoot_0 .",
+    "2.1_PRELIMINARIES": "We let G = (V, E) be an undirected graph with |V| = N nodes and an adjacency matrix A. To each node we associate an F -dimensional feature vector and collect these vectors in the rows of matrix X ∈ R N ×F . We make extensive use of the graph and feature spectra, namely the eigendecomposition A = V ΛV T and the SVD X = U ΣW T , with eigen-and singular values ordered from largest to smallest. (As discussed below, in heterophilic graphs we order the eigenvalues of A according to their absolute value.) The graph Laplacian is L = D -A, where D is the diagonal node degree matrix. For k > 2 node classes, we use one-hot labels y ∈ {0, 1} N ×k . We write [L] for the set {1, 2, . . . , L}. In the balanced two-class case, we consider nodes to be ordered so that the first half has label y i = -1 and the second half y i = 1. In semi-supervised node classification, the task is to label the nodes based on the graph (A and X) and a subset of the labels y. Homophilic graphs are those where nodes are more likely to connect with nodes with similar features or labels (e.g., friendship networks (McPherson et al., 2001) ); heterophilic graphs are those where nodes more likely to connect with dissimilar nodes (e.g., protein interaction networks (Zhu et al., 2020) ).",
+    "2.2_MOTIVATION_VIA_THE_CONTEXTUAL_STOCHASTIC_BLOCK_MODEL": "For simplicity, we first explain our method for k = 2 classes and graphs generated from the cSBM.\nWe then extend it to real-world graphs with multiple classes and describe the full practical algorithm.",
+    "2.3_JOINT_DENOISING_AND_REWIRING_ALGORITHM": "Maximizing the alignment (4) directly, e.g., using gradient descent, is computationally challenging.\nHere we propose a heuristic which alternates between spectral interpolation and graph synthesis. We later prove that the resulting algorithm indeed improves alignment, both with the labels and between the graph and the features, under a stylized noise model. The algorithm, illustrated in Figure 1 , comprises three steps.\nIn Step 1, we compute the spectral decompositions of A and X. To improve the alignment, we interpolate between the L largest eigenvectors in Step 2. Based on the new eigenvectors, we synthesize a new graph in Step 3. The three steps are iterated until a stopping criterion is met. As is standard in the rewiring literature, the hyperparameters of the algorithm are tuned on a validation set. Formalizing this results in the JDR algorithm:\nStep 1: Decomposition A = V ΛV T with V = (v 1 , v 2 , . . . , v N ) and X = U ΣW T with U = (u 1 , u 2 , . . . , u N ) Step 2: Interpolation: For every i ∈ [L], ṽi = (1 -η A )v i + η A sign(⟨v i , u j ⟩)u j ũi = (1 -η X )u i + η X sign(⟨u i , v j ⟩)v j\nwhere j is chosen as argmax j∈[L] |⟨v i , u j ⟩| when updating v i and as argmax j∈[L] |⟨u i , v j ⟩| when updating u i . η A and η X are hyperparameters that are tuned with a downstream algorithm on a validation set. We use sign() to handle sign ambiguities in decompositions. Following (3), we consider the L leading eigenvectors of A and X for interpolation. Since these bases may be rotated with respect to each other (we note that (3) is insensitive to relative rotations, see Appendix A.1.2), when updating an eigenvector of A, we interpolate it with the most similar eigenvector of X. We show empirically that this heuristic yields strong results, but also prove that it improves alignment with labels with a stylized noise model. We emphasize that the interpolation rates η A and η X are the same across different eigenvectors and iterations K. After K steps, we synthesize the final weighted dense graph Ã = V (K) ΛV T (K) . To efficiently apply GNNs, we can enforce sparsity, e.g., via thresholding or selecting the top-k entries per node. A detailed pseudocode is given in Appendix A.1.\nAn illustration. A simple edge case to illustrate how the algorithm works is when either only A or X contains information. In a cSBM with ϕ = 0, X contains all the information, so the best hyperparameter choice is η X = 0 and (4) simplifies to a maximization over A. Since there are only two classes, it is sufficient to consider L = 1. From (2) we know that the leading left singular vector u 1 of X is well-aligned with the labels. We thus replace the second leading eigenvector v 2 in A by u 1 by choosing η A = 1.0. After graph synthesis, the new v 2 of Ã is not yet equal to u 1 , since u 1 was not orthogonal to the other v i . We thus repeat the three steps K times. For ϕ = ±1 all information is contained in the graph; a similar argument can then be constructed mutatis mutandis.",
+    "3_EXPERIMENTS": {
+      "3.1_RESULTS_ON_SYNTHETIC_DATA": "We first test JDR on data generated from the cSBM, as we can easily vary the SNR of the graph and the features to verify its denoising and rewiring capabilities. We focus on the sparse splitting, since for the dense splitting GPRGNN already matches the performance of AMP-BP.\n-1.0 -0.75 -0.5 -0.25 0.0 0.25 0.5 0.75 1.0 0.0\n0.2 0.4 0.6 0.8 1.0 Alignment L (A, X) JDR None\nFigure 3 : Alignment of the leading eigenspaces according to (3) for graphs from the cSBM with different ϕ.\nDoes JDR Maximize Alignment? Before discussing Figure 4 , which shows the results of baselines and JDR for different values of ϕ, we verify empirically that our alternating optimization algorithm indeed approximates solutions to (4). As shown in Figure 3 , the quantity Alignment L (A, X) improves significantly after running JDR, across all ϕ. As we show next, this happens simultaneously with improvements in downstream performance, which lends credence to the intuitive reasoning that motivates our algorithm. For additional alignment results on real-world data and baselines, refer to Appendix A.5.5.",
+      "3.2_RESULTS_ON_REAL-WORLD_DATA": "We evaluate JDR on five common homophilic benchmarks datasets, namely the citation graphs Cora, CiteSeer, PubMed (Sen et al., 2008) and the Amazon co-purchase graphs Computers and Photo (McAuley et al., 2015) . For heterophilic datasets, we rely on the Wikipedia graphs Chameleon and Squirrel (Rozemberczki et al., 2021) , the WebKB datasets Texas and Cornell used in Pei et al. (2020) and the actor co-occurence network Actor (Tang et al., 2009) . To show the scalability of JDR on larger heterophilic datasets, we further report the results for the Yandex Q user network Questions (Platonov et al., 2023) and the social networks Penn94 and Twitch-Gamers (Lim et al., 2021) . Further details about all datasets are in Appendix A.4. Following Chien et al. (2021) , we evaluate the homophilic datasets in the sparse splitting, staying close to the original setting of Kipf and Welling (2017) and the heterophilic datasets in dense splitting (Pei et al., 2020) . The remaining larger graphs are evaluated using their original splits. For further results and splits, see Appendix A.5.",
+      "_text": "We extensively evaluate JDR on both synthetic data generated from the cSBM and real-world benchmark datasets. We follow experimental setting from Chien et al. (2021) and evaluate JDR for semisupervised node classification with different downstream GNNs. We also adopt their data splits, namely the sparse splitting 2.5%/2.5%/95% for training, validation and testing, respectively, or the dense splitting 60%/20%/20%. For the general experiments, we perform 100 runs with different random splits. For the scalability experiments, we use the experimental settings of the respective works (Lim et al., 2021; Platonov et al., 2023) . We report the average accuracy and the 95%-confidence interval calculated via bootstrapping with 1000 samples. All experiments are reproducible using the code provided.\nBaselines. Following recent works on rewiring, we use graph convolution network (GCN) (Kipf and Welling, 2017) as our downstream GNN. To obtain a more comprehensive picture, we additionally evaluate the performance on the more recent generalized PageRank graph neural network (GPRGNN) (Chien et al., 2021) . We compare our algorithm with the state-of-the-art rewiring methods first-order spectral rewiring (FoSR) (Karhadkar et al., 2023) , batch Ollivier-Ricci flow (BORF) (Nguyen et al., 2023) and diffusion improves graph learning (DIGL) (Gasteiger et al., 2019) . FoSR approximates which edges should be added to maximize the spectral gap to reduce oversquashing. BORF adds edges in regions of negative curvature in the graph, which indicate bottlenecks that can lead to an oversquashing of the messages passed along these edges. A positive curvature indicates that there are so many edges in this area that messages could be oversmoothed, which is why edges are removed here. We compare computational and implementation aspects of JDR and baselines in Table 1 . On the cSBM, we compare to an optimal algorithm, namely the approximate message passing-belief propagation (AMP-BP) algorithm (Duranthon and Zdeborová, 2023) . AMP-BP is asymptotically optimal (in the large dimension limit) for unsupervised or semi-supervised community detection in the cSBM. It relies on knowing the distribution of the cSBM and is thus not applicable to real-world graphs with unknown characteristics and complex features.\nHyperparameters. Unless stated otherwise, we use the hyperparameters from Chien et al. (2021) for the GNNs and optimize the hyperparameters of JDR using a mixture of grid and random search on the validation set. We use the top-64 values of Ã to enforce sparsity and interpolation to update the features. For DIGL, FoSR and BORF, we tune their hyperparameters using a grid search, closely following the given parameter range from the original papers. For all hyperparameter searches we use GCN and GPRGNN as the downstream models on 10 runs with different random splits. A detailed list of all hyperparameters can be found in Appendix A.7 or in the code repository."
+    },
+    "4_RELATION_TO_PRIOR_WORK": "JDR is most related to preprocessing rewiring methods which we thus use as baselines. To provide a more thorough overview, we also place it within the extended literature.",
+    "5_CONCLUSION_AND_LIMITATIONS": "Our experimental results clearly show that spectral resonance is a powerful principle on which to build graph rewiring (and feature denoising) algorithms. JDR consistently outperforms existing rewiring methods DIGL, FoSR and BORF on both synthetic and real-world graph datasets. The smaller performance gains of GPRGNN suggest that this more powerful GNN is already able to leverage the complementary spectra of graphs and features to some extent.\nThe main limitation of JDR is that it cannot be used without node features. The preprocessing rewiring methods that we compare with do not have this limitation as they only use the graph for rewiring, but in turn, they cannot take advantage of features. Since JDR is the first method to jointly denoise the graph and the features, there are no other methods to which it could be directly compared. Our experiments thus highlight what advantage features bring to rewiring.\nFurthermore, our results suggest that noise in real-world graphs is an important limiting factor for the performance of GNNs. It would be interesting to see whether feature-agnostic rewiring from a denoising perspective, for example using link prediction, could be used to improve the downstream performance. A related idea that we tested but could not get to work well is to combine existing geometric rewiring algorithms with JDR. Intuitively, there should be a way to benefit from both removing noise and facilitating computation, but we have to leave that exploration for future work.\nWe also note that most current rewiring methods can be applied to graph level tasks, while JDR is currently limited to node classification. It is an open question how to extend the cSBM idea to graph-level problems.\nY. Zhu, W. Xu, J. Zhang, Y. Du, J. Zhang, Q. Liu, C. Yang, and S. Wu. A survey on graph structure learning: Progress and opportunities, 2022.\nY. Zhu, R. Amor, Y. Chen, Z. Deng, L. Feng, and M. Witbrock.\nRobust node classification on graph data with graph and label noise. Proceedings of the AAAI Conference on Artificial Intelligence, 2024. A APPENDIX A.1 THE JDR ALGORITHM Algorithm 1 Joint Denoising and Rewiring 1: procedure REWIRE(X, A) ▷ For DENOISE just exchange X and A 2:\nX = U ΣW T 3: A = V ΛV T 4: for i in range(L A ) do ▷ Loop over L A eigenvectors in A 5: v a ← V [:, i] 6: for j in range(L A ) do ▷ Loop over L A eigenvectors in X 7: u x ← U [:, j] 8: θ ← ⟨u x , v a ⟩ ▷ Find angle between eigenvectors 9: if |θ| > |θ max | then 10: θ max ← θ 11: u max x ← u x 12:\nend if 13:\nend for 14: low-dimensional coordinates, We finally mention that although our algorithm is motivated by the cSBM, it could have equivalently been motivated by ubiquitous lowdimensional graphs. In such graphs, node labels are related to the which are in turn given by the eigenvectors of the graph Laplacian; this is illustrated in Figure 5. If, for example, the labels are given by the sign of the first non-constant eigenfunction (the slowest-changing normal mode), our notion of alignment with L = 1 clearly remains meaningful.\nṼ [:, i] ← (1 -η A )v a + η A sign(θ max )u max x ▷ Interpolation between eigenvectors 15: end for 16: Ã ← Ṽ Λ Ṽ T 17: end procedure 18: X, Ã ← X, A 19: for i in range(K) do ▷ Main loop 20: X ′ ← DENOISE( X, Ã) 21: A ′ ← REWIRE( X, Ã) 22: X, Ã ← X ′ , A ′ 23: end for 24: X = UPDATE_X(X, X) ▷\nThis also further motivates our terminology of resonance. In a purist sense, resonance is a dynamical phenomenon where driving a system with a frequency corresponding to an eigenvalue of the Laplacian yields a diverging response. Importantly, the shape of the response is then an eigenfunction. In a broad sense, resonance signifies alignment with Laplacian eigenfunctions, which are the natural modes. For graphs, this is closely related to alignment with eigenvectors of the adjacency matrix (it is equivalent for d-regular graphs). As Figure 2b shows, maximizing alignment between feature and graph spectra indeed leads to the largest response of the graph to the features. has become a key model for studying node classification problems on graphs, inspiring numerous designs of GNNs like GPRGNN (Chien et al., 2021) , GIANT (Chien et al., 2022) or ASGC (Chanpuriya and Musco, 2022). Many theoretical studies of node-level GNN problems are based on the cSBM, e.g. on double descent (Shi et al., 2024) , neural collapse (Kothapalli et al., 2023) , OOD generalization (Baranwal et al., 2021) , or oversmoothing (Wu et al., 2023) . Beyond being a standard synthetic benchmark, the cSBM is also used to to verify hypotheses about GNNs (Ma et al., 2022; Luan et al., 2023) .\nAs for any model, the cSBM also comes with limitations. One possible limitation of our work is that cSBM assumes that the features are linear as in a GMM, which makes a linear classifier optimal. If the class boundaries are highly nonlinear, this is no longer true, and the spectrum of X may need to be \"linearized\", e.g. via Laplacian eigenmaps or diffusion maps. Still, the results on real-world data show that the cSBM model is already highly transferable, suggesting that the high-dimensional features in real-world graph datasets are often quite linear."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Community detection and stochastic block models: Recent developments",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Abbe",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "On the bottleneck of graph neural networks and its practical implications",
+      "authors": [
+        {
+          "first": "U",
+          "middle": [],
+          "last": "Alon",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Yahav",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Learning on Graph with Laplacian Regularization",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Ando",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Phase transition of the largest eigenvalue for nonnull complex sample covariance matrices",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Baik",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "B"
+          ],
+          "last": "Arous",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Péché",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": "The Annals of Probability"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Oversquashing in gnns through the lens of information contraction and graph expansion",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [
+            "K"
+          ],
+          "last": "Banerjee",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Karhadkar",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "G"
+          ],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "U",
+          "middle": [],
+          "last": "Alon",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Montúfar",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "58th Annual Allerton Conference on Communication, Control, and Computing"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Graph convolution for semi-supervised classification: Improved linear separability and out-of-distribution generalization",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Baranwal",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Fountoulakis",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Jagannath",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 38th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Relational inductive biases, deep learning, and graph networks",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [
+            "W"
+          ],
+          "last": "Battaglia",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "B"
+          ],
+          "last": "Hamrick",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Bapst",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sanchez-Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Zambaldi",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Malinowski",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Tacchetti",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Raposo",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Santoro",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Faulkner",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Gulcehre",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ballard",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gilmer",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Dahl",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Allen",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Nash",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Langston",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Dyer",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Heess",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Wierstra",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Kohli",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Botvinick",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Pascanu",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "The singular values and vectors of low rank perturbations of large rectangular random matrices",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Benaych-Georges",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "R"
+          ],
+          "last": "Nadakuditi",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Journal of Multivariate Analysis"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Fluctuations of the extreme eigenvalues of finite rank deformations of random matrices",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Benaych-Georges",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Guionnet",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Maida",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Electronic Journal of Probability"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Understanding oversquashing in GNNs through the lens of effective resistance",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Black",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wan",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Nayyeri",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Rewiring networks for graph neural network training using discrete geometry",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bober",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Monod",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Saucan",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "N"
+          ],
+          "last": "Webster",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Complex Networks & Their Applications XII"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Simplified graph convolution with heterophily",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Chanpuriya",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Musco",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Measuring and relieving the over-smoothing problem for graph neural networks from the topological view",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Signal denoising on graphs via graph filtering",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sandryhaila",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "M F"
+          ],
+          "last": "Moura",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Kovacevic",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "IEEE Global Conference on Signal and Information Processing (GlobalSIP)"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Iterative deep graph learning for graph neural networks: Better and robust node embeddings",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zaki",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Adaptive universal generalized pagerank graph neural network",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Chien",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Milenkovic",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Node feature extraction by self-supervised multi-scale neighborhood prediction",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Chien",
+          "suffix": ""
+        },
+        {
+          "first": "W.-C",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "C.-J",
+          "middle": [],
+          "last": "Hsieh",
+          "suffix": ""
+        },
+        {
+          "first": "H.-F",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Milenkovic",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [
+            "S"
+          ],
+          "last": "Dhillon",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Expander graph propagation",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Deac",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lackenby",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Veličković",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "NeurIPS 2022 Workshop on Symmetry and Geometry in Neural Representations"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Manifold rewiring for unlabeled imaging",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Debarnot",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Kishore",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Dokmanić",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "2022 Asia-Pacific Signal and Information Processing Association Annual Summit and Conference (APSIPA ASC)"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Asymptotic analysis of the stochastic block model for modular networks and its algorithmic applications",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Decelle",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Krzakala",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Moore",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zdeborová",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Phys. Rev. E"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Contextual stochastic block models",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Deshpande",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sen",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Montanari",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Mossel",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "On over-squashing in message passing neural networks: The impact of width, depth, and topology",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Di Giovanni",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Giusti",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Barbero",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Luise",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Lio",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "M"
+          ],
+          "last": "Bronstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Towards understanding and reducing graph structural noise for GNNs",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Kluger",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Optimal inference in contextual stochastic block models",
+      "authors": [
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Duranthon",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zdeborová",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Convolutional networks on graphs for learning molecular fingerprints",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "K"
+          ],
+          "last": "Duvenaud",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Maclaurin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Iparraguirre",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Bombarell",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Hirzel",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Aspuru-Guzik",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "P"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "A generalization of transformer networks to graphs",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [
+            "P"
+          ],
+          "last": "Dwivedi",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Bresson",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "AAAI Workshop on Deep Learning on Graphs: Methods and Applications"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "On random graphs i",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Erdös",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rényi",
+          "suffix": ""
+        }
+      ],
+      "year": 1959,
+      "venue": "Publicationes Mathematicae Debrecen"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Mitigating over-smoothing and over-squashing using augmentations of forman-ricci curvature",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Fesser",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Weber",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the Second Learning on Graphs Conference"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Fast graph representation learning with PyTorch Geometric",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Fey",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "E"
+          ],
+          "last": "Lenssen",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ICLR Workshop on Representation Learning on Graphs and Manifolds"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Rewiring with positional encodings for graph neural networks",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "B"
+          ],
+          "last": "Gabrielsson",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Yurochkin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Solomon",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Transactions on Machine Learning Research"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Diffusion improves graph learning",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gasteiger",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Weiß",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Günnemann",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Neural message passing for quantum chemistry",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gilmer",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "S"
+          ],
+          "last": "Schoenholz",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "F"
+          ],
+          "last": "Riley",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "E"
+          ],
+          "last": "Dahl",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the 34th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "On the trade-off between oversmoothing and over-squashing in deep graph neural networks",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "H"
+          ],
+          "last": "Giraldo",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Skianis",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Bouwmans",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "D"
+          ],
+          "last": "Malliaros",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CIKM '23"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Structurebased protein function prediction using graph convolutional networks",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Gligorijević",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "D"
+          ],
+          "last": "Renfrew",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Kosciolek",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "K"
+          ],
+          "last": "Leman",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Berenberg",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Vatanen",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Chandler",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "C"
+          ],
+          "last": "Taylor",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [
+            "M"
+          ],
+          "last": "Fisk",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Vlamakis",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "J"
+          ],
+          "last": "Xavier",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Knight",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Cho",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Bonneau",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Nature Communications"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "DRew: Dynamically rewired message passing with delay",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Gutteridge",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "M"
+          ],
+          "last": "Bronstein",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "Di"
+          ],
+          "last": "Giovanni",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Universality laws for high-dimensional learning with random features",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "M"
+          ],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE Transactions on Information Theory"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Leveraging label non-uniformity for node classification in graph neural networks",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "H"
+          ],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [
+            "P"
+          ],
+          "last": "Tay",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning, ICML'23"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Graph structure learning for robust graph neural networks",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining, KDD '20"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "FoSR: First-order spectral rewiring for addressing oversquashing in GNNs",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Karhadkar",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "K"
+          ],
+          "last": "Banerjee",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Montufar",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Semi-supervised classification with graph convolutional networks",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [
+            "N"
+          ],
+          "last": "Kipf",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "A neural collapse perspective on feature evolution in graph neural networks",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Kothapalli",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Tirer",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bruna",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Thirty-seventh Conference on Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Constrained low-rank matrix estimation: phase transitions, approximate message passing and applications",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Lesieur",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Krzakala",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zdeborová",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Journal of Statistical Mechanics: Theory and Experiment"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Optimizing generalized pagerank methods for seed-expansion community detection",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Chien",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Milenkovic",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Large scale learning on non-homophilous graphs: New benchmarks and strong simple methods",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Lim",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "M"
+          ],
+          "last": "Hohne",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "L"
+          ],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [
+            "P"
+          ],
+          "last": "Bhalerao",
+          "suffix": ""
+        },
+        {
+          "first": "S.-N",
+          "middle": [],
+          "last": "Lim",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Grounding graph network simulators using physical sensor observations",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Linkerhägner",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Freymuth",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "M"
+          ],
+          "last": "Scheikl",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Mathis-Ullrich",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Neumann",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "How powerful is implicit denoising in graph neural networks",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Ying",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Contextual stochastic block model: Sharp thresholds and contiguity",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "When do graph neural networks help with node classification? investigating the homophily principle on node distinguishability",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Luan",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Hua",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "X.-W",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Leskovec",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Precup",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Robust graph structure learning with the alignment of features and adjacency matrix",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lv",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Lereg: Empower graph neural networks with local energy regularization",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 30th ACM International Conference on Information & Knowledge Management, CIKM '21"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "A unified view on graph neural networks as graph signal denoising",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Shah",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 30th ACM International Conference on Information & Knowledge Management, CIKM '21"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Is homophily a necessity for graph neural networks?",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Shah",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Robust prediction of force chains in jammed solids using graph neural networks",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Mandal",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Casert",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sollich",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Nature Communications"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Image-based recommendations on styles and substitutes",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Mcauley",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Targett",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Van Den",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hengel",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Proceedings of the 38th International ACM SIGIR Conference on Research and Development in Information Retrieval, SIGIR '15"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Birds of a feather: Homophily in social networks",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Mcpherson",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Smith-Lovin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "M"
+          ],
+          "last": "Cook",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "Annual Review of Sociology"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Graph spectra and the detectability of community structure in networks",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "R"
+          ],
+          "last": "Nadakuditi",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "E"
+          ],
+          "last": "Newman",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Physical review letters"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "On spectral clustering: Analysis and an algorithm",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ng",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jordan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Weiss",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Revisiting oversmoothing and over-squashing using ollivier-ricci curvature",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "M"
+          ],
+          "last": "Hieu",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [
+            "D"
+          ],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Osher",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "M"
+          ],
+          "last": "Nguyen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Neural link prediction with walk pooling",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Dokmanić",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Asymptotics of sample eigenstructure for a large dimensional spiked covariance model",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Paul",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "Statistica Sinica"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Geom-gcn: Geometric graph convolutional networks",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Pei",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "C"
+          ],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "-C",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Lei",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "A critical look at the evaluation of GNNs under heterophily: Are we really making progress?",
+      "authors": [
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Platonov",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Kuznedelev",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Diskin",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Babenko",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Prokhorenkova",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Probabilistically rewired message-passing neural networks",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Qian",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Manolache",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Ahmed",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "V"
+          ],
+          "last": "Broeck",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Niepert",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Morris",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Recipe for a general, powerful, scalable graph transformer",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Rampasek",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Galkin",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [
+            "P"
+          ],
+          "last": "Dwivedi",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "T"
+          ],
+          "last": "Luu",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Wolf",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Beaini",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Dropedge: Towards deep graph convolutional networks on node classification",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Rong",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Multi-Scale attributed node embedding",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Rozemberczki",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Allen",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Sarkar",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Journal of Complex Networks"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "Collective classification in network data",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sen",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Namata",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Bilgic",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Getoor",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Galligher",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Eliassi-Rad",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "AI Magazine"
+    },
+    {
+      "id": "BIBREF72",
+      "title": "Graph rewiring and preprocessing for graph neural networks based on effective resistance",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Lio",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "IEEE Transactions on Knowledge and Data Engineering"
+    },
+    {
+      "id": "BIBREF73",
+      "title": "Homophily modulates double descent generalization in graph convolution networks",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Dokmanić",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF74",
+      "title": "Normalized cuts and image segmentation",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Malik",
+          "suffix": ""
+        }
+      ],
+      "year": 2000,
+      "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence"
+    },
+    {
+      "id": "BIBREF75",
+      "title": "Exphormer: Sparse transformers for graphs",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Shirzad",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Velingker",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Venkatachalam",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "J"
+          ],
+          "last": "Sutherland",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "K"
+          ],
+          "last": "Sinop",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF76",
+      "title": "Social influence analysis in large-scale networks",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "Proceedings of the 15th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, KDD '09"
+    },
+    {
+      "id": "BIBREF77",
+      "title": "Understanding oversquashing and bottlenecks on graphs via curvature",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Topping",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "D"
+          ],
+          "last": "Giovanni",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "P"
+          ],
+          "last": "Chamberlain",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "M"
+          ],
+          "last": "Bronstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF78",
+      "title": "DGNN: Decoupled Graph Neural Networks with Structural Consistency between Attribute and Graph Embedding Representations",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF79",
+      "title": "A non-asymptotic analysis of oversmoothing in graph neural networks",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [
+            "W"
+          ],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Jadbabaie",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF80",
+      "title": "How powerful are graph neural networks?",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Leskovec",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Jegelka",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF81",
+      "title": "Rethinking graph regularization for graph neural networks",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF82",
+      "title": "Link prediction based on graph neural networks",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF84",
+      "title": "Graph neural networks: A review of methods and applications",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "AI Open"
+    },
+    {
+      "id": "BIBREF85",
+      "title": "Beyond homophily in graph neural networks: Current limitations and effective designs",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Heimann",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Akoglu",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Koutra",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    }
+  ]
+}

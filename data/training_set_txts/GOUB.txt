@@ -1,0 +1,105 @@
+## 4. Experiments
+
+We conduct experiments under three popular image restoration tasks: image inpainting, image deraining, and image super-resolution. Four metrics are employed for the model (Wang et al., 2004) for gauging structural perception, Learned Perceptual Image Patch Similarity (LPIPS) (Zhang et al., 2018b) for evaluating the depth and quality of features, and Fréchet Inception Distance (FID) (Heusel et al., 2017) to measure the diversity in generated images.
+More experiment details are present in Appendix E.
+Image Inpainting. Image inpainting involves filling in missing or damaged parts of an image, to restore or enhance the overall visual effect of the image. We have selected the CelebA-HQ 256×256 datasets (Karras et al., 2018) for both training and testing with 100 thin masks. We compare our models with several current baseline inpainting approaches such as PromptIR (Potlapalli et al., 2023) , DDRM (Kawar et al., 2022) and IR-SDE (Luo et al., 2023a) . The relevant experimental results are shown in the Table 1 and Figure 2 . It is observed that the two proposed models achieved stateof-the-art results in their respective areas of strength and also delivered highly competitive outcomes on other metrics. From a visual perspective, our model excels in capturing details such as eyebrows, eyes, and image backgrounds.
+Image Deraining. We have selected the Rain100H datasets (Yang et al., 2017) for our training and testing, which includes 1800 pairs of training data and 100 images for testing. It is important to note that in this task, similar to other deraining models, we present the PSNR and SSIM scores specifically on the Y channel (YCbCr space). We report state-of-the-art approaches for comparison: MPRNet (Zamir et al., 2021) , M3SNet-32 (Gao et al., 2023) , MAXIM (Tu et al., 2022) , MHNet (Gao & Dang, 2023) , IR-SDE (Luo et al., 2023a) . The relevant experimental results are shown in the Table 2 and Figure 3 . Similarly, both models achieved SOTA results respectively in the deraining task. Visually, it can be also observed that our model excels in capturing details such as the moon, the sun, and tree branches.
+
+### 2.1. Score-based Diffusion Model
+
+The score-based diffusion model (Sohl-Dickstein et al., 2015; Ho et al., 2020; Song et al., 2021b) is a category of generative model that seamlessly transitions data into noise via a diffusion process and generates samples by learning and adapting the reverse process (Anderson, 1982) . Assuming a dataset consists of n dimensional independent identically distributed (i.i.d.) samples, following an unknown distribution denoted by p(x 0 ). The time-dependent forward process of the diffusion model can be described by the following SDE:
+EQUATION
+where f : R n → R n is the drift coefficient, g t : R → R is the scalar diffusion coefficient and w t denotes the standard Brownian motion. Typically, p(x 0 ) evolves over time t from 0 to a sufficiently large T into p(x T ) through the SDE, such that p(x T ) will approximate a standard Gaussian distribution p prior (x). Meanwhile, the forward SDE has a corresponding reverse time SDE (Anderson, 1982) whose closed form is given by:
+dx t = f (x t , t) -g 2 t ∇ xt log p(x t ) dt + g t dw t . (2)
+Starting from time T , p(x T ) can progressively transform to p(x 0 ) by traversing the trajectory of the reverse SDE.
+The score ∇ xt log p(x t ) can generally be parameterized as s θ (x t , t) and employ conditional score matching (Vincent, 2011) as the loss function for training:
+EQUATION
+where λ(t) serves as a weighting function, and if selected as g 2 t that yields a more optimal upper bound on the negative log-likelihood (Song et al., 2021a) . The second line is actually the most commonly used, as the conditional probability p(x t | x 0 ) is generally accessible. Ultimately, one can sample x T from the prior distribution p(x T ) ≈ p prior (x) and obtain the x 0 through the numerical solution of Equation (2) via iterative steps, thereby completing the generation process.
+
+### 3.2. Training object
+
+The score term ∇ xt log p(x t | x T ) can be parameterized by a neural network s θ (x t , x T , t) and can be estimated using the loss function (3). Unfortunately, training the score function for SDEs generally presents a significant challenge. Nevertheless, since the analytical form of GOUB is directly obtainable, we will introduce the use of maximum likelihood for training, which yields a more stable loss function.
+We first discretize the continuous time interval [0, T ] into N sufficiently fine-grained intervals in a reasonable manner, denoted as {x t } t∈[0,N ] , x N = x T . We are concerned with maximizing the log-likelihood, which leads us to the following proposition:
+Proposition 3.3. Let x t be a finite random variable describing by the given generalized Ornstein-Uhlenbeck process (4), for a fixed x T , the expectation of log-likelihood E p(x0) [log p θ (x 0 | x T )] possesses an Evidence Lower Bound (ELBO):
+EQUATION
+Assuming p θ (x t-1 | x t , x T ) is a Gaussian distribution with a constant variance N (µ θ,t-1 , σ 2 θ,t-1 I), maximizing the ELBO is equivalent to minimizing:
+EQUATION
+)
+EQUATION
+)
+where,
+a = e -θt-1:t σ2 t:T σ2 t-1:T , b = 1 σ2 T (1 -e -θt )σ 2 t:T + e -2 θt:T σ2 t -(1 -e -θt-1 )σ 2 t-1:T + e -2 θt-1:T σ2 t-1 a
+The derivation of the proposition is provided in the Appendix A.2. With Proposition 3.3, we can easily construct the training objective. In this work, we try to parameterized µ θ,t-1 from differential of SDE which can be derived from equation ( 9):
+EQUATION
+where ϵ t ∼ N (0, dtI), therefore:
+µ θ,t-1 =x t -θ t + g 2 t e -2 θt:T σ2 t:T (x T -x t ) + g 2 t ∇ xt log p θ (x t | x T ), σ θ,t-1 =g t . (15)
+Inspired by conditional score matching, we can parameterize noise as ϵ θ (x t , x T , t), thus the score ∇ xt log p θ (x t | x T ) can be represented as -ϵ θ (x t , x T , t)/σ ′ t . In addition, during our empirical research, we found that utilizing L1 loss yields enhanced image reconstruction outcomes (Boyd & Vandenberghe, 2004; Hastie et al., 2009) . This approach enables the model to learn pixel-level details more easily, resulting in markedly improved visual quality. Therefore, the final training object is:
+EQUATION
+Consequently, if we obtain the optimal ϵ * θ (x t , x T , t), we can compute the score
+∇ xt log p(x t | x T ) ≈ -ϵ * θ (x t ,
+x T , t)/σ ′ t for reverse process. Starting from a lowquality image x T , we can recover x 0 by using Equation ( 9) to perform reverse iteration.
+
+### 3.1. Forward and backward process
+
+Applying the h-transform, we can readily derive the forward process of the GOUB, leading to the following proposition: Proposition 3.1. Let x t be a finite random variable describing by the given generalized Ornstein-Uhlenbeck process (4), suppose x T = µ, the evolution of its marginal distribution p(x t | x T ) satisfies the following SDE:
+EQUATION
+)
+The derivation of the proposition is provided in the Appendix A.1. With Proposition 3.1, there is no need to perform multi-step forward iteration using the SDE; instead, we can directly use its closed-form solution for one-step forward sampling.
+Similarly, applying the previous SDE theory enables us to easily derive the reverse process, which leads to the following Proposition 3.2:
+Proposition 3.2. The reverse SDE of equation ( 7) has a marginal distribution p(x t | x T ), and is given by:
+EQUATION
+and exists a probability flow ODE:
+EQUATION
+We are capable of initiating from a low-quality image x T and proceeding to utilize Euler sampling solving the reverse SDE or ODE for restoration purposes.
+
+## 5. Analysis
+
+The Doob's h-transform of the generalized Ornstein-Uhlenbeck process, also known as the conditional GOU process has been an intriguing topic in previous applied mathematical research (Salminen, 1984; Cheridito et al., 2003; Heng et al., 2021) . On account of the mean-reverting property of the GOU process, applying the h-transform makes it most straightforward to eliminate the variance and drive it towards a Dirac distribution in its steady state which is highly advantageous for its applications in image restoration. In previous research on diffusion models, there has been limited focus on the cases of f or g, and generally used the VE process (Song et al., 2021b) represented by NCSN (Song & Ermon, 2019) or the VP process (Song et al., 2021b) represented by DDPM (Ho et al., 2020) .
+In this section, we demonstrate that the mathematical essence of several recent meaningful diffusion bridge models is the same (Li et al., 2023; Zhou et al., 2024; Liu et al., 2023a) and they all represent Brownian bridge (Chow, 2009) models, details are provided in the Appendix B.1. Then, we also found that the VE and VP processes are special cases of GOU, leading to the following proposition:
+Proposition 5.1. For a given GOU process (4), there exists relationships:
+EQUATION
+)
+Details are provided in the Appendix B.2. Therefore, we conduct experiments on VE Bridge (VEB) (Li et al., 2023; Zhou et al., 2024; Liu et al., 2023a) and VP Bridge (VPB) (Zhou et al., 2024) to demonstrate the optimality of our proposed GOUB model in image restoration. We keep all the model hyperparameters consistent and results are shown in Table 5 and Figure 5 .
+It can be seen that under the same configuration of model hyperparameters, the performance of the GOUB is notably superior to the other two types of bridge models, which demonstrates the optimality of GOUB and also highlights the importance of the choice of diffusion process in diffusion models.
+6. Related Works Conditional Generation. As previously highlighted, in the work of image restoration using diffusion models, the focus of some research has predominantly been on using low- quality images as conditional inputs y to guide the generation process. They (Kawar et al., 2021; Saharia et al., 2022; Kawar et al., 2022; Chung et al., 2022a; b; 2023; Zhao et al., 2023; Murata et al., 2023; Feng et al., 2023) all endeavor to solve or approximate the classifier log ∇ xt p(y | x t ), necessitating the incorporation of additional prior knowledge to model specific degradation processes which both complex and lacking in universality.
+Diffusion Bridge. This segment of work obviates the need for prior knowledge, constructing a diffusion bridge model from high-quality to low-quality images, thereby learning the degradation process. The previously mentioned approach (Liu et al., 2022; De Bortoli et al., 2021; Su et al., 2022; Liu et al., 2023a; Shi et al., 2024; Li et al., 2023; Zhou et al., 2024; Albergo et al., 2023) fall into this class and are characterized by the issues of significant computational expense in solution seeking and also not the optimal model framework. Additionally, some models of flow category (Lipman et al., 2023; Liu et al., 2023b; Tong et al., 2023; Albergo & Vanden-Eijnden, 2023; Delbracio & Milanfar, 2023) also belong to the diffusion bridge models and face the similar issue.
+
+## 3. GOUB
+
+The GOU process (4) is characterized by mean-reverting properties that if we consider the initial state x 0 to represent a high-quality image and the corresponding low-quality image x T = µ as the final condition, then the high-quality image will gradually converge to a Gaussian distribution with the low-quality image as its mean and a stable variance λ 2 . This naturally connects some information between high and low-quality images, offering an inherent advantage in image restoration. However, the initial state of the reverse process necessitates the artificial addition of noise to lowquality images, resulting in certain information loss and thus affecting the performance (Luo et al., 2023a) .
+In actuality, we are more focused on the connections between points (Liu et al., 2022; De Bortoli et al., 2021; Su et al., 2022; Li et al., 2023; Zhou et al., 2024) in image restoration. Coincidentally, the Doob's h-transform technique can modify an SDE such that it passes through a specified x T at terminal time T . Accordingly, it is crucial to note that the application of the h-transform to the GOU process effectively eliminates the impact of terminal noise, directly bridging a point-to-point relationship between highquality and low-quality images.
+
+### 2.2. Generalized Ornstein-Uhlenbeck process
+
+The Generalized Ornstein-Uhlenbeck (GOU) process is the time-varying OU process (Ahmad, 1988) . It is a stationary Gaussian-Markov process, whose marginal distribution gradually tends towards a stable mean and variance over time. The GOU process is generally defined as follows:
+EQUATION
+where µ is a given state vector, θ t denotes a scalar drift coefficient and g t represents the diffusion coefficient. At the same time, we require θ t , g t to satisfy the specified relationship 2λ 2 = g 2 t /θ t , where λ 2 is a given constant scalar. As a result, its transition probability possesses a closed-form analytical solution:
+EQUATION
+A simple proof is provided in Appendix C. For the sake of simplicity in subsequent representations, we denote θ0:t and σ0:t as θt and σt respectively. Consequently, p(x t ) will steadily converge towards a Gaussian distribution with the mean of µ and the variance of λ 2 as time t progresses meaning that it exhibits the mean-reverting property.
+
+### 3.3. Mean-ODE
+
+Unlike normal diffusion models, our parameterization of the mean µ θ,t-1 is derived from the differential of SDE which effectively combines the characteristics of discrete diffusion models and continuous score-based generative models. In the reverse process, the value of each sampling step will approximated to the true mean during training. Therefore, we propose a Mean-ODE model, which omits the Brownian drift term:
+EQUATION
+To simplify the expression, we use GOUB to represent the GOUB (SDE) sampling model and Mean-ODE to represent the GOUB (Mean-ODE) sampling model. Our following experiments have demonstrated that the Mean-ODE is more effective than the corresponding Score-ODE at capturing the pixel details and structural perceptions of images, playing a pivotal role in image restoration tasks. Concurrently, the SDE model ( 9) is more focused on deep visual features and diversity.
+
+## 7. Conclusion
+
+In this paper, we introduced the Generalized Ornstein-Uhlenbeck Bridge (GOUB) model, a diffusion bridge model that applies the Doob's h-transform to the GOU process. This model can address general image restoration tasks without the need for specific prior knowledge. Furthermore, we have uncovered the mathematical essence of several bridge models and empirically demonstrated the optimality of our proposed model. In addition, considering our unique mean parameterization mechanism, we proposed the Mean-ODE model. Experimental results indicate that both models achieve state-of-the-art results in their respective areas of strength on various tasks, including inpainting, deraining, and super-resolution. We believe that the exploration of diffusion process and bridge models holds significant importance not only in the field of image restoration but also in advancing the study of generative diffusion models.
+
+## 1. Introduction
+
+Image restoration involves the restoring of high-quality (HQ) images from their low-quality (LQ) version (Banham & Katsaggelos, 1997; Zhou et al., 1988; Liang et al., 2021; Luo et al., 2023b) , which is often characterized as an ill-posed inverse problem due to the loss of crucial information during the degradation from high-quality images to low-quality images. It encompasses a suite of classical tasks, including image deraining (Zhang & Patel, 2017; Yang et al., 2020; Xiao et al., 2022) , denoising (Zhang et al., 2018a; Li et al., 2022; Soh & Cho, 2022; Zhang et al., 2023a) , deblurring (Yuan et al., 2007; Kong et al., 2023) , inpainting (Jain et al., 2023; Zhang et al., 2023b) , and super-resolution (Dong et al., 2015; Zamfir et al., 2023; Wei et al., 2023) , among others.
+Diffusion models (Sohl-Dickstein et al., 2015; Ho et al., 2020; Song & Ermon, 2019; Song et al., 2021b; Karras et al., 2022) have also been applied to image restoration, yielding favorable results (Ho & Salimans, 2021; Wang et al., 2023; Su et al., 2022; Shi et al., 2024) . They mainly follow the standard forward process, diffusing images to pure noise and using low-quality images as conditions to facilitate the generation process of high-quality images (Dhariwal & Nichol, 2021; Ho & Salimans, 2021; Kawar et al., 2021; Saharia et al., 2022; Kawar et al., 2022; Chung et al., 2022b; a; Wang et al., 2023) . However, these approaches require the integration of substantial prior knowledge specific to each task such as degradation matrices, limiting their universality.
+Furthermore, some studies have attempted to establish a point-to-point mapping from low-quality to high-quality images, learning the general degradation and restoration process and thus circumventing the need for additional prior information for modeling specific tasks (Chen et al., 2022; Cui et al., 2023; Lee et al., 2024) . In terms of diffusion models, this mapping can be realized through the bridge (Liu et al., 2022; Su et al., 2022; Liu et al., 2023a) , a stochastic process with fixed starting and ending points. By assigning high-quality and low-quality images to the starting and ending points, and initiating with the low-quality images, high-quality images can be obtained by applying the reverse diffusion process, thereby enabling image restoration. However, some bridge models face challenges in learning likelihoods (Liu et al., 2022) , necessitating reliance on cumbersome iterative approximation methods (De Bortoli et al., 2021; Su et al., 2022; Shi et al., 2024) , which pose significant constraints in practical applications; others do not consider the selection of diffusion process and ignore the optimality of diffusion process (Liu et al., 2023a; Li et al., 2023; Zhou et al., 2024) , thus may introducing unnecessary costs and limiting the performance of the model.
+This paper proposed a novel image restoration bridge model, the Generalized Ornstein-Uhlenbeck Bridge (GOUB), de-picted in Figure 1 . Owing to the mean-reverting properties of the Generalized Ornstein-Uhlenbeck (GOU) process, it gradually diffuses the HQ image into a noisy LQ state (denoted as x T + λϵ in Figure 1 ). By applying Doob's h-transform on GOU, we modify the diffusion process to eliminate noise on x T to directly bridge the HQ image and its LQ counterpart. The model initiates a point-to-point forward diffusion process and learns its reverse through maximum likelihood estimation, thereby ensuring it can restore a low-quality image to the corresponding high-quality image avoiding the limitation of generality and costly iterative approximation. Our main contributions can be summarized as follows:
+• We introduce a novel image restoration bridge model GOUB which eliminates variance of the ending point on the GOU process, directly connecting the high and low-quality images and is particularly expressive in deep visual features and diversity.
+• Benefiting from the distinctive features of the parameterization mechanism, we introduce the corresponding Mean-ODE model, demonstrating a strong ability to capture pixel-level details and structural perceptions.
+• We uncover the mathematical essence of several bridge models, all of which are special cases of the GOUB, and empirically demonstrate the optimality of our proposed models.
+• Our model has achieved state-of-the-art results on numerous image restoration tasks, such as inpainting, deraining, and super-resolution.
+
+### 2.3. Doob's h-transform
+
+Doob's h-transform (Särkkä & Solin, 2019) is a mathematical technique applied to stochastic processes. It involves transforming the original process by incorporating a specific h-function into the drift term of the SDE, modifying the process to pass through a predetermined terminal point. More precisely, given the SDE (1), if it is desired to pass through the given fixed point x T at t = T , an additional drift term must be incorporated into the original SDE:
+EQUATION
+) where h(x t , t, x T , T ) = ∇ xt log p(x T | x t ) and x 0 starts from p (x 0 | x T ). A simple proof can be found in Appendix D. In comparison to (1), the marginal distribution of (6) is conditioned on x T , with its forward conditional probability density given by p(x t | x 0 , x T ) satisfying the forward Kolmogorov equation that is defined by (6). Intuitively, p(x T | x 0 , x T ) = 1 at t = T , ensuring that the SDE invariably passes through the specified point x T for any initial state x 0 .

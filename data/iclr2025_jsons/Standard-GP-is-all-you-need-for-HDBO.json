@@ -1,0 +1,1020 @@
+{
+  "paper_id": "Standard-GP-is-all-you-need-for-HDBO",
+  "title": "STANDARD GAUSSIAN PROCESS IS ALL YOU NEED FOR HIGH-DIMENSIONAL BAYESIAN OPTIMIZATION",
+  "authors": [
+    {
+      "first": "Zhitong",
+      "middle": [],
+      "last": "Xu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Utah",
+        "location": {
+          "postCode": "84112",
+          "settlement": "Salt Lake City",
+          "region": "UT",
+          "country": "USA"
+        }
+      }
+    },
+    {
+      "first": "Haitao",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Utah",
+        "location": {
+          "postCode": "84112",
+          "settlement": "Salt Lake City",
+          "region": "UT",
+          "country": "USA"
+        }
+      }
+    },
+    {
+      "first": "Jeff",
+      "middle": [
+        "M"
+      ],
+      "last": "Phillips",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Utah",
+        "location": {
+          "postCode": "84112",
+          "settlement": "Salt Lake City",
+          "region": "UT",
+          "country": "USA"
+        }
+      }
+    },
+    {
+      "first": "Shandian",
+      "middle": [],
+      "last": "Zhe",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Utah",
+        "location": {
+          "postCode": "84112",
+          "settlement": "Salt Lake City",
+          "region": "UT",
+          "country": "USA"
+        }
+      }
+    },
+    {
+      "first": "",
+      "middle": [],
+      "last": "Kahlert",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Utah",
+        "location": {
+          "postCode": "84112",
+          "settlement": "Salt Lake City",
+          "region": "UT",
+          "country": "USA"
+        }
+      }
+    }
+  ],
+  "abstract": "A long-standing belief holds that Bayesian Optimization (BO) with standard Gaussian processes (GP) -referred to as standard BO -underperforms in highdimensional optimization problems. While this belief seems plausible, it lacks both robust empirical evidence and theoretical justification. To address this gap, we present a systematic investigation. First, through a comprehensive evaluation across twelve benchmarks, we found that while the popular Square Exponential (SE) kernel often leads to poor performance, using Matérn kernels enables standard BO to consistently achieve top-tier results, frequently surpassing methods specifically designed for high-dimensional optimization. Second, our theoretical analysis reveals that the SE kernel's failure primarily stems from improper initialization of the length-scale parameters, which are commonly used in practice but can cause gradient vanishing in training. We provide a probabilistic bound to characterize this issue, showing that Matérn kernels are less susceptible and can robustly handle much higher dimensions. Third, we propose a simple robust initialization strategy that dramatically improves the performance of the SE kernel, bringing it close to state-of-the-art methods, without requiring additional priors or regularization. We prove another probabilistic bound that demonstrates how the gradient vanishing issue can be effectively mitigated with our method. Our findings advocate for a re-evaluation of standard BO's potential in high-dimensional settings. The code is released at https://github.com/ XZT008/Standard-GP-is-all-you-need-for-HDBO.",
+  "body": {
+    "1_Introduction": "Many applications require optimizing complex functions, allowing queries only for the function values, possibly with noises, yet without any gradient information. Bayesian Optimization (BO) (Snoek et al., 2012; Mockus, 2012) is a popular approach for addressing such challenges. BO typically employs Gaussian process (GP) (Williams & Rasmussen, 2006) as a probabilistic surrogate. It iteratively approximates the target function, integrates the posterior information to maximize an acquisition function for generating new inputs at which to query, then updates the GP model with new examples, and concurrently approach the optimum.\nDespite numerous successes, there has been a widespread belief that BO with standard GP regression, referred to as standard BO, is limited to low-dimensional optimization problems (Frazier, 2018; Nayebi et al., 2019; Eriksson & Jankowiak, 2021; Moriconi et al., 2020; Letham et al., 2020; Wang et al., 2016; Li et al., 2016) . It is commonly thought that the number of optimization variables should not exceed 15 or 20, as beyond this threshold, BO is prone to failure (Frazier, 2018; Nayebi et al., 2019) . A continuous line of research is dedicated to developing novel high-dimensional BO methods. The fundamental strategy is to impose strong structural assumptions into surrogate modeling so as to avoid directly dealing with high-dimensional inputs. One class of methods assumes a decomposition structure within the functional space (Kandasamy et al., 2015; Rolland et al., 2018; Han et al., 2021; Ziomek & Ammar, 2023) , where the target function is expressed as the summation of a group of low-dimensional functions, each operating over a small number of variables. Another family of methods assumes that the inputs are intrinsically low-rank. These methods either project the original 2 Standard Bayesian Optimization Consider maximizing a d-dimensional objective function f : X ⊂ R d → R, where the function form is unknown. We can query the function value at any input x ∈ X , possibly with noises, but no gradient information is accessible. We aim to find x † = argmax x∈X f (x). To achieve this, Bayesian Optimization (BO) employs a probabilistic surrogate model to predict f across the domain X , while also quantifying the uncertainty of the prediction. This information is then integrated to compute an acquisition function, which measures the utility of querying at any new input location given the current function estimate. By maximizing the acquisition function, BO identifies a new input location at which to query, ideally closer to the optimum. Concurrently, the acquired new example is incorporated into the training dataset, and the surrogate model is retrained to improve the accuracy. BO begins by querying at a few (typically randomly selected) input locations, and trains an initial surrogate model. The iterative procedure repeats until convergence or a stopping criterion is met.\nThe standard BO adopts GP regression (Williams & Rasmussen, 2006) for surrogate modeling. A GP prior is placed over the target function, f ∼ GP (m(x), κ(x, x ′ )), where m(x) is the mean function, which is often set as a constant, and κ(•, •) is the covariance function, which is usually chosen as a Mercer kernel function. One most popular kernel used in BO is the Square Exponential (SE) kernel with Automatic Relevance Determination (ARD),\nEQUATION\nwhere\na > 0 is the amplitude, ρ = (x -x ′ ) ⊤ diag( 1 ℓ 2 )(x -x ′\n), and ℓ = (ℓ 1 , . . . , ℓ d ) ⊤ > 0 are the length-scale parameters. We refer to this kernel as ARD because each input dimension has a distinct length-scale parameter. An alternative choice is the ARD Matérn-5/2 kernel,\nEQUATION\nGiven training inputs X = [x 1 , . . . , x N ] ⊤ and (noisy) outputs y = [y 1 , . . . , y N ] ⊤ , let us denote the function values at X as f = [f (x 1 ), . . . , f (x N )] ⊤ , which according to the GP prior, follow a multi-variate Gaussian distribution, p(f ) = N (f |m, K), where m = [m(x 1 ), . . . , m(x N )] ⊤ , K is the kernel matrix on X, and each [K] ij = κ(x i , x j ). Then one can employ a Gaussian likelihood for the observations y, and\nEQUATION\nwhere σ 2 is the noise variance. To estimate the GP parameters, e.g., the length-scales ℓ, one can maximize the marginal likelihood (3). The predictive distribution at any new input\nx * , is condi- tional Gaussian, p (f (x * )|y) = N (f (x * )|µ(x * ), v(x * )), where µ(x * ) = m(x * ) + κ(x * , X)(K + σ 2 I) -1 (y -m), and v(x * ) = κ(x * , x * ) -κ(x * , X)(K + σ 2 I) -1 κ(X, x * ).\nIn each iteration, given the current GP surrogate model, an acquisition function is maximized to identify the next input location at which to query. One commonly used acquisition function is the upper confidence bound (UCB), defined as UCB(x) = µ(x) + λ v(x), x ∈ X , where λ represents the exploration level. There have been other popular acquisition functions, such as Expected Improvement (EI) (Jones et al., 1998) , Thompson sampling (TS) (Russo et al., 2018) , the recently proposed log-EI (Ament et al., 2024) , among others.",
+    "3_High_Dimensional_Bayesian_Optimization": "An enduring and widespread belief is that when the input dimension d is high, e.g., a few hundreds, the standard BO is prone to failure. This belief might partly arise from an intuition that commonly used kernels, such as (1), could encounter challenges in dealing with high-dimensional inputs, making GP struggle in capturing the target function. A dedicated line of research is developing novel highdimensional BO methods. The key idea of these methods is to impose some structural assumptions in surrogate modeling to sidestep directly handling the high-dimensional inputs in kernels.",
+    "4_Theoretical_Analysis": "To understand why standard BO can fail in high-dimensional cases, in particular with the SE kernel (see Section 6), we look into the gradient structure during the GP training. Specifically, we consider at the beginning, all the length-scale parameters are set to the same initial value, ℓ 1 = . . . = ℓ d = ℓ 0 .\nFrom the marginal likelihood (3), we derive the gradient w.r.t each length-scale,\nEQUATION\nwhere A = αα ⊤ -(K + σ 2 I) -foot_0 , and α = (K + σfoot_1 I) -1 (y -m). When using the SE kernel as specified in (1), each entry of ∂K ∂ℓ k is as follows:\nEQUATION\nwhere x ik and x jk are the k-th element in x i and x j , respectively, and ρ = ∥xi-xj ∥ ℓ0\n.\nIntuitively, as the input dimension d increases, the squared distance between input vectors grows rapidly. Consequently, the factor ρ 2 e ρ 2 in (6) can quickly fall below the machine epsilon ξ, causing the gradient vanishing issue (Bengio et al., 1994; Hanin, 2018) . That is, the length-scale cannot be effectively updated according to ∂κ SE (x i , x j )/∂ℓ k , due to the limitations of the numerical precision.\nProposition 4.1. Given any ξ > 0, ρ 2 e ρ 2 < ξ when ρ > τ SE = 1 2 + 1 4 -log ξ.\nWhen using the double-precision floating-point format (float64), the rounding machine epsilon is ξ = 2 -53 , and the above threshold is τ SE = 6.58. To analyze the likelihood of gradient vanishing, we provide a probabilistic bound under uniform data distribution. Lemma 4.2. Suppose the input domain is [0, 1] d and the input vectors are sampled independently from the uniform distribution, then for any constant threshold τ > 0,\nEQUATION\nThe lower bound grows exponentially with the input dimension d and converges to one. This implies that given any fixed choice of ℓ 0 relevant to d (e.g., ℓ 0 = 1), as d increases, the probability p(ρ ≥ τ SE ) will rapidly approach one, leading to vanishing gradient for every κ SE (x i , x j ). As a consequence, each length scale ℓ k in (5) cannot be effectively updated, preventing meaningful training 1 . The inferior prediction accuracy of the GP model further contributes to poor performance of the BO procedure. Since τ SE is small, gradient vanishing can occur before d becomes extremely large. For example, for ℓ 0 = 0.5 and ℓ 0 = 1, the probability p(ρ > τ SE ) exceeds 0.99 when d ≥ 205 and d ≥ 473, respectively. kernel. First, we obtain the gradient,\n∂κ Matérn (x i , x j ) ∂ℓ k = 5 3 (1 + √ 5ρ) exp (- √ 5ρ) (x ik -x jk ) 2 ℓ 3 k ≤ 5(1 + √ 5)ρ 3ℓ 3 k • ρ 2 e √ 5ρ\n.\nAs the distance increases, the factor ρ 2 /e √ 5ρ will also converge to zero, implying that with the growth of d, the gradient will eventually fall below machine epsilon. However, since this factor ρ 2 /e √ 5ρ\ndecreases much slower than the corresponding factor to the SE kernel, namely ρ 2 /e ρ 2 in (6), the Matérn kernel is able to robustly handle much higher dimensions.\nProposition 4.3. Given ∀ξ > 0, ρ 2 e √ 5ρ < ξ when ρ > τ Matérn = 1 + 1 + log 1/5 -log ξ 2 / √ 5.\nWith the machine epsilon ξ = 2 -53 , the threshold τ Matérn = 21.98, more than 300% larger than τ SE = 6.58. Therefore, to achieve the same probability bound in (7), a much higher d is required for Matérn kernel compared to the SE kernel under the same ℓ 0 . For concrete examples, we list the dimension d versus the probability bound in Table 1 . It implies that using the same length-scale initialization, the Matérn kernel is able to robustly handle higher dimensions.",
+    "5_Robust_Initialization": "From the analysis in Section 4, one straightforward approach to improving learning with the SE (and also Matérn) kernel is to initialize each length-scale with a larger ℓ 0 , which can loosen the lower bound in (7) and allow the GP model to better adapt to higher dimensions. However, this approach is not robust enough, as d -6ℓ 2 0 τ 2 will continue to increase with d, and the bound will still rise toward one rapidly, causing the gradient to vanish. To address this issue, we propose setting ℓ 0 to growing with d rather than keeping it constant,\nEQUATION\nLemma 5.1. Suppose the input domain is [0, 1] d and each input vector is independently sampled from the uniform distribution. Given any constant threshold τ > 0, we set\nEQUATION\nWith this initialization, the increase in d exponentially reduces the upper bound on the probability of ρ exceeding the given threshold τ . As a result, the gradient vanishing issue can be fundamentally mitigated in the high-dimensional settings.\nIn our experiments, we tested standard BO using SE kernel with our proposed length-scale initialization as specified in (8) where we set c = 1. As shown in Fig. 3 and Fig. 4 , the performance across all the benchmarks is dramatically improved, as compared to using popular initialization ℓ 0 = 0.693.\nThe performance matches that of using Matérn kernels, achieving state-of-the-art (or near-best) results. In addition, as shown in Fig. 1 and Table 2 , our numerical experiments confirm that gradient vanishing never occurred with our robust initialization method. Fig. 2 further demonstrates that our method eliminates gradient vanishing during practical BO runs, enabling effective GP training and much better optimization results. Together this shows that our method can effectively adapt SE kernels to high-dimensional settings, and mitigate the failure mode of standard BO.\nAlternative method. Recent work (Hvarfner et al., 2024) proposes an intuitive approach to address the learning challenge of the SE kernel in the high-dimensional spaces by constructing a log-normal prior over each length scale, p(ℓ k ) = LogNormal(ℓ k |µ 0 + log(d) 2 , σ 0 ). This prior regularizes the lengthscale to be on the order of √ d during training. Using our theoretical framework, this method can be justified as an alternative strategy to alleviate the gradient vanishing issue. However, our method, directly motivated by our analysis, is even simpler -requiring no additional prior construction or associated parameters, and has also shown effective in addressing the gradient vanishing issue. The comparison with (Hvarfner et al., 2024) is given in Section 6.",
+    "6.1_Experimental_Settings": "For a comprehensive evaluation of the standard BO, we employed twelve benchmarks, of which six are synthetic and six are real-world problems. For clarity, all the tasks aim for function maximization.",
+    "7_Conclusion": "We conducted a thorough investigation of standard BO in high-dimensional optimization, both empirically and theoretically. Our analysis identified gradient vanishing as a major failure mode of standard BO, and we proposed a simple yet robust initialization method to address this issue. Our empirical evaluation demonstrates that, once this problem is mitigated, standard BO can achieve state-of-the-art performance in high-dimensional optimization."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Unexpected improvements to expected improvement for bayesian optimization",
+      "authors": [
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Ament",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Daulton",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Eriksson",
+          "suffix": ""
+        },
+        {
+          "first": "Maximilian",
+          "middle": [],
+          "last": "Balandat",
+          "suffix": ""
+        },
+        {
+          "first": "Eytan",
+          "middle": [],
+          "last": "Bakshy",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Botorch: A framework for efficient monte-carlo bayesian optimization",
+      "authors": [
+        {
+          "first": "Maximilian",
+          "middle": [],
+          "last": "Balandat",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Karrer",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Daulton",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Letham",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "G"
+          ],
+          "last": "Wilson",
+          "suffix": ""
+        },
+        {
+          "first": "Eytan",
+          "middle": [],
+          "last": "Bakshy",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Learning long-term dependencies with gradient descent is difficult",
+      "authors": [
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Patrice",
+          "middle": [],
+          "last": "Simard",
+          "suffix": ""
+        },
+        {
+          "first": "Paolo",
+          "middle": [],
+          "last": "Frasconi",
+          "suffix": ""
+        }
+      ],
+      "year": 1994,
+      "venue": "IEEE transactions on neural networks"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Handling sparsity via the horseshoe",
+      "authors": [
+        {
+          "first": "Carlos",
+          "middle": [
+            "M"
+          ],
+          "last": "Carvalho",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [
+            "G"
+          ],
+          "last": "Polson",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [
+            "G"
+          ],
+          "last": "Scott",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "Artificial intelligence and statistics"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Nas-bench-201: Extending the scope of reproducible neural architecture search",
+      "authors": [
+        {
+          "first": "Xuanyi",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "High-dimensional bayesian optimization with sparse axisaligned subspaces",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Eriksson",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Jankowiak",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Uncertainty in Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Scalable global optimization via local bayesian optimization",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Eriksson",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Pearce",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Gardner",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [
+            "D"
+          ],
+          "last": "Turner",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Poloczek",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "A tutorial on bayesian optimization",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Peter",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Frazier",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Gpytorch: Blackbox matrix-matrix gaussian process inference with gpu acceleration",
+      "authors": [
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Gardner",
+          "suffix": ""
+        },
+        {
+          "first": "Geoff",
+          "middle": [],
+          "last": "Pleiss",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Kilian",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Weinberger",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "G"
+          ],
+          "last": "Bindel",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wilson",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "High-dimensional bayesian optimization via treestructured additive models",
+      "authors": [
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Ishank",
+          "middle": [],
+          "last": "Arora",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Scarlett",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Which neural net architectures give rise to exploding and vanishing gradients?",
+      "authors": [
+        {
+          "first": "Boris",
+          "middle": [],
+          "last": "Hanin",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Vanilla bayesian optimization performs great in high dimension",
+      "authors": [
+        {
+          "first": "Carl",
+          "middle": [],
+          "last": "Hvarfner",
+          "suffix": ""
+        },
+        {
+          "first": "Erik",
+          "middle": [],
+          "last": "Orm Hellsten",
+          "suffix": ""
+        },
+        {
+          "first": "Luigi",
+          "middle": [],
+          "last": "Nardi",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Large-scale multi-disciplinary mass optimization in the auto industry",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Donald",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "MOPTA 2008 Conference"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Efficient global optimization of expensive black-box functions",
+      "authors": [
+        {
+          "first": "Donald",
+          "middle": [
+            "R"
+          ],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Schonlau",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [
+            "J"
+          ],
+          "last": "Welch",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": "Journal of Global Optimization"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "High dimensional bayesian optimisation and bandits via additive models",
+      "authors": [
+        {
+          "first": "Kirthevasan",
+          "middle": [],
+          "last": "Kandasamy",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Schneider",
+          "suffix": ""
+        },
+        {
+          "first": "Barnabás",
+          "middle": [],
+          "last": "Póczos",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Re-examining linear embeddings for high-dimensional bayesian optimization",
+      "authors": [
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Letham",
+          "suffix": ""
+        },
+        {
+          "first": "Roberto",
+          "middle": [],
+          "last": "Calandra",
+          "suffix": ""
+        },
+        {
+          "first": "Akshara",
+          "middle": [],
+          "last": "Rai",
+          "suffix": ""
+        },
+        {
+          "first": "Eytan",
+          "middle": [],
+          "last": "Bakshy",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "High dimensional bayesian optimization via restricted projection pursuit models",
+      "authors": [
+        {
+          "first": "Chun-Liang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kirthevasan",
+          "middle": [],
+          "last": "Kandasamy",
+          "suffix": ""
+        },
+        {
+          "first": "Barnabas",
+          "middle": [],
+          "last": "Poczos",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Schneider",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the 19th International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Accelerating kernel classifiers through borders mapping",
+      "authors": [
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Mills",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Journal of Real-Time Image Processing"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Bayesian approach to global optimization: theory and applications",
+      "authors": [
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Mockus",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "High-dimensional bayesian optimization using low-dimensional feature spaces",
+      "authors": [
+        {
+          "first": "Riccardo",
+          "middle": [],
+          "last": "Moriconi",
+          "suffix": ""
+        },
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Peter Deisenroth",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ks Sesh",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Machine Learning"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "A framework for Bayesian optimization in embedded subspaces",
+      "authors": [
+        {
+          "first": "Amin",
+          "middle": [],
+          "last": "Nayebi",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Munteanu",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Poloczek",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 36th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "High-dimensional bayesian optimization via additive models with overlapping groups",
+      "authors": [
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Rolland",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Scarlett",
+          "suffix": ""
+        },
+        {
+          "first": "Ilija",
+          "middle": [],
+          "last": "Bogunovic",
+          "suffix": ""
+        },
+        {
+          "first": "Volkan",
+          "middle": [],
+          "last": "Cevher",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International conference on artificial intelligence and statistics"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "A tutorial on Thompson sampling",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Daniel",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Russo",
+          "suffix": ""
+        },
+        {
+          "first": "Abbas",
+          "middle": [],
+          "last": "Van Roy",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Kazerouni",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Osband",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Foundations and Trends® in Machine Learning"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Lassobench: A highdimensional hyperparameter optimization benchmark suite for lasso",
+      "authors": [
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Kenan Vsehić",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Gramfort",
+          "suffix": ""
+        },
+        {
+          "first": "Luigi",
+          "middle": [],
+          "last": "Salmon",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nardi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Automated Machine Learning"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Practical bayesian optimization of machine learning algorithms",
+      "authors": [
+        {
+          "first": "Jasper",
+          "middle": [],
+          "last": "Snoek",
+          "suffix": ""
+        },
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Larochelle",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [
+            "P"
+          ],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "On the distribution of points in a cube and the approximate evaluation of integrals",
+      "authors": [
+        {
+          "first": "'",
+          "middle": [],
+          "last": "Il",
+          "suffix": ""
+        },
+        {
+          "first": "Meerovich",
+          "middle": [],
+          "last": "Sobol",
+          "suffix": ""
+        }
+      ],
+      "year": 1967,
+      "venue": "Zhurnal Vychislitel'noi Matematiki i Matematicheskoi Fiziki"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Virtual library of simulation experiments: Test functions and datasets",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Surjanovic",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Bingham",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Mujoco: A physics engine for model-based control",
+      "authors": [
+        {
+          "first": "Emanuel",
+          "middle": [],
+          "last": "Todorov",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Erez",
+          "suffix": ""
+        },
+        {
+          "first": "Yuval",
+          "middle": [],
+          "last": "Tassa",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "IEEE/RSJ International Conference on Intelligent Robots and Systems"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Batched large-scale bayesian optimization in high-dimensional spaces",
+      "authors": [
+        {
+          "first": "Zi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Clement",
+          "middle": [],
+          "last": "Gehring",
+          "suffix": ""
+        },
+        {
+          "first": "Pushmeet",
+          "middle": [],
+          "last": "Kohli",
+          "suffix": ""
+        },
+        {
+          "first": "Stefanie",
+          "middle": [],
+          "last": "Jegelka",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Bayesian optimization in a billion dimensions via random embeddings",
+      "authors": [
+        {
+          "first": "Ziyu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Frank",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        },
+        {
+          "first": "Masrour",
+          "middle": [],
+          "last": "Zoghi",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Matheson",
+          "suffix": ""
+        },
+        {
+          "first": "Nando",
+          "middle": [],
+          "last": "De",
+          "suffix": ""
+        },
+        {
+          "first": "Feitas",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Journal of Artificial Intelligence Research"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Gaussian processes for machine learning",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [
+            "I"
+          ],
+          "last": "Christopher",
+          "suffix": ""
+        },
+        {
+          "first": "Carl",
+          "middle": [
+            "Edward"
+          ],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Rasmussen",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Are random decompositions all we need in high dimensional bayesian optimisation",
+      "authors": [
+        {
+          "first": "Juliusz",
+          "middle": [],
+          "last": "Krzysztof",
+          "suffix": ""
+        },
+        {
+          "first": "Ziomek",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Haitham",
+          "middle": [],
+          "last": "Bou",
+          "suffix": ""
+        },
+        {
+          "first": "Ammar",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    }
+  ]
+}

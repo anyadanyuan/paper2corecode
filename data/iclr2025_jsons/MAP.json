@@ -1,0 +1,1749 @@
+{
+  "paper_id": "MAP",
+  "title": "MAP: MULTI-HUMAN-VALUE ALIGNMENT PALETTE",
+  "authors": [
+    {
+      "first": "Xinran",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Minnesota",
+        "location": {}
+      }
+    },
+    {
+      "first": "Qi",
+      "middle": [],
+      "last": "Le",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Minnesota",
+        "location": {}
+      }
+    },
+    {
+      "first": "Ammar",
+      "middle": [],
+      "last": "Ahmed",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Minnesota",
+        "location": {}
+      }
+    },
+    {
+      "first": "Enmao",
+      "middle": [],
+      "last": "Diao",
+      "affiliation": {}
+    },
+    {
+      "first": "Yi",
+      "middle": [],
+      "last": "Zhou",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "IBM Research",
+        "location": {}
+      }
+    },
+    {
+      "first": "Nathalie",
+      "middle": [],
+      "last": "Baracaldo",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "IBM Research",
+        "location": {}
+      }
+    },
+    {
+      "first": "Jie",
+      "middle": [],
+      "last": "Ding",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Minnesota",
+        "location": {}
+      }
+    },
+    {
+      "first": "Ali",
+      "middle": [],
+      "last": "Anwar",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Minnesota",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Ensuring that generative AI systems align with human values is essential but challenging, especially when considering multiple human values and their potential trade-offs. Since human values can be personalized and dynamically change over time, the desirable levels of value alignment vary across different ethnic groups, industry sectors, and user cohorts. Within existing frameworks, it is hard to define human values and align AI systems accordingly across different directions simultaneously, such as harmlessness, helpfulness, and positiveness. To address this, we develop a novel, first-principle approach called Multi-Human-Value Alignment Palette (MAP), which navigates the alignment across multiple human values in a structured and reliable way. MAP formulates the alignment problem as an optimization task with user-defined constraints, which define human value targets. It can be efficiently solved via a primal-dual approach, which determines whether a user-defined alignment target is achievable and how to achieve it. We conduct a detailed theoretical analysis of MAP by quantifying the trade-offs between values, the sensitivity to constraints, the fundamental connection between multi-value alignment and sequential alignment, and proving that linear weighted rewards are sufficient for multi-value alignment. Extensive experiments demonstrate MAP's ability to align multiple values in a principled manner while delivering strong empirical performance across various tasks.",
+  "body": {
+    "1_INTRODUCTION": "Recent advancements in artificial intelligence (AI) have highlighted the critical need for aligning AI systems with human values, a concept known as human value alignment (Griffith et al., 2013; Arumugam et al., 2019; Gabriel, 2020) . The alignment can serve the purpose of generating outcomes that are better suited for human ethics (Griffith et al., 2013) , personalized needs (Kirk et al., 2024) , or reduced harmful content (Bai et al., 2022) . This alignment has traditionally been pursued by adjusting AI behavior to adhere to specific attributes via preference datasets or reward functions. This process involves finetuning the original model according to the optimization problem:\nEQUATION\nHere, P denotes the class of all distributions, p 0 is the distribution that represents the generative model to align, p is the distribution that represents the aligned model, R is a reward function that quantifies the preference level of any given pair of prompt x and generation y, D KL measures the KL-divergence, and β > 0 is a regularization hyperparameter. This formulation has deep conceptual roots in the Bayesian decision theoretic framework (Bissiri et al., 2016) . Specifically, if we consider x as observed data and y as a parameter θ, the problem (1) can be expressed as E θ∼p(•) log p(x | θ) -D KL p(•) || p 0 (•) . This formulation yields the solution p x (θ) ∝ p 0 (θ)p(x | θ), which is precisely Bayes' Rule. However, while this formulation provides an elegant interpretation of how AI models can be adjusted to reflect new information or preferences, it may not fully capture the complexity required when aligning AI systems to multiple, potentially conflicting human values. For example, a healthcare-related large language model must deliver information that is not only precise but also easy-to-understand and harmless (Gebreab et al., 2024) . Similarly, a customer service P a re to F ro n ti e r P a re to F ro n ti e r (right) versus Helpfulness for various models aligned from the Llama2-7B-chat model (Touvron et al., 2023) . Each blue dot represents the expected rewards E x∼D,y∼p(•|x) r(x, y) with r trained from Anthropic Harmless preference data (rHarmlessness) (Yang et al., 2024) , Helpfulness preference data (rHelpfulness) (Yang et al., 2024) , and Humor classifier (rHumor) (Dhiab, 2023) . The expected rewards are numerically obtained by solving (1) with R = λ1rHarmlessness + λ2rHelpfulness + λ3rHumor, where λ1, λ2, λ3 ≥ 0 are randomly generated, and quantiletransformed to the scale of 0 to 1. Arrows indicate the transition from the original model to aligned models, either using the proposed approach (MAP) or a single reward function.\nchatbot optimized for efficiency may compromise on politeness or empathy (Kolasani, 2023) . These scenarios highlight the need to balance diverse human values, which often requires more nuanced solutions than a single-dimensional alignment approach can offer.\nRelated work. Centered around the formulation (1), a standard approach is the reinforcement learning from human feedback (RLHF) (Griffith et al., 2013; Arumugam et al., 2019; Bai et al., 2022; Dai et al., 2024) that first trains a reward model R based on pairwise comparison or ranking data to serve as a proxy for human preferences, and then uses reinforcement learning with the reward model to address the optimization problem (1). An alternative method known as direct preference optimization (DPO) (Rafailov et al., 2023) directly optimizes an empirical risk based on the Bradley-Terry loss (Bradley & Terry, 1952) applied to the preference data, using an implicit reward in the form of r(x, y) ∆ = β log(p(y | x)/p 0 (y | x)). To address multiple human values, recent work on aligning foundation models has used multi-objective reinforcement learning (MORL) (Barrett & Narayanan, 2008; Li et al., 2020; Wu et al., 2024) . Existing studies focus on approximating tradeoffs among values utilizing a linear scalarization method that combines either reward functions or data sources, for both RLHF and DPO approaches (Bai et al., 2022; Rame et al., 2023; Dai et al., 2024) . Alternatively, some studies utilize specific choices of weights to manage trade-offs (Dognin et al., 2024) . A recent technique named \"rewarded soup\" was introduced to efficiently compute the aligned models under linear scalarization (Rame et al., 2023) . It first separately fine-tunes multiple models, each with a particular reward function, and then aggregates these networks by linearly interpolating their weights. This method aims to approximate the ensemble of fine-tuned models that would otherwise result from optimizing a single reward composed of various linear combinations of individual reward functions, namely R ∆ = m i=1 λ i r i with random λ = [λ 1 , . . . , λ m ]. A similar idea was applied to DPO (Zhou et al., 2024) , where the DPO-aligned models under individual values are interpolated to approximate the Pareto Frontier. Further related work is provided in Appendix B.5.\nChallenges. Aligning AI models to multiple values simultaneously presents several unresolved challenges. First, as demonstrated in Figure 1 , aligning with one value, such as helpfulness, harmlessness, or humor, could inadvertently diminish another. This motivates a critical question: How can we quantify and enhance multiple human values concurrently without compromise?\nMoreover, in the RLHF approach as described by the problem (1), it is unclear how to specify the hyperparameter β and reward function R so that the aligned model p improves upon, or at least not 2 1 0 1 2 Humor scores 0.0 0.5 1.0 1.5 2.0 2.5 3.0 Density 4 2 0 2 Helpfulness scores 0.0 0.2 0.4 0.6 0.8 1.0 Density 4 2 0 2 4 Harmlessness scores 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 Density Original realized value levels MAP realized value levels Distribution of reward scores under original model Distribution of reward scores under MAP-aligned model Figure 3: Distribution of reward scores before and after aligning the Llama2-7B-chat model towards three values: Humor (left plot), Helpfulness (middle plot), and Harmlessness (right plot), using the proposed MAP.\nThis alignment involves a user-specified palette designed to shift the expected rewards, also referred to as realized value levels, toward the 80% quantile of the pre-alignment distributions.\nworse than, p 0 in all human values in one shot (without trial-and-error). Even if we can try all possible combinations, there is no theoretical justification that linearly combining individual reward functions is sufficient to obtain the Pareto Frontier. The DPO method, while simplifying the alignment process through a direct empirical risk optimization, still does not address the issue of integrating multiple data sources, which have their underpinning still at the problem (1). Recent studies have demonstrated the sensitivity of results to different weights used in these aggregations (Bai et al., 2022) . To highlight this point, in Figure 2 , we visualize the range of possible λ and of desirable λ (which actually admits Pareto improvement on all the values). Contributions. We introduce the Multi-Human-Value Alignment Palette (MAP), a principled approach to rigorously aligning multi-dimensional values with provable guarantees. Similar to an artist's color palette, MAP enables the blending of multiple human values to \"paint\" AI behavior with a broad spectrum of preference shades. In Figure 3 , we illustrate how MAP allows users to precisely customize and control the level of improvement for all values in an interpretable manner. The proposed MAP introduces several technical innovations and contributions:\n• Formulation. We propose a novel problem formulation that allows one to align multiple human values using user-defined constraints, which we term \"value palettes.\" Each palette acts as a constraint that represents a preferred level of alignment, allowing us to \"MAP\" from any targeted value levels specified by the user to a particular reward function for (1). This precise one-to-one mapping ensures exact adjustments to model behavior.\n• Theory. We provide theoretical analysis within the MAP framework quantifies the representation of the solution, its sensitivity to changes in the value palette, and its feasible operational range. This leads to a deeper understanding of the inherent trade-offs among various values. Furthermore, we investigate the range of realizable value levels and demonstrate that a linear combination of individual reward functions, is sufficient to reach the Pareto Frontier. We also establish a crucial link between multi-value alignment and sequential alignment, showing that cyclically updating each value multiple times achieves equivalent results to a single execution of MAP.\n• Computational methodology. Based on our theoretical derivations, we propose a computational method to ascertain the achievability of user-defined value palettes. The proposed method utilizes a primal-dual approach to efficiently solve the optimization problem for a feasible choice within the palette. We verify that the dual problem exhibits concavity, enabling effective resolution through gradient ascent techniques. MAP is agnostic to the stages of model alignment, whether at the decoding or training stage, the model architecture, and the specific definitions of values used. Finally, we conducted comprehensive experimental studies to validate the practical effectiveness of MAP.",
+    "2_MAP:_MULTI-HUMAN-VALUE_ALIGNMENT_PALETTE": {
+      "2.2_REALIZABLE_VALUE_LEVELS_OF_THE_MAP_PROBLEM_AND_PARETO_FRONTIER": "We first show that the MAP problem can be written as the original alignment problem (1) with a particular reward function that is simply a linear combination of individual rewards.\nTheorem 2 (Solution of MAP). The solution to the MAP problem (3) is the same of the problem (1) with R(x, y) ∆ = β • λ(c) T r(x, y), where λ(c) was introduced in Theorem 1.\nThis prompts the natural question of whether MAP limits the breadth of realizable value levels compared to those achievable under (1) with arbitrarily chosen R. Next, we will show that actually the realizable value levels of (1) and the MAP problem in (3) are the same.\nGiven the reference distribution p 0 and any specific reward functions R, the solution p, if feasible, depends solely on R. To illustrate this dependency, we denote p as p R . Let F RLHF (p 0 ) represent the range of R that admits feasible solutions to the RLHF problem, essentially those with valid probability densities. The realizable value levels under the RLHF problem are defined as:\nVRLHF(p0) ∆ = E x∼D,y∼p R (•|x) r(x, y) : R ∈ FRLHF(p0) .\nFor multiple reward functions r 1 , . . . , r m , we consider a specific class of R comprising various non-negative linear combinations, and define their realizable value levels similarly:\nVRLHF(r1, . . . , rm; p0) ∆ = E x∼D,y∼p R (•|x) r(x, y) : R ∆ = m i=1 ρiri ∈ FRLHF(p0), ρi ≥ 0 .\nIn the MAP problem, given p 0 and r, the solution p, if feasible, depends only on the user-specified value palette c. To emphasize this relationship, we denote p as p c . Let C MAP (r 1 , . . . , r m ; p 0 ) denote the range of c that admits feasible solutions to the MAP problem. We further consider the realized value levels of all feasible solutions under various c, defined as:\nVMAP(r1, . . . , rm; p0) ∆ = E x∼D,y∼pc(•|x) r(x, y) : c ∈ CMAP(r1, . . . , rm; p0) .\nTheorem 3 (Equivalent realizable value levels). For any original generative model p 0 , we have\nVMAP(r1, . . . , rm; p0) = VRLHF(p0) = VRLHF(r1, . . . , rm; p0). (6) 𝑝 0 Feasible 𝑝 from 𝑝 0 and any 𝑅 Feasible 𝑝 from 𝑝 0 and σ 𝑖=1 𝑚 𝜌 𝑖 𝑟 𝑖 Same set of realizable value levels Theorem 3 establishes that the realizable value levels by MAP equate to those in the original alignment problem (1) using a specific reward function -a linear combination of individual rewards. This proves that linear combinations of individual reward functions can sufficiently capture the entire Pareto Frontier. It is crucial to note that the sets of solutions, namely p, are not identical for both problems. The key insight is that the set of realizable value levels, which resides within a finite m-dimensional space, is mapped from the infinitely dimensional set of solutions p through a many-to-one mapping, as depicted in Figure 4 .\nWe denote all feasible value palettes C MAP (r 1 , . . . , r m ; p 0 ) simply as C. The following theorem explores the characteristics of this set. Theorem 4. The following properties of C hold.\n(i) If c ∈ C, for any c ′ such that c ′ ≤ c, we have c ′ ∈ C. y ( m) , and sample y = y (i) using the Softmax of R(x, y (i) ) as Multinomial probability.\n• Finetuning (F) option: Apply Proximal Policy Optimization (PPO) with R to fine-tune p0 into p.\nFor a prompt x, generate y ∼ p(• | x). Output: The generated y. \nZ(λ, x) ∆ = y ′ p 0 (y ′ | x)e λ T r(x,y ′ )\ndy ′ is the normalizing constant. Treating the optimal solution λ = λ(c) as a function of c, we have dλ(c) dc = -V -1 , where\nV ∆ = Var λ (r(x, y)) is the covariance matrix of r(x, y) under the distribution x ∼ D, y | x ∼ p λ (• | x).\nThe result in (iv) can be used to check if a small increase in c, e.g., changing c 1 to c 1 + δ for a small δ > 0, will cause λ to change in a way that remains feasible.",
+      "2.3_COMPUTATIONAL_SOLUTION_TO_MAP_THROUGH_A_PRIMAL-DUAL_APPROACH": "In this section, we introduce a practical framework to solve MAP problem defined in (3), illustrated in Figure 5 and Algorithm 1. Once a user defines a value palette according to Remark 2, in Step 2, we derive λ from c as per Theorem 1. We then approximate Problem (5) as follows:\nEQUATION\nwhere the dataset {(x j , y j ) n j=1 } serves as a finite-sample approximation of the distribution p 0 (x, y) with y 1 , . . . , y n , generated conditional on respective prompts x 1 , . . . , x n . Lemma 1 in the Appendix confirms that both the original problem (5) and its approximation (7) are concave, allowing for the use of gradient ascent to efficiently find the optimal λ:\nEQUATION\nwhere r 1:\nn ∆ = [r(x 1 , y 1 ), . . . , r(x n , y n )].\nIn practical implementations, we applied a change of variable τ ∆ = log λ to ensure the constraints λ ≥ 0 are satisfied. Not all users' palette choices are feasible. If the updates in (8) do not converge, this indicates that the chosen c is infeasible. In such cases, MAP can adjust the value palette c automatically, which we elaborate in Appendix B.2. Also, because the above optimization problem is concave and the data can be pre-computed using a pilot set of Monte Carlo samples from the original model, solving the problem is efficient and does not depend on the complexity of the models to align. More discussions are included in Appendix B.3. (x,y) through two practical approaches during experiments. The first, decoding-based alignment, employs importance sampling for decoding from p. Specifically, for any input x, we generate k samples from p 0 , labeled y 1 , . . . , y k , and select one via Multinomial sampling with weights proportional to exp(λ T r(x, y i )) for each sample i. We include an ablation study on the trade-off between complexity of larger m and enhanced generation quality in Appendix A.4. The second approach, finetuning-based alignment, fine-tunes a model p w with neural weights w based on the reward function (x, y) → λ T r(x, y). Compared with the first approach, the function space of p is restricted by the model architecture and the training can be computationally intensive. However, it can reduce the inference-stage complexity by only decoding one sentence for each prompt. An experimental study on this comparison is included in Appendix A.5.",
+      "2.4_SIMULTANEOUS_VERSUS_SEQUENTIAL_OR_GREEDY_ALIGNMENT": "To align a model with a specified value palette c, a natural baseline method is sequentially aligning individual values, namely we sequentially update the model to align each value to an entry in c until all values are addressed. This section compares this method with the MAP procedure.\nSequential alignment algorithm. Suppose we have aligned with one value palette c (ℓ-1) and then update with c (ℓ) , ℓ = 1, 2, . . .. For notational convenience, let the initial c (0) be the realized level of the original model p 0 . At the end of the ℓ-th alignment, the aligned distribution can be expressed as\np (ℓ) (y | x) ∝ p 0 (y | x) • exp(λ T\n(ℓ) r(x, y)) for some vector λ (ℓ) . Given the value palettes {c (ℓ) } ℓ=1,2,... , we recursively obtain λ (ℓ) from λ (ℓ-1) . Like the problem (5), the alignment objective at the beginning of the ℓ-th alignment is:\nEQUATION\n)\nLike the problem (7), we can numerically solve (9) by addressing the problem:\nEQUATION\n)\nConnection between Sequential and Simultaneous Alignment. The problem (9) establishes a connection between the (ℓ -1)-th and ℓ-th alignment. Recall that m denotes the number of values or the dimension of c. In a canonical setting where one value is aligned at a time, define {c (ℓ) } ℓ=1,2,... by: c (ℓ) = [-∞, . . . , c ℓ , -∞, . . .], for ℓ ≤ m, where the ℓ-th element is the same as that of c, and the others are trivially negative infinity. For ℓ > m, we can re-align the first value, and so on. Namely, we replace the above c ℓ in c (ℓ) with c ℓ mod m . The following result shows this sequential, iterative alignment process converges to the joint alignment using MAP.\nTheorem 5. Let p (0) ∆ = p 0 , p (1) , p (2) , . . . be the sequence of distributions obtained by sequentially aligning the original model according to the single-value MAP objective:\nmin p∈P E x∼D,y∼p(•|x) D KL p(• | x) || p (ℓ-1) (• | x) s.t. E x∼D,y∼p(•|x) r ℓ ′ (x, y) ≥ c ℓ ′ ,\nwhere ℓ ′ = (ℓ mod m). Assuming r(x, y) is not trivially a constant on the support set of (x, y), this sequence weakly converges to p λ(c) , which is the solution to the MAP problem in (4).\nThe proof of Theorem 5 demonstrates that the sequential alignment process fundamentally operates as a coordinate-wise gradient ascent algorithm. When we align subsets of values in each iteration, the process can equivalently function as a block-wise ascent. Importantly, while a single cycle of sequential alignments -aligning each value only once -may not fully achieve joint alignment, multiple cycles ensure convergence. This aspect is particularly significant in scenarios where constraints such as limited GPU memory restrict the simultaneous loading of numerous reward models. Our finding confirms that sequential alignment, when executed over a sufficient number of cycles, can effectively accommodate these memory and computational limitations. ",
+      "_text": "2.1 PROBLEM FORMULATION The formulation in (1) can be seen as maximizing the expected reward while imposing a regularization to minimize unnecessary deviations from the original model. This insight leads us to define a value alignment through a statistical functional constraint:\nEQUATION\nwhich is interpreted as the expected rewards, or realized levels, under a value preference must be at least c. Likewise, to align m ≥ 1 value preferences, we introduce the following MAP problem:\nEQUATION\nWe denote c ∆ = [c 1 , . . . , c m ] T as the value palette. With a solution p, we refer to\nE x∼D,y∼p(•|x) (r(x, y) ∆ = [r 1 (x, y), .\n. . , r m (x, y)] T ) as the realized value levels. We write u ≥ v if the two vectors are of the same size and u i ≥ v i for each entry i. Theorem 1 (Representation of MAP solution). The solution to the MAP problem (3) is\nEQUATION\nwhere λ T r(x, y) = m i=1 λ i r i (x, y), for some λ ≥ 0. Moreover, assuming that r(x, y) is not trivially a constant on the support set of x, y, the above λ is the unique solution to the problem:\nEQUATION\nwhere Z(λ) (x,y) , and g is strictly concave. As a result, we can treat λ in (4) as an implicit function of c and denote it as λ = λ(c) ∆ = arg max λ≥0 g(λ).\n∆ = E x∼D,y∼p0(•|x) e λ T r"
+    },
+    "3.1_EXPERIMENTAL_SETUP": "We generate prompts from two data sources: Anthropic harmless data (Bai et al., 2022) , which includes human requests delineated between the tags \"Human:\" and \"Assistant:\", and IMDB data (Maas et al., 2011 ) from which we retain movie reviews exceeding 30 characters in length.\nFor backbone models, we employ OPT-1.3B (Zhang et al., 2022) and Llama2-7B-chat (Touvron et al., 2023) , which have demonstrated robust language modeling capabilities in previous assessments. We focus on several values for alignment: Humor, Positiveness, Harmlessness, Helpfulness, Diversity, Coherence, and Perplexity. The Humor reward is assessed using the logits from a humor detection model (Dhiab, 2023) , while Positiveness uses a DistilBERT model trained on IMDB sentiment analysis (Lvwerra, 2021) . Harmlessness and Helpfulness are evaluated through two GPT-2 models equipped with a value head fine-tuned to predict these attributes (Yang et al., 2024) . Diversity is measured by the lexical variety within sentences, calculated through the proportion of unique n-grams (n = 2, 3, 4) and their composite score (Zhang et al., 2020) . Coherence is determined by the semantic similarity of sentences within a context, using a supervised SimCSE BERT-based model that captures sentence embeddings to assess textual coherence (Gao et al., 2021) .",
+    "3.2_EFFECTIVENESS_OF_MAP_FOR_SIMULTANEOUS_MULTI-VALUE_ALIGNMENT": "For the conversational task, we use Anthropic data as input prompts x to align the OPT-1.3B model across six dimensions: Humor, Harmlessness, Helpfulness, Diversity, Coherence, and Perplexity.\nHere, the perplexity is calculated as negative log of the standard perplexity so that the larger the better. We tested seven different value palettes for alignment, considering both decoding-based and finetuning-based implementations. For example, the HHH-80% palette aligns the first three values to the 80th percentile of their respective distributions, while maintaining the last three values. This approach aims to enhance the model's output to closely resemble human-like interaction standards without compromising the intrinsic qualities of the generated content. The results are summarized in Table 1 . The first three rows show the effectiveness of the MAP approach in simultaneously enhancing multiple values to various levels. In comparison, the last three palettes, which focus on aligning a single value, typically enhance that specific value but may degrade others. The results are also visualized in radar plots in Figure 6 , where all values are transformed to quantiles under the reward distribution of the original model.\nAdditional experiments, including an ablation study with the Llama2-7B-chat model, are detailed in Appendix A.1. Notably, the HHH-80% palette was determined to be feasible by palettes, evaluated in terms of expected rewards (or realized value levels). Scenarios include: 1) enhancing the first three values -Humor, Harmlessness, Helpfulness -to the xth percentile of their respective reward distributions under the original model (\"HHH-x%\") while maintaining the last three values -Diversity, Coherence, and Perplexity -using MAP, and 2) aligning individual values independently (\"Humor-80%\", \"Helpfulness-80%\", \"Harmlessness-80%\"). Results include the optimized weight vector λ, targeted value palettes, and realized value levels. Both decoding-based approach (\"MAP-D\") and finetuning-based approach (\"MAP-F\") are used.\nThe palette \"HHH-80%\" was found infeasible, as confirmed in\nStep 2 of Algorithm 1. Humor↑ Helpfulness↑ Harmlessness↑ Diversity↑ Coherence↑ Perplexity↑ Original model 2.07 -1.47 0.25 0.88 0.43 -3.34 HHH-50% (λ = [2.53, 0.23, 0.28, 0.02, 0.05, 0.05]) MAP-D 2.44 -1.38 0.21 0.88 0.43 -3.17 MAP-F 2.20 -1.80 0.66 0.86 0.41 -2.80 HHH-60% (λ = [6.30, 0.83, 0.93, 0.01, 0.03, 0.03]) MAP-D 2.48 -1.33 0.48 0.88 0.43 -3.15 MAP-F 2.47 -2.26 0.50 0.89 0.26 -3.49 HHH-70% (λ = [12.77, 1.53, 1.69, 0.01, 0.02, 0.02]) MAP-D 2.49 -1.29 0.66 0.88 0.45 -3.14 MAP-F 2.17 -2.28 0.97 0.82 0.10 -5.04 Humor-80% (λ = [16.44, -, -, -, -, -]) MAP-D 2.52 -1.42 0.01 0.89 0.43 -3.21 MAP-F 2.08 -2.49 0.39 0.79 0.09 -5.85 Helpfulness-80% (λ = [-, 0.72, -, -, -, -]) MAP-D 1.99 -0.75 -0.35 0.88 0.43 -3.20 MAP-F 2.02 -0.66 -0.58 0.88 0.41 -2.73 Harmlessness-80% (λ = [-, -, 1.27, -, -, -]) MAP-D 1.97 -1.86 0.97 0.88 0.42 -3.17 MAP-F 2.05 -2.02 0.94 0.87 0.40 -2.63\nTable 2: Results of aligning the OPT-1.3B model for the open-generation task with IMDB data using diverse value palettes, evaluated in terms of expected rewards (or realized value levels). Scenarios include: 1) enhancing the first three values -Positiveness, Harmlessness, Helpfulness -to the xth percentile of their respective reward distributions under the original model (\"PHH-x%\") while maintaining the last three values -Diversity, Coherence, and Perplexity -using MAP, and 2) aligning individual values independently (\"Positiveness-80%\", \"Helpfulness-80%\", and \"Harmlessness-80%\").\nPositiveness↑ Helpfulness↑ Harmlessness↑ Diversity↑ Coherence↑ Perplexity↑ Original model 0.52 -1.53 0.58 0.88 0.24 -3.36 PHH-50% (λ = [0.24, 0.08, 0.12, 0.03, 0.07, 0.07]) MAP-D 0.62 -1.40 0.57 0.88 0.24 -3.19 MAP-F 0.55 -1.50 0.49 0.88 0.23 -2.80 PHH-60% (λ = [2.23, 0.41, 0.79, 0.01, 0.03, 0.04]) MAP-D 0.91 -1.16 0.67 0.89 0.25 -3.13 MAP-F 0.88 -0.69 0.38 0.87 0.24 -2.46 PHH-70% (λ = [3.83, 0.90, 1.48, 0.01, 0.02, 0.03]) MAP-D 0.93 -1.10 0.74 0.89 0.24 -3.13 MAP-F 0.94 -0.33 0.24 0.80 0.18 -2.64 PHH-80% (λ = [9.77, 1.42, 2.27, 0.00, 0.01, 0.03]) MAP-D 0.93 -1.06 0.64 0.89 0.25 -3.14 MAP-F 0.95 -1.22 0.24 0.73 0.18 -2.99 Positiveness-80% (λ = [10.98, - , - , - , - , -] ) MAP-D 0.94 -1.10 0.47 0.89 0.25 -3.17 MAP-F 0.92 -1.27 0.37 0.73 0.17 -3.00 Helpfulness-80% (λ = [-, 0.95, -, -, -, -]) MAP-D 0.56 -0.86 0.29 0.89 0.23 -3.17 MAP-F 0.55 -1.28 0.34 0.88 0.23 -2.83 Harmlessness-80% (λ = [-, -, 1.43, -, -, -]) MAP-D 0.53 -1.80 1.21 0.89 0.24 -3.17 MAP-F 0.47 -1.77 0.91 0.89 0.23 -2.62\nTheorem 4, we sample λ randomly from the range (c 0 , B) and retain the feasible ones according to MAP's feasibility check. From these, we select λ vectors with a bounded ℓ 1 -norm less than 6. We compare this with a standard MORL approach where λ is randomly generated from s • u, where s is uniformly sampled from (0, 6) and u is uniformly sampled from the probability simplex. For both approaches, we implement two alignment strategies: For the decoding-based approach (\"MAP-D\", \"MORL-D\"), we generate 16 candidates of y for each prompt x and select the final output using Multinomial sampling as described in Algorithm 1 Step 3. For the finetuning-based approach (\"MAP-F\", \"MORL-F\"), we apply PPO and the calculated MAP reward function R to fine-tune the original model. We evaluate the outcomes using the \"test\" split of our task data, assessing both the expected reward and win rate against the original model based on the reward functions.\nAdditionally, we compare MAP with the DPO approach that uses various mixtures of preference data, and DPO-Soup, which applies linear interpolation of DPO-trained, value-specific models. The results, presented in Figure 7 , show that MAP generates alignment results that tend to fall into, or remain close to, the desirable regime, namely the upper-right quadrant relative to the original model.\nIn contrast, the other approaches experience more severe trade-offs and rarely fall into the desirable regime. Table 3 quantifies this comparison by calculating the frequency of alignment results falling within the desirable regime, termed Navigation Efficiency (NE). In MAP-D, we used MAP to obtain 20 λ's based on randomly sampled palettes, and test data is generated using decoding-stage resampling. MAP-F is similar to MAP-D, except it uses PPO to fine-tune the model. MORL-D and MORL-F follow the same structure as MAP but with randomly sampled λ. DPO(β) applies DPO with a regularization parameter β to a mixture of Anthropic Helpful and Harmless datasets, with mixing ratios ranging from 0 to 1. DPO-Soup(β) is a weighted average of the model parameters from DPO(β) obtained at mixing ratios from 0 to 1. Each small marker represents the result of an individual aligned model, while each large marker represents the average result for the corresponding method. The upper right area represents the desirable alignment that improves upon the original model in both values. The shaded bands represent the 95% confidence range numerically calculated from the finite test data. ",
+    "4_CONCLUSION": "The proposed MAP offers a structured approach to aligning multiple human values, enabling precise adjustments to meet diverse user preferences. Through a blend of theoretical insights and practical algorithms, MAP ensures that the alignment is aimed at achieving Pareto improvement with userdefined preference levels. This approach holds potential to positively impact fields that involve complex decision-making, such as public health and digital content creation, by ensuring AI interactions more accurately reflect individual values and preferences. Future work will explore extending MAP to directly calculate empirical risk using a mix of data sources, each representing different values.\nThe Appendix includes further discussions, additional experiments, and all corresponding proofs."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Deep reinforcement learning from policy-dependent human feedback",
+      "authors": [
+        {
+          "first": "Dilip",
+          "middle": [],
+          "last": "Arumugam",
+          "suffix": ""
+        },
+        {
+          "first": "Ki",
+          "middle": [],
+          "last": "Jun",
+          "suffix": ""
+        },
+        {
+          "first": "Sophie",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Saskin",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Michael L Littman",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Training a helpful and harmless assistant with reinforcement learning from human feedback",
+      "authors": [
+        {
+          "first": "Yuntao",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Kamal",
+          "middle": [],
+          "last": "Ndousse",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Nova",
+          "middle": [],
+          "last": "Dassarma",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Drain",
+          "suffix": ""
+        },
+        {
+          "first": "Stanislav",
+          "middle": [],
+          "last": "Fort",
+          "suffix": ""
+        },
+        {
+          "first": "Deep",
+          "middle": [],
+          "last": "Ganguli",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Learning all optimal policies with multiple criteria",
+      "authors": [
+        {
+          "first": "Leon",
+          "middle": [],
+          "last": "Barrett",
+          "suffix": ""
+        },
+        {
+          "first": "Srini",
+          "middle": [],
+          "last": "Narayanan",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Proceedings of the 25th international conference on Machine learning"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "A general framework for updating belief distributions",
+      "authors": [
+        {
+          "first": "Giovanni",
+          "middle": [],
+          "last": "Pier",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [
+            "C"
+          ],
+          "last": "Bissiri",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [
+            "G"
+          ],
+          "last": "Holmes",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Walker",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Journal of the Royal Statistical Society: Series B (Statistical Methodology)"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Convex optimization",
+      "authors": [
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Boyd",
+          "suffix": ""
+        },
+        {
+          "first": "Lieven",
+          "middle": [],
+          "last": "Vandenberghe",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Rank analysis of incomplete block designs: I. the method of paired comparisons",
+      "authors": [
+        {
+          "first": "Ralph",
+          "middle": [],
+          "last": "Allan",
+          "suffix": ""
+        },
+        {
+          "first": "Bradley",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Milton",
+          "middle": [
+            "E"
+          ],
+          "last": "Terry",
+          "suffix": ""
+        }
+      ],
+      "year": 1952,
+      "venue": "Biometrika"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "A new scalarization technique to approximate pareto fronts of problems with disconnected feasible sets",
+      "authors": [
+        {
+          "first": "Regina",
+          "middle": [],
+          "last": "Sandra Burachik",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Yalc ¸in",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kaya",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Rizvi",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Journal of Optimization Theory and Applications"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Safe RLHF: Safe reinforcement learning from human feedback",
+      "authors": [
+        {
+          "first": "Josef",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Xuehai",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "Ruiyang",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Xinbo",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Mickel",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yizhou",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yaodong",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Humor no humor model",
+      "authors": [
+        {
+          "first": "Mohamed",
+          "middle": [],
+          "last": "Dhiab",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Model selection techniques: An overview",
+      "authors": [
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Vahid",
+          "middle": [],
+          "last": "Tarokh",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhong",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "IEEE Signal Processing Magazine"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Contextual moral value alignment through context-based aggregation",
+      "authors": [
+        {
+          "first": "Pierre",
+          "middle": [],
+          "last": "Dognin",
+          "suffix": ""
+        },
+        {
+          "first": "Jesus",
+          "middle": [],
+          "last": "Rios",
+          "suffix": ""
+        },
+        {
+          "first": "Ronny",
+          "middle": [],
+          "last": "Luss",
+          "suffix": ""
+        },
+        {
+          "first": "Inkit",
+          "middle": [],
+          "last": "Padhi",
+          "suffix": ""
+        },
+        {
+          "first": "Miao",
+          "middle": [],
+          "last": "Matthew D Riemer",
+          "suffix": ""
+        },
+        {
+          "first": "Prasanna",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Manish",
+          "middle": [],
+          "last": "Sattigeri",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nagireddy",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Kush",
+          "suffix": ""
+        },
+        {
+          "first": "Djallel",
+          "middle": [],
+          "last": "Varshney",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bouneffouf",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Artificial intelligence, values, and alignment",
+      "authors": [
+        {
+          "first": "Iason",
+          "middle": [],
+          "last": "Gabriel",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Minds and machines"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Simcse: Simple contrastive learning of sentence embeddings",
+      "authors": [
+        {
+          "first": "Tianyu",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Xingcheng",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Danqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Llm-based framework for administrative task automation in healthcare",
+      "authors": [
+        {
+          "first": "Khaled",
+          "middle": [],
+          "last": "Senay A Gebreab",
+          "suffix": ""
+        },
+        {
+          "first": "Raja",
+          "middle": [],
+          "last": "Salah",
+          "suffix": ""
+        },
+        {
+          "first": "Muhammad",
+          "middle": [],
+          "last": "Jayaraman",
+          "suffix": ""
+        },
+        {
+          "first": "Samer",
+          "middle": [],
+          "last": "Habib Ur Rehman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ellaham",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Symposium on Digital Forensics and Security (ISDFS)"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Policy shaping: Integrating human feedback with reinforcement learning",
+      "authors": [
+        {
+          "first": "Shane",
+          "middle": [],
+          "last": "Griffith",
+          "suffix": ""
+        },
+        {
+          "first": "Kaushik",
+          "middle": [],
+          "last": "Subramanian",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Scholz",
+          "suffix": ""
+        },
+        {
+          "first": "Charles",
+          "middle": [
+            "L"
+          ],
+          "last": "Isbell",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [
+            "L"
+          ],
+          "last": "Thomaz",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Assigning a value to a power likelihood in a general bayesian model",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Chris",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [
+            "G"
+          ],
+          "last": "Holmes",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Walker",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Biometrika"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Language model decoding as direct metrics optimization",
+      "authors": [
+        {
+          "first": "Haozhe",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Pei",
+          "middle": [],
+          "last": "Ke",
+          "suffix": ""
+        },
+        {
+          "first": "Hongning",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Minlie",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "ARGS: Alignment as reward-guided search",
+      "authors": [
+        {
+          "first": "Maxim",
+          "middle": [],
+          "last": "Khanov",
+          "suffix": ""
+        },
+        {
+          "first": "Jirayu",
+          "middle": [],
+          "last": "Burapacheep",
+          "suffix": ""
+        },
+        {
+          "first": "Yixuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "The benefits, risks and bounds of personalizing the alignment of large language models to individuals",
+      "authors": [
+        {
+          "first": "Rose",
+          "middle": [],
+          "last": "Hannah",
+          "suffix": ""
+        },
+        {
+          "first": "Bertie",
+          "middle": [],
+          "last": "Kirk",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Vidgen",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [
+            "A"
+          ],
+          "last": "Röttger",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hale",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Nature Machine Intelligence"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Optimizing natural language processing, large language models (llms) for efficient customer service, and hyper-personalization to enable sustainable growth and revenue",
+      "authors": [
+        {
+          "first": "Saydulu",
+          "middle": [],
+          "last": "Kolasani",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Transactions on Latest Trends in Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Deep reinforcement learning for multiobjective optimization",
+      "authors": [
+        {
+          "first": "Kaiwen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE transactions on cybernetics"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Scalarizing functions for generating the weakly efficient solution set in convex multiobjective problems",
+      "authors": [
+        {
+          "first": "Thai",
+          "middle": [],
+          "last": "Dinh The Luc",
+          "suffix": ""
+        },
+        {
+          "first": "Michel",
+          "middle": [],
+          "last": "Quynh Phong",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Volle",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": "SIAM Journal on Optimization"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Distilbert for imdb sentiment analysis",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Lvwerra",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Learning word vectors for sentiment analysis",
+      "authors": [
+        {
+          "first": "Andrew",
+          "middle": [
+            "L"
+          ],
+          "last": "Maas",
+          "suffix": ""
+        },
+        {
+          "first": "Raymond",
+          "middle": [
+            "E"
+          ],
+          "last": "Daly",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "T"
+          ],
+          "last": "Pham",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "Y"
+          ],
+          "last": "Ng",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Potts",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Direct preference optimization: Your language model is secretly a reward model",
+      "authors": [
+        {
+          "first": "Rafael",
+          "middle": [],
+          "last": "Rafailov",
+          "suffix": ""
+        },
+        {
+          "first": "Archit",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Mitchell",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Thirtyseventh Conference on Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Rewarded soups: towards pareto-optimal alignment by interpolating weights fine-tuned on diverse rewards",
+      "authors": [
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Rame",
+          "suffix": ""
+        },
+        {
+          "first": "Guillaume",
+          "middle": [],
+          "last": "Couairon",
+          "suffix": ""
+        },
+        {
+          "first": "Corentin",
+          "middle": [],
+          "last": "Dancette",
+          "suffix": ""
+        },
+        {
+          "first": "Jean-Baptiste",
+          "middle": [],
+          "last": "Gaya",
+          "suffix": ""
+        },
+        {
+          "first": "Mustafa",
+          "middle": [],
+          "last": "Shukor",
+          "suffix": ""
+        },
+        {
+          "first": "Laure",
+          "middle": [],
+          "last": "Soulier",
+          "suffix": ""
+        },
+        {
+          "first": "Matthieu",
+          "middle": [],
+          "last": "Cord",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Thirty-seventh Conference on Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "An interactive weighted tchebycheff procedure for multiple objective programming",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Ralph",
+          "suffix": ""
+        },
+        {
+          "first": "Eng-Ung",
+          "middle": [],
+          "last": "Steuer",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Choo",
+          "suffix": ""
+        }
+      ],
+      "year": 1983,
+      "venue": "Mathematical programming"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Llama 2: Open foundation and fine-tuned chat models",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Louis",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Albert",
+          "suffix": ""
+        },
+        {
+          "first": "Amjad",
+          "middle": [],
+          "last": "Almahairi",
+          "suffix": ""
+        },
+        {
+          "first": "Yasmine",
+          "middle": [],
+          "last": "Babaei",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolay",
+          "middle": [],
+          "last": "Bashlykov",
+          "suffix": ""
+        },
+        {
+          "first": "Soumya",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "Prajjwal",
+          "middle": [],
+          "last": "Bhargava",
+          "suffix": ""
+        },
+        {
+          "first": "Shruti",
+          "middle": [],
+          "last": "Bhosale",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Trl: Transformer reinforcement learning",
+      "authors": [
+        {
+          "first": "Younes",
+          "middle": [],
+          "last": "Leandro Von Werra",
+          "suffix": ""
+        },
+        {
+          "first": "Lewis",
+          "middle": [],
+          "last": "Belkada",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [],
+          "last": "Tunstall",
+          "suffix": ""
+        },
+        {
+          "first": "Tristan",
+          "middle": [],
+          "last": "Beeching",
+          "suffix": ""
+        },
+        {
+          "first": "Nathan",
+          "middle": [],
+          "last": "Thrush",
+          "suffix": ""
+        },
+        {
+          "first": "Shengyi",
+          "middle": [],
+          "last": "Lambert",
+          "suffix": ""
+        },
+        {
+          "first": "Kashif",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Quentin",
+          "middle": [],
+          "last": "Rasul",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gallouédec",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Demystifying poisoning backdoor attacks from a statistical perspective",
+      "authors": [
+        {
+          "first": "Ganghua",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xun",
+          "middle": [],
+          "last": "Xian",
+          "suffix": ""
+        },
+        {
+          "first": "Jayanth",
+          "middle": [],
+          "last": "Srinivasa",
+          "suffix": ""
+        },
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Kundu",
+          "suffix": ""
+        },
+        {
+          "first": "Xuan",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        },
+        {
+          "first": "Mingyi",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "AID: Adaptive integration of detectors for safe ai with large language models",
+      "authors": [
+        {
+          "first": "Xinran",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Enmao",
+          "middle": [],
+          "last": "Diao",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Anwar",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Proceedings of the Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL)"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Fine-grained human feedback gives better rewards for language model training",
+      "authors": [
+        {
+          "first": "Zeqiu",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yushi",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Weijia",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Nouha",
+          "middle": [],
+          "last": "Dziri",
+          "suffix": ""
+        },
+        {
+          "first": "Alane",
+          "middle": [],
+          "last": "Suhr",
+          "suffix": ""
+        },
+        {
+          "first": "Prithviraj",
+          "middle": [],
+          "last": "Ammanabrolu",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Mari",
+          "middle": [],
+          "last": "Ostendorf",
+          "suffix": ""
+        },
+        {
+          "first": "Hannaneh",
+          "middle": [],
+          "last": "Hajishirzi",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "On the vulnerability of retrieval-augmented generation within knowledge-intensive application domains",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Xian",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Srinivasa",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kundu",
+          "suffix": ""
+        },
+        {
+          "first": "Fleming",
+          "middle": [
+            "C"
+          ],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Understanding backdoor attacks through the adaptability hypothesis",
+      "authors": [
+        {
+          "first": "Xun",
+          "middle": [],
+          "last": "Xian",
+          "suffix": ""
+        },
+        {
+          "first": "Ganghua",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jayanth",
+          "middle": [],
+          "last": "Srinivasa",
+          "suffix": ""
+        },
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Kundu",
+          "suffix": ""
+        },
+        {
+          "first": "Xuan",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        },
+        {
+          "first": "Mingyi",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "A unified detection framework for inference-stage backdoor defenses",
+      "authors": [
+        {
+          "first": "Xun",
+          "middle": [],
+          "last": "Xian",
+          "suffix": ""
+        },
+        {
+          "first": "Ganghua",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jayanth",
+          "middle": [],
+          "last": "Srinivasa",
+          "suffix": ""
+        },
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Kundu",
+          "suffix": ""
+        },
+        {
+          "first": "Xuan",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        },
+        {
+          "first": "Mingyi",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Rewardsin-context: Multi-objective alignment of foundation models with dynamic preference adjustment",
+      "authors": [
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoman",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Shuang",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Dong",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianshu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Information criteria for model selection",
+      "authors": [
+        {
+          "first": "Jiawei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhong",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Wiley Interdisciplinary Reviews: Computational Statistics"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Opt: Open pre-trained transformer language models",
+      "authors": [
+        {
+          "first": "Susan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Roller",
+          "suffix": ""
+        },
+        {
+          "first": "Naman",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Mikel",
+          "middle": [],
+          "last": "Artetxe",
+          "suffix": ""
+        },
+        {
+          "first": "Moya",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Shuohui",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Dewan",
+          "suffix": ""
+        },
+        {
+          "first": "Mona",
+          "middle": [],
+          "last": "Diab",
+          "suffix": ""
+        },
+        {
+          "first": "Xian",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "Victoria Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Todor",
+          "middle": [],
+          "last": "Mihaylov",
+          "suffix": ""
+        },
+        {
+          "first": "Myle",
+          "middle": [],
+          "last": "Ott",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Shleifer",
+          "suffix": ""
+        },
+        {
+          "first": "Kurt",
+          "middle": [],
+          "last": "Shuster",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Simig",
+          "suffix": ""
+        },
+        {
+          "first": "Punit",
+          "middle": [],
+          "last": "Singh Koura",
+          "suffix": ""
+        },
+        {
+          "first": "Anjali",
+          "middle": [],
+          "last": "Sridhar",
+          "suffix": ""
+        },
+        {
+          "first": "Tianlu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Bertscore: Evaluating text generation with bert",
+      "authors": [
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Varsha",
+          "middle": [],
+          "last": "Kishore",
+          "suffix": ""
+        },
+        {
+          "first": "Felix",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Kilian",
+          "middle": [
+            "Q"
+          ],
+          "last": "Weinberger",
+          "suffix": ""
+        },
+        {
+          "first": "Yoav",
+          "middle": [],
+          "last": "Artzi",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Beyond one-preference-for-all: Multi-objective direct preference optimization",
+      "authors": [
+        {
+          "first": "Zhanhui",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Jing",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Yue",
+          "suffix": ""
+        },
+        {
+          "first": "Wanli",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Findings of the Association for Computational Linguistics ACL"
+    }
+  ]
+}

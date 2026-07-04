@@ -1,0 +1,3476 @@
+{
+  "paper_id": "scaling-crl",
+  "title": "000 Layer Networks for Self-Supervised RL: Scaling Depth Can Enable New Goal-Reaching Capabilities",
+  "authors": [
+    {
+      "first": "Kevin",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Princeton University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Ishaan",
+      "middle": [],
+      "last": "Javali",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Princeton University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Michał",
+      "middle": [],
+      "last": "Bortkiewicz",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Princeton University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Tomasz",
+      "middle": [],
+      "last": "Trzci",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Princeton University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Benjamin",
+      "middle": [],
+      "last": "Eysenbach",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Princeton University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Scaling up self-supervised learning has driven breakthroughs in language and vision, yet comparable progress has remained elusive in reinforcement learning (RL). In this paper, we study building blocks for self-supervised RL that unlock substantial improvements in scalability, with network depth serving as a critical factor. Whereas most RL papers in recent years have relied on shallow architectures (around 2 -5 layers), we demonstrate that increasing the depth up to 1024 layers can significantly boost performance. Our experiments are conducted in an unsupervised goal-conditioned setting, where no demonstrations or rewards are provided, so an agent must explore (from scratch) and learn how to maximize the likelihood of reaching commanded goals. Evaluated on simulated locomotion and manipulation tasks, our approach increases performance on the self-supervised contrastive RL algorithm by 2× -50×, outperforming other goal-conditioned baselines. Increasing the model depth not only increases success rates but also qualitatively changes the behaviors learned. The project webpage and code can be found here: https",
+  "body": {
+    "4._Experimental_result_reproducibility": "Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)? Answer: [Yes] Justification: Yes, documentation for reproducing the experiments is included alongside the anonymous code.\nGuidelines:\n• The answer NA means that the paper does not include experiments.\n• If the paper includes experiments, a No answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not.\n• If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable.\n• Depending on the contribution, reproducibility can be accomplished in various ways.\nFor example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed.\n• While NeurIPS does not require releasing code, the conference does require all submissions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm. (b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset). (d) We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility.\nIn the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results.\n• We recognize that the procedures for this may vary significantly between institutions and locations, and we expect authors to adhere to the NeurIPS Code of Ethics and the guidelines for their institution.\n• For initial submissions, do not include any information that would break anonymity (if applicable), such as the institution conducting the review. 16.\nDeclaration of LLM usage Question: Does the paper describe the usage of LLMs if it is an important, original, or non-standard component of the core methods in this research? Note that if the LLM is used only for writing, editing, or formatting purposes and does not impact the core methodology, scientific rigorousness, or originality of the research, declaration is not required. Answer: [NA] Justification: LLMs were not used in writing the paper, and were only used for occasional code debugging. Guidelines: • The answer NA means that the core method development in this research does not involve LLMs as any important, original, or non-standard components. • Please refer to our LLM policy (https://neurips.cc/Conferences/2025/LLM)\nfor what should or should not be described.",
+    "1_Introduction": "While scaling model size has been an effective recipe in many areas of machine learning, its role and impact in reinforcement learning (RL) remain unclear. The typical model size for state-based RL tasks is between 2 to 5 layers (Raffin et al., 2021; Huang et al., 2022) . In contrast, it is not uncommon to use very deep networks in other domain areas; Llama 3 (Dubey et al., 2024) and Stable Diffusion 3 (Esser et al., 2024) have hundreds of layers. In fields such as vision (Radford et al., 2021; Zhai et al., 2021; Dehghani et al., 2023) and language (Srivastava et al., 2023) , models often only acquire the ability to solve certain tasks once they are larger than a critical scale. In the RL setting, many researchers have searched for similar emergent phenomena (Srivastava et al., 2023) , but these papers typically report only small marginal benefits and typically only on tasks where small models already achieve some degree of success (Nauman et al., 2024b; Lee et al., 2024; Farebrother et al., 2024) . A key open question in RL today is whether it is possible to achieve similar jumps in performance by scaling RL networks.\n39th Conference on Neural Information Processing Systems (NeurIPS 2025).\n0 25 50 75 100 0 150 300 450 600 750 Time at Goal Humanoid 0 25 50 75 100 0 100 200 300 400 500 Ant Big Maze 0 25 50 75 100 0 60 120 180 240 300 Ant U4-Maze 0 100 200 300 400 0 25 50 75 100 125 Ant U5-Maze 0 50 100 150 200 0 100 200 300 400 Ant Hardest Maze 0 25 50 75 100 Env step (M) 0 200 400 600 800 Time at Goal Arm Push Easy 0 25 50 75 100 Env step (M) 0 100 200 300 400 500 Arm Push Hard 0 25 50 75 100 Env step (M) 0 50 100 150 200 250 Arm Binpick Hard 0 100 200 300 400 Env step (M) 0 40 80 120 160 200 Humanoid U-Maze 0 100 200 300 400 Env step (M) 0 15 30 45 60 Humanoid Big Maze Depth 4 Depth 8 Depth 16 Depth 32 Depth 64\nFigure 1: Scaling network depth yields performance gains across a suite of locomotion, navigation, and manipulation tasks, ranging from doubling performance to 50× improvements on Humanoid-based tasks. Notably, rather than scaling smoothly, performance often jumps at specific critical depths (e.g., 8 layers on Ant Big Maze, 64 on Humanoid U-Maze), which correspond to the emergence of qualitatively distinct policies (see Section 4).\nAt first glance, it makes sense why training very large RL networks should be difficult: the RL problem provides very few bits of feedback (e.g., only a sparse reward after a long sequence of observations), so the ratio of feedback to parameters is very small. The conventional wisdom (LeCun, 2016) , reflected in many recent models (Radford, 2018; Chen et al., 2020; Goyal et al., 2019) , has been that large AI systems must be trained primarily in a self-supervised fashion and that RL should only be used to finetune these models. Indeed, many of the recent breakthroughs in other fields have been primarily achieved with self-supervised methods, whether in computer vision (Caron et al., 2021; Radford et al., 2021; Liu et al., 2024) , NLP (Srivastava et al., 2023) , or multimodal learning (Zong et al., 2024) . Thus, if we hope to scale reinforcement learning methods, self-supervision will likely be a key ingredient.\nIn this paper, we will study building blocks for scaling reinforcement learning. Our first step is to rethink the conventional wisdom above: \"reinforcement learning\" and \"self-supervised learning\" are not diametric learning rules, but rather can be married together into self-supervised RL systems that explore and learn policies without reference to a reward function or demonstrations (Eysenbach et al., 2021 (Eysenbach et al., , 2022;; Lee et al., 2022) . In this work, we use one of the simplest self-supervised RL algorithms, contrastive RL (CRL) (Eysenbach et al., 2022) . The second step is to recognize the importance of increasing data availability. We will do this by building on recent GPU-accelerated RL frameworks (Makoviychuk et al., 2021; Rutherford et al., 2023; Rudin et al., 2022; Bortkiewicz et al., 2024) . The third step is to increase network depth, using networks that are up to 100× deeper than those typically found in prior work. Stabilizing the training of such networks will require incorporating architectural techniques from prior work, including residual connections (He et al., 2015) , layer normalization (Ba et al., 2016) , and Swish activation (Ramachandran et al., 2018) . Our experiments will also study the relative importance of batch size and network width.\nThe primary contribution of this work is to show that a method that integrates these building blocks into a single RL approach exhibits strong scalability:\n• Empirical Scalability: We observe a significant performance increase, more than 20× in half of the environments and outperforming other standard goal-conditioned baselines. These performance gains correspond to qualitatively distinct policies that emerge as the scale increases.\n• Scaling Depth in Network Architecture: While many prior RL works have primarily focused on increasing network width, they often report limited or even negative returns when expanding depth (Lee et al., 2024; Nauman et al., 2024b) . In contrast, our approach unlocks the ability to scale along the axis of depth, yielding performance improvements that surpass those from scaling width alone (see Sec. 4).\n• Empirical Analysis: We conduct an extensive analysis of the key components in our scaling approach, uncovering critical factors and offering new insights.\nWe anticipate that future research may build on this foundation by uncovering additional building blocks.",
+    "2_Related_Work": "Natural Language Processing (NLP) and Computer Vision (CV) have recently converged in adopting similar architectures (i.e. transformers) and shared learning paradigms (i.e self-supervised learning), which together have enabled transformative capabilities of large-scale models (Vaswani et al., 2017; Srivastava et al., 2023; Zhai et al., 2021; Dehghani et al., 2023; Wei et al., 2022) . In contrast, achieving similar advancements in reinforcement learning (RL) remains challenging. Several studies have explored the obstacles to scaling large RL models, including parameter underutilization (Obando-Ceron et al., 2024) , plasticity and capacity loss (Lyle et al., 2024 (Lyle et al., , 2022)) , data sparsity (Andrychowicz et al., 2017; LeCun, 2016) , and training instabilities (Ota et al., 2021; Henderson et al., 2018; Van Hasselt et al., 2018; Nauman et al., 2024a) . As a result, current efforts to scale RL models are largely restricted to specific problem domains, such as imitation learning (Tuyls et al., 2024) , multi-agent games (Neumann and Gros, 2022) , language-guided RL (Driess et al., 2023; Ahn et al., 2022) , and discrete action spaces (Obando-Ceron et al., 2024; Schwarzer et al., 2023) .\nRecent approaches suggest several promising directions, including new architectural paradigms (Obando-Ceron et al., 2024) , distributed training approaches (Ota et al., 2021; Espeholt et al., 2018) , distributional RL (Kumar et al., 2023) , and distillation (Team et al., 2023) . Compared to these approaches, our method makes a simple extension to an existing self-supervised RL algorithm. The most recent works in this vein include Lee et al. (2024) and Nauman et al. (2024b) , which leverage residual connections to facilitate the training of wider networks. These efforts primarily focus on network width, noting limited gains from additional depth, thus both works use architectures with only four MLP layers. In our method, we find that scaling width indeed improves performance (Section 4.4); however, our approach also enables scaling along depth, proving to be more powerful than width alone.\nOne notable effort to train deeper networks is described by Farebrother et al. (2024) , who cast valuebased RL into a classification problem by discretizing the TD objective into a categorical cross-entropy loss. This approach draws on the conjecture that classification-based methods can be more robust and stable and thus may exhibit better scaling properties than their regressive counterparts (Torgo and Gama, 1996; Farebrother et al., 2024) . The CRL algorithm that we use effectively uses a cross-entropy loss as well (Eysenbach et al., 2022) . Its InfoNCE objective is a generalization of the cross-entropy loss, thereby performing RL tasks by effectively classifying whether current states and actions belong to the same or different trajectory that leads toward a goal state. In this vein, our work serves as a second piece of evidence that classification, much like cross-entropy's role in the scaling success in NLP, could be a potential building block in RL.",
+    "3_Preliminaries": "This section introduces notation and definitions for goal-conditioned RL and contrastive RL. Our focus is on online RL, where a replay buffer stores the most recent trajectories, and the critic is trained in a self-supervised manner.",
+    "4.1_Experimental_Setup": "Environments. All RL experiments use the JaxGCRL codebase (Bortkiewicz et al., 2024) , which facilitates fast online GCRL experiments based on Brax (Freeman et al., 2021) and MJX (Todorov et al., 2012) environments. The specific environments used are a range of locomotion, navigation, and robotic manipulation tasks, for details see Appendix B. We use a sparse reward setting, with r = 1 only when the agent is in the goal proximity. For evaluation, we measure the number of time steps (out of 1000) that the agent is near the goal. When reporting an algorithm's performance as a single number, we compute the average score over the last five epochs of training.\nArchitectural Components We employ residual connections from the ResNet architecture (He et al., 2015) , with each residual block consisting of four repeated units of a Dense layer, a Layer Normalization (Ba et al., 2016) layer, and Swish activation (Ramachandran et al., 2018) . We apply the residual connections immediately following the final activation of the residual block, as shown in Figure 2 . In this paper, we define the depth of the network as the total number of Dense layers across all residual blocks in the architecture. In all experiments, the depth refers to the configuration of the actor network and both critic encoder networks, which are scaled jointly, except for the ablation experiment in Section 4.4.",
+    "4.2_Scaling_Depth_in_Contrastive_RL": "We start by studying how increasing network depth can increase performance. Both the JaxGCRL benchmark and relevant prior work (Lee et al., 2024; Nauman et al., 2024b; Zheng et al., 2024) use MLPs with a depth of 4, and as such we adopt it as our baseline. In contrast, we will study networks of depth 8, 16, 32, and 64. The results in Figure 1 demonstrate that deeper networks achieve significant performance improvements across a diverse range of locomotion, navigation, and manipulation tasks.\nCompared to the 4-layer models typical in prior work, deeper networks achieve 2 -5× gains in robotic manipulation tasks, over 20× gains in long-horizon maze tasks such as Ant U4-Maze and Ant U5-Maze, and over 50× gains in humanoid-based tasks. The full table of performance increases up to depth 64 is provided in Table 1 .\nIn Figure 12 , we present results the same 10 environments, but compared against SAC, SAC+HER, TD3+HER, GCBC, and GCSL. Scaling CRL leads to substantial performance improvements, outperforming all other baselines in 8 out of 10 tasks. The only exception is SAC on the Humanoid Maze environments, where it exhibits greater sample efficiency early on; however, scaled CRL eventually reaches comparable performance. These results highlight that scaling the depth of the CRL algorithm enables state-of-the-art performance in goal-conditioned reinforcement learning. A closer examination of the results from the performance curves in Figure 1 reveals a notable pattern: instead of a gradual improvement in performance as depth increases, there are pronounced jumps that occur once a critical depth threshold is reached (also shown in Figure 5 ). The critical depths vary by environment, ranging from 8 layers (e.g. Ant Big Maze) to 64 layers in the Humanoid U-Maze task, with further jumps occurring even at depths of 1024 layers (see the Testing Limits section, Section 4.4).",
+    "4.3_Emergent_Policies_Through_Depth": "Prompted by this observation, we visualized the learned policies at various depths and found qualitatively distinct skills and behaviors exhibited. This is particularly pronounced in the humanoid-based tasks, as illustrated in Figure 3 . Networks with a depth of 4 exhibit rudimentary policies where the agent either falls or throws itself toward the target. Only at a critical depth of 16 does the agent develop the ability to walk upright into the goal. In the Humanoid U-Maze environment, networks of depth 64 struggle to navigate around the intermediary wall, collapsing on the ground. Remarkably at a depth of 256, the agent learns unique behaviors on Humanoid U-Maze. These behaviors include folding forward into a leveraged position to propel itself over walls and Incrementally increasing depth results in marginal performance gains (left). However, once a critical threshold is reached, performance improves dramatically (right) for networks with residual connections.\n4 8 16 32 64 Actor Depth 64 32 16 8 4 Critic Depth 32 462 675 583 680 28 622 665 636 583 14 48 454 612 432 15 80 303 263 311 13 18 22 21 21 Humanoid 4 8 16 32 64 Actor Depth 45 239 462 480 441 145 325 385 439 437 58 316 424 504 427 18 320 350 436 170 61 147 202 349 276 Ant Big Maze 4 8 16 32 64 Actor Depth 286 809 666 815 762 807 909 875 848 921 839 818 805 740 887 583 669 675 682 469 308 256 407 345 338\nArm Push Easy shifting into a seated posture over the intermediary obstacle to worm its way toward the goal (one of these policies is illustrated in the fourth row of Figure 3 ). To the best of our knowledge, this is the first goal-conditioned approach to document such behaviors on the humanoid environment.\n4.4 What Matters for CRL Scaling 10 6 10 7 # Model Params 0 200 400 600 800 Time at Goal Humanoid 10 6 10 7 # Model Params 0 100 200 300 400 500 Ant Big Maze\n10 6 10 7 # Model Params 0 200 400 600 800 Arm Push Easy Width=256: Depth=4: Depth 4 Width 128 Depth 8 Width 256 Depth 16 Width 512 Depth 32 Width 1024 Depth 64 Width 2048\nFigure 4: Scaling network width vs. depth. Here, we reflect findings from previous works (Lee et al., 2024; Nauman et al., 2024b) which suggest that increasing network width can enhance performance. However, in contrast to prior work, our method is able to scale depth, yielding more impactful performance gains. For instance, in the Humanoid environment, raising the width to 2048 (depth=4) fails to match the performance achieved by simply doubling the depth to 8 (width=256). The comparative advantage of scaling depth is more pronounced as the observational dimensionality increases.",
+    "4.6_Does_Depth_Scaling_Improve_Offline_Contrastive_RL?": "In preliminary experiments, we evaluated depth scaling in the offline goal-conditioned setting using OGBench (Park et al., 2024) . We found little evidence that increasing the network depth of CRL improves performance in this offline setting. To further investigate this, we conducted ablations: (1) scaling critic depth while holding the actor at 4 or 8 layers, and (2) applying cold initialization to the final layers of the critic encoders (Zheng et al., 2024) . In all cases, baseline depth 4 networks often had the highest success.\nA key direction for future work is to see if our method can be adapted to enable scaling in the offline setting.",
+    "5_Conclusion": "Arguably, much of the success of vision and language models today is due to the emergent capabilities they exhibit from scale (Srivastava et al., 2023) , leading to many systems reducing the RL problem to a vision or language problem. A critical question for large AI models is: where does the data come from? Unlike supervised learning paradigms, RL methods inherently address this by jointly optimizing both the model and the data collection process through exploration. Ultimately, determining effective ways of building RL systems that demonstrate emergent capabilities may be important for transforming the field into one that trains its own large models. We believe that our work is a step towards these systems. By integrating key components for scaling up RL into a single approach, we show that model performance consistently improves as scale increases in complex tasks. In addition, deep models exhibit qualitatively better behaviors which might be interpreted as implicitly acquired skills necessary to reach the goal.\nLimitations. The primary limitations of our results are that scaling network depth comes at the cost of compute. An important direction for future work is to study how distributed training might be used to leverage even more compute, and how techniques such as pruning and distillation might be used to decrease the computational costs."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Do as i can, not as i say: Grounding language in robotic affordances",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ahn",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Brohan",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chebotar",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Cortes",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "David",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Gopalakrishnan",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Hausman",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Herzog",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hsu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ibarz",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Ichter",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Irpan",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "J"
+          ],
+          "last": "Ruano",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Jeffrey",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Jesmonth",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Joshi",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "C"
+          ],
+          "last": "Julian",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Kalashnikov",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Kuang",
+          "suffix": ""
+        },
+        {
+          "first": "K.-H",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Luu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Parada",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Pastor",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Quiambao",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Rettinghouse",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Reyes",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sermanet",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Sievers",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Toshev",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Vanhoucke",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Conference on Robot Learning"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Hindsight Experience Replay",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Andrychowicz",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Wolski",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ray",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schneider",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Fong",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Welinder",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Mcgrew",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tobin",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Pieter Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Zaremba",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Layer normalization",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "L"
+          ],
+          "last": "Ba",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "R"
+          ],
+          "last": "Kiros",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Learning Successor States and Goal-Dependent Values: A Mathematical Viewpoint",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Blier",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Tallec",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ollivier",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Accelerating goal-conditioned rl algorithms and research",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Bortkiewicz",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Pałucki",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Myers",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Dziarmaga",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Arczewski",
+          "suffix": ""
+        },
+        {
+          "first": "Ł",
+          "middle": [],
+          "last": "Kuciński",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Eysenbach",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Emerging properties in self-supervised vision transformers",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Caron",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Misra",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Jégou",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Mairal",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bojanowski",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Joulin",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Multi-level residual networks from dynamical systems view",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Haber",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Tung",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Begert",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "6th International Conference on Learning Representations, ICLR 2018"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Why do we need large batchsizes in contrastive learning? a gradient-bias perspective",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "D"
+          ],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Chilimbi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Big self-supervised models are strong semi-supervised learners",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kornblith",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Swersky",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Norouzi",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Scaling vision transformers to 22 billion parameters",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Djolonga",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Mustafa",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Padlewski",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Heek",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gilmer",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Steiner",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Caron",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Geirhos",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [
+            "M"
+          ],
+          "last": "Alabdulmohsin",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Jenatton",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Tschannen",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Arnab",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Riquelme",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Minderer",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Puigcerver",
+          "suffix": ""
+        },
+        {
+          "first": "U",
+          "middle": [],
+          "last": "Evci",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Van Steenkiste",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "F"
+          ],
+          "last": "Elsayed",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mahendran",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Oliver",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Huot",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bastings",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Collier",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gritsenko",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Birodkar",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Vasconcelos",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Tay",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Mensink",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Paveti'c",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Kipf",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Luvci'c",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Keysers",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Harmsen",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Houlsby",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Palm-e: An embodied multimodal language model",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Driess",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "S M"
+          ],
+          "last": "Sajjadi",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lynch",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Chowdhery",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Ichter",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Wahid",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tompson",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Vuong",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chebotar",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sermanet",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Duckworth",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Vanhoucke",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Hausman",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Toussaint",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Greff",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Mordatch",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "R"
+          ],
+          "last": "Florence",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "The llama 3 herd of models",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dubey",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Jauhri",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Pandey",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kadian",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Al-Dahle",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Letman",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mathur",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Schelten",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Impala: Scalable distributed deep-rl with importance weighted actor-learner architectures",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Espeholt",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Soyer",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Munos",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Simonyan",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Mnih",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Ward",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Doron",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Firoiu",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Harley",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Dunning",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Scaling rectified flow transformers for high-resolution image synthesis",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kulal",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Entezari",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Müller",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Saini",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Levi",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sauer",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Boesel",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Forty-first International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "C-Learning: Learning to Achieve Goals via Recursive Classification",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Eysenbach",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Salakhutdinov",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Contrastive learning as goal-conditioned reinforcement learning",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Eysenbach",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "R"
+          ],
+          "last": "Salakhutdinov",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Stop Regressing: Training Value Functions via Classification for Scalable Deep RL",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Farebrother",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Orbay",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Vuong",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "A"
+          ],
+          "last": "Taïga",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chebotar",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Irpan",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "S"
+          ],
+          "last": "Castro",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Faust",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Brax -a Differentiable Physics Engine for Large Scale Rigid Body Simulation",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [
+            "D"
+          ],
+          "last": "Freeman",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Frey",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Raichuk",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Girgin",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Mordatch",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Bachem",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "NeurIPS Datasets and Benchmarks"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Scaling and benchmarking self-supervised visual representation learning",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Mahajan",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Misra",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the ieee/cvf International Conference on computer vision"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Relay policy learning: Solving long-horizon tasks via imitation and reinforcement learning",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lynch",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Hausman",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Conference on Robot Learning"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Deep residual learning for image recognition",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Identity Mappings in Deep Residual Networks",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Deep reinforcement learning that matters",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Henderson",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Islam",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bachman",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Pineau",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Precup",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Meger",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Cleanrl: High-quality single-file implementations of deep reinforcement learning algorithms",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "F J"
+          ],
+          "last": "Dossa",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Braga",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Chakraborty",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Mehta",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "G"
+          ],
+          "last": "Araújo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Learning to achieve goals",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [
+            "P"
+          ],
+          "last": "Kaelbling",
+          "suffix": ""
+        }
+      ],
+      "year": 1993,
+      "venue": "IJCAI"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Offline q-learning on diverse multi-task data both scales and generalizes",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Geng",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Tucker",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations, ICLR 2023"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Predictive learning",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Invited talk at the 30th Conference on Neural Information Processing Systems (NIPS)"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "SimBa: Simplicity Bias for Scaling Up Parameters in Deep Reinforcement Learning",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Hwang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "J"
+          ],
+          "last": "Tai",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Subramanian",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "R"
+          ],
+          "last": "Wurman",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Choo",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Seno",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Multi-Game Decision Transformers",
+      "authors": [
+        {
+          "first": "K.-H",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Nachum",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Freeman",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Guadarrama",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Michalewski",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Mordatch",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Metric Residual Networks for Sample Efficient Goal-Conditioned Reinforcement Learning",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Visual instruction tuning",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "J"
+          ],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Understanding and preventing capacity loss in reinforcement learning",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lyle",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Rowland",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Dabney",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Disentangling the causes of plasticity loss in neural networks",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lyle",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Khetarpal",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Van Hasselt",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Pascanu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Martens",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Dabney",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Isaac gym: High performance gpu-based physics simulation for robot learning",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Makoviychuk",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wawrzyniak",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Storey",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Macklin",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Hoeller",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Allshire",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Handa",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Learning temporal distances: Contrastive successor features can provide a metric structure for decision-making",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Myers",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dragan",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Eysenbach",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Overestimation, overfitting, and plasticity in actor-critic: the bitter lesson of reinforcement learning",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Nauman",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Bortkiewicz",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Milos",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Trzcinski",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ostaszewski",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Cygan",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Forty-first International Conference on Machine Learning, ICML 2024"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Bigger, Regularized, Optimistic: Scaling for compute and sample-efficient continuous control",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Nauman",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ostaszewski",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Jankowski",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Miłoś",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Cygan",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Scaling laws for a multi-agent reinforcement learning model",
+      "authors": [
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Neumann",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Gros",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Small batch deep reinforcement learning",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Obando-Ceron",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "G"
+          ],
+          "last": "Bellemare",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "S"
+          ],
+          "last": "Castro",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Mixtures of experts unlock parameter scaling for deep rl",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Obando-Ceron",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Sokar",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Willi",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lyle",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Farebrother",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "N"
+          ],
+          "last": "Foerster",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Dziugaite",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Precup",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "S"
+          ],
+          "last": "Castro",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Training larger networks for deep reinforcement learning",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Ota",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "K"
+          ],
+          "last": "Jha",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kanezaki",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Ogbench: Benchmarking offline goal-conditioned rl",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Frans",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Eysenbach",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Improving language understanding by generative pre-training",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Learning transferable visual models from natural language supervision",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "W"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Hallacy",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Goh",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Krueger",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Stable-baselines3: Reliable reinforcement learning implementations",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Raffin",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Hill",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gleave",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kanervisto",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ernestus",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Dormann",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Searching for activation functions",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Ramachandran",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zoph",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [
+            "V"
+          ],
+          "last": "Le",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "6th International Conference on Learning Representations, ICLR 2018"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Learning to walk in minutes using massively parallel deep reinforcement learning",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Hoeller",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Reist",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Conference on Robot Learning"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Jaxmarl: Multi-agent rl environments and algorithms in jax",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rutherford",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Ellis",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Gallici",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Cook",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lupu",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Ingvarsson",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Willi",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Khan",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "S"
+          ],
+          "last": "De Witt",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Souly",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Bigger, better, faster: Human-level atari with human-level efficiency",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Schwarzer",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "S"
+          ],
+          "last": "Obando-Ceron",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "C"
+          ],
+          "last": "Courville",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "G"
+          ],
+          "last": "Bellemare",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "S"
+          ],
+          "last": "Castro",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning, ICML 2023"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Improved Deep Metric Learning With Multi-Class N-Pair Loss Objective",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Sohn",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Beyond the imitation game: Quantifying and extrapolating the capabilities of language models",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Srivastava",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rastogi",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Trans. Mach. Learn. Res"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Human-timescale adaptation in an open-ended task space",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "A"
+          ],
+          "last": "Team",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bauer",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Baumli",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Baveja",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Behbahani",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bhoopchand",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Bradley-Schmieg",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Clay",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Collister",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Mujoco: A Physics Engine for Model-Based Control",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Todorov",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Erez",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Tassa",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "IEEE/RSJ International Conference on Intelligent Robots and Systems"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Regression by classification",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Torgo",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gama",
+          "suffix": ""
+        }
+      ],
+      "year": 1996,
+      "venue": "Advances in Artificial Intelligence: 13th Brazilian Symposium on Artificial Intelligence, SBIA'96"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Scaling Laws for Imitation Learning in Single-Agent Games",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tuyls",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Madeka",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Torkkola",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Foster",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Narasimhan",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kakade",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Deep reinforcement learning and the deadly triad",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Van Hasselt",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Doron",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Strub",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Hessel",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Sonnerat",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Modayil",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "M"
+          ],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Residual networks behave like ensembles of relatively shallow networks",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Veit",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Wilber",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Belongie",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Optimal goal-reaching reinforcement learning via quasimetric learning",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Torralba",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Isola",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Optimal goal-reaching reinforcement learning via quasimetric learning",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Torralba",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Isola",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning, ICML 2023"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Emergent abilities of large language models",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Tay",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Bommasani",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Raffel",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zoph",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Borgeaud",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Yogatama",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Bosma",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Metzler",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "H"
+          ],
+          "last": "Chi",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Hashimoto",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Dean",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Fedus",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Trans. Mach. Learn. Res"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Scaling vision transformers. Computer Vision and Pattern Recognition",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Houlsby",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF67",
+      "title": "How does critical batch size scale in pre-training",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Morwani",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Vyas",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "U",
+          "middle": [],
+          "last": "Ghai",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Foster",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kakade",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Stabilizing Contrastive RL: Techniques for Offline Goal Reaching",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Eysenbach",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Walke",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Salakhutdinov",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Contrastive Difference Predictive Coding",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Salakhutdinov",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Eysenbach",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Self-supervised multimodal learning: A survey",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zong",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [
+            "M"
+          ],
+          "last": "Aodha",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Hospedales",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    }
+  ]
+}

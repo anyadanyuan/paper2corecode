@@ -1,0 +1,2954 @@
+{
+  "paper_id": "hidden-context",
+  "title": "DISTRIBUTIONAL PREFERENCE LEARNING: UNDERSTANDING AND ACCOUNTING FOR HIDDEN CONTEXT IN RLHF",
+  "authors": [
+    {
+      "first": "Anand",
+      "middle": [],
+      "last": "Siththaranjan",
+      "affiliation": {}
+    },
+    {
+      "first": "Cassidy",
+      "middle": [],
+      "last": "Laidlaw",
+      "affiliation": {}
+    },
+    {
+      "first": "Dylan",
+      "middle": [],
+      "last": "Hadfield-Menell",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "In practice, preference learning from human feedback depends on incomplete data with hidden context. Hidden context refers to data that affects the feedback received, but which is not represented in the data used to train a preference model. This captures common issues of data collection, such as having human annotators with varied preferences, cognitive processes that result in seemingly irrational behavior, and combining data labeled according to different criteria. We prove that standard applications of preference learning, including reinforcement learning from human feedback (RLHF), implicitly aggregate over hidden contexts according to a well-known voting rule called Borda count. We show this can produce counter-intuitive results that are very different from other methods which implicitly aggregate via expected utility. Furthermore, our analysis formalizes the way that preference learning from users with diverse values tacitly implements a social choice function. A key implication of this result is that annotators have an incentive to misreport their preferences in order to influence the learned model, leading to vulnerabilities in the deployment of RLHF. As a step towards mitigating these problems, we introduce a class of methods called distributional preference learning (DPL). DPL methods estimate a distribution of possible score values for each alternative in order to better account for hidden context. Experimental results indicate that applying DPL to RLHF for LLM chatbots identifies hidden context in the data and significantly reduces subsequent jailbreak vulnerability. Our code and data are available at https://github.com/cassidylaidlaw/hidden-context.",
+  "body": {
+    "1_INTRODUCTION": "Encoding human preferences and values into interactive learning systems is an essential component for making those systems safe and socially beneficial. To accomplish this, modern machine learning models, such as large language model (LLM) chatbots like ChatGPT and Claude, are trained with feedback from human evaluators. This method, often called reinforcement learning from human feedback (RLHF), seeks to align system behavior with the preferences of annotators. In this paper, we study how RLHF infers preferences when there is hidden context that influences human evaluations.\nHidden context is any information that affects preference annotations but is not given as input to the learned utility or reward model. It can arise through several mechanisms. For instance, when feedback is collected from many different people, annotator identity is hidden context: it affects the annotations, since different annotators could have very different preferences, but it is not input to the reward model, since the annotators' data is combined anonymously. Other sources of hidden context include human irrationality and evaluation according to multiple objectives.\nTo motivate the consequences of naive preference learning with hidden context, consider the following hypothetical scenario: Figure 1 : We analyze the effects of hidden context on preference learning, which is one of the key steps in reinforcement learning from human feedback (RLHF). Hidden context is any information that affects the annotator's assessment of the utility of different alternatives, but is not input to the learned utility or reward model. Our framework emcompasses many potential issues with preference learning, including human irrationality, diverse preferences among annotators, and combining multiple objectives (Section 2). We prove that preference learning implicitly aggregates over hidden context using a rule called Borda count (Section 3).\nExample 1.1. A company has developed an AI assistant to help high school students navigate college admissions. They implement RLHF by asking their customers for feedback on how helpful the chatbot's responses are. Among other questions, this process asks users whether or not they prefer to see information about the Pell Grant, an aid program for low-income students. Because the population of customers is biased towards high-income students, most feedback indicates that users prefer other content to content about the Pell Grant. As a result, RLHF trains the chatbot to provide less of this kind of information. This marginally improves outcomes for the majority of users, but drastically impacts lower-income students, who rely on these recommendations to understand how they can afford college.\nThe heart of this issue is that common preference learning approaches assume that all relevant features are provided as input to the reward model. However, when there is hidden context-which is almost always the case-this assumption is false. As a result, standard methods can have unexpected and undesirable consequences. In Example 1.1, relevant context about the annotator's identity (i.e. their income level) is missing from the data. The implicit aggregation over preferences biases the outcome in favor of high-income applicants. In this work, we take steps to better understand the implications of unobserved context in preference learning and consider technical approaches to identify when such situations occur.\nIn Section 2 we present a formal model of preference learning with hidden context. We show that our model can represent many challenges in preference learning, such as combining data from different users, accounting for irrationality, and optimizing for multiple objectives. Since these challenges are ubiquitous, understanding their implications is crucial for safely deploying RLHF-trained models.\nIn Section 3, we use our model to develop theoretical results on the consequences of hidden context in preference learning. First, we provide a precise characterization of the utility function that preference learning will output when there is hidden context. In particular, we show that preference learning implicitly aggregates over hidden context using a rule called the Borda count. We explore the implications of this finding, identifying cases when Borda account aggregates preferences in unintuitive ways quite different from other methods like regression. Furthermore, when data is combined from many annotators, we establish connections with the social choice literature to expose another problem arising from hidden context: annotators may have an incentive to misreport their preferences to influence the learned reward function.\nNext, we consider the design of preference learning methods that more gracefully account for hidden context. In Section 4, we propose distributional preference learning (DPL). DPL estimates a distribution over utility values for each input instead of a single real-valued output. This allows the method to detect situations where unobserved context could influence preferences. We show how DPL can detect the effects of missing features through an explained variance (r 2 ) metric.\nWe validate DPL in two ways. First, we conduct a small-scale synthetic experiment with a 1dimensional space of alternatives that allows us to directly compare to Borda count. Next, we apply DPL to a real-world dataset of preferences for use in RLHF. In this case, the preference data is collected according to two distinct objectives. In one subset of the data, raters were asked to prefer helpful and honest responses. In the other subset, raters were asked to prefer responses that did not respond to harmful requests. This introduces hidden context because the single reward model is trained on the combined data. We find that DPL is able to identify this hidden context automatically and identifies the uncertainty when these competing goals are at odds.\nBeyond identifying potential instances of relevant hidden context, our experiments indicate that DPL can be used to develop guardrails that protect against jailbreaks. Wei et al. (2023) showed that many jailbreaks succeed by pitting the helpfulness and harmlessness objectives of chatbots against one another. This means that some jailbreaks can be understood as a consequence of hidden context. As a result, it is possible to detect this class of jailbreaks by leveraging the distribution of utilities we get from DPL. In particular, risk-aversion with respect to the distribution of learned utilities can dramatically reduce the rate at which the preference model prefers jailbroken responses.\nWe summarize our contributions as follows:\n1. we identify and formally characterize the problem of preference learning with hidden context, and describe a number of settings where it may arise; 2. we show that preference learning with hidden context implicitly implements Borda count, which can have counter-intuitive implications and incentives for annotators to misreport preferences; 3. we introduce distributional preference learning and show that it can detect and mitigate some effects of hidden context in LLM-based preference models.",
+    "2_SETTING_AND_RELATED_WORK": {
+      "2.1_HIDDEN_CONTEXT": "While preference learning based on (1) has been widely deployed and enjoyed some success, it rests on assumptions that often do not hold in practice. In particular, irrationality, partial observability, and diversity of preferences among a population all challenge the BTL model on which the usual preference learning loss is based. We argue that all of these cases can be understood as special cases of a general phenomenon: hidden context. For concreteness, consider again Example 1.1.\nThe key problem in the example is a mismatch between the information that influences the user's feedback and the information that the preference learning algorithm uses to estimate utilities based on that feedback. The user gives feedback that depends on their financial situation, while the learned utility model observes request-response pairs. Thus, the preference learning algorithm must produce a single ordering over alternatives that implicitly aggregating feedback over the hidden context of whether the user is high-or low-income.\nTo model hidden context in preference learning, we extend the preference learning formalization to utility functions u : A × Z → R over a space of observed features a ∈ A and hidden context z ∈ Z. Let D z be a distribution over Z. In Example 1.1, z ∈ {0, 1} could represent whether the user is lowor high-income; then perhaps z ∼ B(0.8) if 80% of users are high-income (where B(p) represents a Bernoulli random variable with mean p). Given u(a, z) and D z , we can calculate the probability that one alternative a is chosen over another b given that z is hidden:\nEQUATION\np u,Dz marginalizes over the distribution of the hidden context z and thus reflects the comparison data available to the preference learning algorithm. Our model of hidden contexts can represent many settings where preference learning is difficult:\nPartial observability.\nThere may be variables that are observable by the human making preference comparisons but not by the AI system, which learns from that data. For instance, suppose annotators' preferences depend on the day of the week or the month of the year, but the estimated utility function ignores the date the comparisons were made.\nMultiple objectives. System designers may combine data about user preferences over multiple, different objectives. For instance, the Anthropic HH-RLHF dataset (Bai et al., 2022a ) contains one subset with comparisons of chatbot responses based on harmlessness and another subset with comparisons based on helpfulness. When these subsets are combined, the objective that was used to make the comparison (in this case, either harmlessness or helpfulness) is a hidden context.\nPopulation with diverse preferences. Preference learning is almost always applied to data aggregated from many annotators who may have very different utility functions (e.g., Bai et al. (2022a) observe high intra-annotator disagreement). If z represents the annotator who makes a comparison, then u(•, z) could represent the utility function for that annotator. However, when the data is used to train a single utility function û(•), then the annotator's identity z is a hidden context.\nIrrational and noisy decisions. Various types of irrationality could be modeled as unseen latent variables that affect a person's decision-making. For instance, to represent a person making noisy utility estimates, one could let Z = R |A| , z(a) iid ∼ N (0, 1), and u(a, z) = µ(a) + z(a) for some µ : A → R. That is, the person has an underlying utility µ(a) for each alternative but makes comparisons based on that utility plus independently sampled Gaussian noise representing irrationality in their utility assessments. This is equivalent to the Thurstone-Mosteller model of noisy decision making (Handley, 2001) .\nDue to the ubiquity of these settings, preference learning is nearly always performed with hidden context. This means that the learned utility function û(a), which only depends on the seen features a, must somehow aggregate over the hidden contexts z. We aim to understand and mitigate the consequences of this ubiquitous challenge. (2021) . As part of RLHF, preference learning has been widely used recently for training large language models (LLM) to give outputs according to human preferences (Ziegler et al., 2020; Stiennon et al., 2020; Askell et al., 2021; Bai et al., 2022a; b; Ouyang et al., 2022) . It has also been extensively analyzed in theory; some results focus on its sample complexity in various settings (Chen & Suh, 2015; Shah et al., 2015; Shah & Wainwright, 2018; Heckel et al., 2018; Hendrickx et al., 2020; Chambers et al., 2021) or other directions such as the statistical identifiability of preferences (Zhao et al., 2020; Skalse et al., 2023) , the computational efficiency of preference learning (Maystre & Grossglauser, 2015) , Bayesian preference learning (Caron & Doucet, 2010) , or the combination of preference learning and reinforcement learning (Zhu et al., 2023) . However, to our knowledge, no prior work has specifically analyzed the behavior of preference learning with hidden context.\nThe challenges of preference learning that we group as cases of \"hidden context\" have also been studied individually. There has been some work on explicitly modeling annotator disagreement (Fleisig et al., 2023; Baumler et al., 2023) as well as other approaches to learning from annotators with diverse preferences (Jia et al., 2023; Dumoulin et al., 2023; Mishra, 2023; Fish et al., 2023) . Other work has studied the effects of human irrationality or non-BTL models of human behavior on preference learning (Bobu et al., 2020; Lee et al., 2021; Laidlaw & Russell, 2021; Knox et al., 2022; Laidlaw & Dragan, 2022) , which under our framework can be modeled as hidden context. Zhuang & Hadfield-Menell (2020) and Dai et al. (2023) study the optimization of multiple objectives learned from human preferences. Finally, related to our connections with social choice theory in Section 3, some previous work has associated preference or reward learning with concepts in economics, such as voting rules (Conitzer & Sandholm, 2005) , incentive compatibility (Echenique & Prasad, 2019) , and mechanism design (Fickinger et al., 2020) .",
+      "_text": "We begin by formally describing the problem of preference learning with hidden context. Consider a finite set of alternatives A, and an unknown utility function u : A → R. For instance, in the case of a chatbot, the alternatives could be the possible responses to a prompt, and the utility function would describe how much a particular response is preferred. To estimate u, we observe the outcome of comparisons between pairs of alternatives (a, b). We assume there is a fixed probability for any pair of alternatives (a, b) that a will be preferred to b; we denote this probability p u (a, b) and assume that p u (a, b) + p u (b, a) = 1; that is, the order in which the alternatives are presented does not matter. In the ideal case, comparison outcomes would exactly reflect the utility function, i.e., p u (a, b) = 1{u(a) > u(b)}. Realistically, however, preference comparison data never exactly follows a single utility function. To account for the fact that people are noisy and/or inconsistent in their feedback, a common assumption is that instead preference comparisons are made according to a Bradley-Terry-Luce (BTL) model (Rajkumar & Agarwal, 2014) , also sometimes known as Boltzmann-rational model (Jeon et al., 2020) :\np BTL u (a, b) = e u (a)\ne u (a)+e u (b) . In this model, the higher u(a) is compared to u(b), the more likely the outcome of the comparison is to prefer a to b; as the utilities for a and b are closer, the comparison outcome moves towards uniformly random. The most commonly used method for estimating the utility function u from preference data is to fit the maximum likelihood estimator (MLE) under the BTL model. To derive the MLE, we consider the limit of infinite data and assume that preference comparisons are elicited for uniformly randomly selected pairs of alternatives. The MLE for the utility function û is given by û = arg min û L(û; u), where\nL(û; u) = 1 |A|(|A|-1) a̸ =b -p u (a, b) log e û(a) e û(a) +e û(b) -(1 -p u (a, b)) log e û(b) e û(a) +e û(b) . (1)\nAlthough in practice û might be represented by a neural network, we assume for theoretical purposes that L(û; u) is optimized over all possible û : A → R. In some cases, L may not have any minimum, so we consider a regularized version of (1); see Equation ( 6) and Appendix A.1 for more details."
+    },
+    "3_THEORETICAL_ANALYSIS": {
+      "3.1_COMPARISON_TO_EXPECTED_UTILITY_AND_LEAST-SQUARES_REGRESSION": "One desirable property of preference learning with hidden context would be if it converged to the expected utility for each alternative when marginalizing over hidden context, which we denote by ū(a) = E z∼Dz [u(a, z)]. For instance, one can show that least-squares utility regression converges to the expected utility when there is hidden context; see Appendix A.2 for a formal statement and proof. The fact for least-squares utility regression û = ū shows that, in some sense, it gracefully degrades in the presence of hidden context. Although there are drawbacks of expected utility, it is a wellunderstood method of aggregating utilities over hidden contexts that has desirable decision-theoretic properties. Thus, it would be helpful if the utility function û(a) learned by preference learning with hidden context were equivalent to the expected utility ū(a). In this section, we characterize when the output of preference learning with hidden context is equivalent to that of utility regression.",
+      "3.2_CONNECTIONS_TO_SOCIAL_CHOICE_THEORY": "When training on comparison data from many agents, each with their own preferences, preference learning aggregates all their feedback into a single utility function. As we described in Section 2, this is a case where the identity of the annotator is hidden context: it affects the comparison outcomes but is unseen by the preference learning algorithm. Social choice theory studies methods for aggregating preferences from a population. Thus, it can provide a lens through which to understand this particular case of preference learning with hidden contexts.\nIn a large dataset of preference comparisons from many annotators, individual comparisons can be thought of as \"votes\" for one alternative over another. When preference learning combines this data into a single utility function, it is similar to a voting rule that ranks candidates based on annotators' votes. In particular, Borda count is a well-studied voting rule-usual definitions of Borda count in voting theory differ from ours only by an affine transformation (Johnson, 2005; Emerson, 2013; Lippman, 2012) . This means that many results from the social choice literature on Borda count can be applied to understanding preference learning from a diverse population. For example, under Borda count, participants may have an incentive to misreport their preferences (Dummett, 1998) . Through the social choice lens, a natural question arises: can voting rules other than Borda count be implemented in preference learning by changing the estimation procedure? We explore this question further in Appendix B.3.",
+      "_text": "We begin our analysis by precisely describing the behavior of preference learning with hidden context. In particular, we can show that a utility function û(a) learned with the BTL loss as in (6) implicitly aggregates utilities over the hidden contexts z using a rule called Borda count. We define the Borda count BC(a) of an alternative a as BC(a) = 1 |A| b∈A p u,Dz (a, b). That is, the Borda count is the average probability that the alternative is preferred to other alternatives. If an alternative is almost always preferred to all other alternatives, then its Borda count will be close to 1; if it is almost always dispreferred, the Borda count will be near 0. We use the term Borda count as a reference to the well-known voting rule of the same name-a connection we expand on in Section 3.2.\nTheorem 3.1. BTL preference learning implicitly aggregates hidden context according to Borda count. That is, if û is optimized according to ( 6 We defer all proofs to Appendix A. According to Theorem 3.1, the learned utility function and Borda count differ by only a monotonic transformation. If we use reinforcement learning or another optimization technique to search for the alternative a which maximizes û(a)-as one does in RLHF-then the optimal alternative will the same as that which maximizes the Borda count BC(a). Similar results that relate preference learning and Borda count were previously explored by Rajkumar & Agarwal (2014), although they do not consider the setting of hidden context.\nWhile Theorem 3.1 precisely describes the results of preference learning with hidden context, its implications are unclear. Is Borda count a useful way of aggregating over hidden contexts in practice, and how does it compare to other aggregation rules? To answer this question, we give multiple perspectives on preference learning with hidden context using the result of Theorem 3.1. First, we compare preference learning to least-squares regression with hidden context. Then, we analyze learning from a population with diverse preferences through the lens of social choice theory."
+    },
+    "4_DISTRIBUTIONAL_PREFERENCE_LEARNING": "Our theoretical results show that preference learning in the presence of hidden context can lead to undesirable outcomes. While system designers may still choose to use preference learning for RLHF or other applications, they should carefully consider these downsides and try to mitigate them. The first step towards this is detection-knowing to what degree hidden context affects preference data both on a dataset and instance level. In this section, we describe a simple modification to preference learning such that it can detect and characterize inconsistent feedback.\nOur alternative preference learning methods, which we call distributional preference learning (DPL), output a distribution over possible utilities for each alternative rather than a single value (Figure 2 ). In particular, we learn a mapping D : A → ∆(R) from alternatives to distributions over utilities to estimate the distribution of u(a, z) when z ∼ D z . We consider two variants, each of which parameterizes the distribution D(a) in a different way.\nFirst, the mean-and-variance model learns two functions μ : A → R and σ : A → [0, ∞), parameterizing the distribution over utilities as D(a) = N μ(a), σ(a) 2 . Second, in the categorical model, we choose n evenly spaced utility values u 1 < u 2 < . . . < u n , and then parameterize the distribution as the probabilities of each of those utilities p(u i | a) for i ∈ {1, . . . , n}. We train the distributional preference models by maximizing the likelihood of the data given the model\np D (a, b) = E [O(u a , u b ) | u a ∼ D(a), u b ∼ D(b)].\nConcretely, for the mean-and-variance model, the loss for a single preference comparison where alternative a is preferred to b is the negative log probability that u a -u b > 0 :\n-log Φ μ(a)-μ(b) √ σ(a) 2 +σ(b) 2 .\nFor the categorical model, the equivalent loss is\n-log n i=1 n j=1 p(u i | a)p(u j | b) 1/2 u i = u j 1{u i > u j } o.w.\nNote that DPL is not trying to model uncertainty about the utility function which comes from limited data, but rather uncertainty which comes from hidden context. Even in the limit of infinite data, DPL will not necessarily converge to a point estimate of utility for each alternative.\nSince DPL methods give more information than a single utility estimate at each alternative, they can detect the effects of missing features both at the dataset and instance level. At the dataset level, a popular metric for determining the effects of missing features in regression is the coefficient of determination, r 2 . We can derive an equivalent measure for DPL. Let μ(a) = E[ D(a)]. Then we define r 2 = Var[μ(a)]/ (Var[μ(a) ] + E[Var[ D(a)]]), where a is sampled from the uniform distribution over alternatives. Intuitively, r 2 , which has to be between 0 and 1, represents the amount of variation in utility values that is captured by the observed features a; 1 -r 2 is the proportion of variance caused by hidden context. At the instance level, alternatives a where Var( D(a)) is higher are likely those where missing features have a larger impact on the utility of the alternative.",
+    "5_CASE_STUDY:_COMPETING_OBJECTIVES_IN_RLHF": "In this section, we evaluate DPL's ability to identify hidden context through a case study on large language model (LLM)-based reward models. Chatbots like GPT-4 and Claude are trained by learning a human reward model and then optimizing it via reinforcement learning, together referred to as RLHF. In order to evaluate the ability of DPL methods to identify hidden context, we use the HH-RLHF dataset (Bai et al., 2022a) . For this dataset, raters were separately asked to provide preferences on whether responses were helpful or harmful. When a single utility function is trained on the entire HH-RLHF dataset, the objective (helpfulness or harmlessness) that was used to annotate a pair of responses is a hidden context since it is not available to the learned utility function. This missing variable may cause real harm: Wei et al. (2023) present jailbreaks that manipulate models to prioritize helpfulness over harmlessness and output harmful content. Through our case study, we aim to answer three questions:\n1. Does the hidden context of the labeling objective contribute to jailbreak vulnerability? 2. Can we DPL detect the effects of this hidden context without explicit supervision? 3. Can we DPL reduce models' susceptibility to jailbreaks?\nUnderstanding jailbreak vulnerability To address the first question, we train three LLM-based utility functions on the HH-RLHF dataset (Bai et al., 2022a) . The dataset consists of conversations between a human and an AI assistant with two alternatives for the assistant's final response, plus a label for which response is preferred. Half of the comparisons are labeled based on which response is more helpful and honest and half based on which response is more harmless. Using standard preference learning, we train utility functions ûhelpful on just the helpful-labeled data, ûharmless on just the harmless-labeled data, and ûcombined on both (see Appendix C for experiment details).\nTo test if implementing RLHF using these utility functions would lead to jailbreak vulnerabilities, we collect pairs of responses to jailbreak prompts from Wei et al. (2023) that are designed to fool the model into giving a harmful response; each pair consists of one safe response and one jailbroken response. If a learned utility function assigns higher utility to the jailbroken response, then we expect using that utility function to train an LLM assistant via RLHF would lead to the assistant outputting the jailbroken response. We define the \"jailbreak rate\" of a utility function as the percentage of jailbreak prompts for which it assigns higher utility to the jailbroken response. Since avoiding jailbreaks is not the only purpose of an LLM assistant, we also evaluate the \"helpfulness accuracy\" of a utility function as its accuracy at predicting judgements in the HH-RLHF helpfulness test set.\nThe top of Table 1a shows the jailbreak rates and helpfulness accuracies for each of the three normally-trained utility functions. While ûharmless , trained only on harmlessness-annotated data, has a very low jailbreak rate of under 4%, its helpfulness accuracy of around 50% suggests it is useless for judging the helpfulness of responses to non-harmful prompts. ûhelpful has much higher helpfulness accuracy, but also prefers jailbroken responses more than half the time. The problem is that the jailbroken responses are generally more \"helpful\" than a safe response which refuses to answer the prompt. Since our theory suggests that ûcombined is aggregating the helpful and harmful utilities via Borda count, in many cases the high helpfulness of jailbroken responses leads to high utilities under the combined utility function. In fact, ûcombined has a jailbreak rate of around 25%, showing that one cause of jailbreaks is training a single reward model on data which combines two competing objectives-a clear case of hidden context in preference learning.",
+    "6_CONCLUSION": "Preference learning is becoming an essential component of real-world AI systems that helps align outcomes with the values of users. However, in the ubiquitous case of hidden context-arising from diverse preferences, competing objectives, irrationality, and other types of partial observabilitypreference learning may have unexpected or unwanted consequences. We hope that future system designers will carefully consider our analysis and examine how hidden context may be affecting preference learning in their systems. Furthermore, we encourage practitioners to consider using distribution preference learning as an alternative method that can explicitly account for hidden context.\nA.3 PROOF OF THEOREM 3.1\nIn Theorem 3.1, we consider the regularized MLE loss:\nEQUATION\nTheorem 3.1. BTL preference learning implicitly aggregates hidden context according to Borda count. That is, if û is optimized according to ( 6 Proof. According to Proposition A.1, ( 6) must be strongly convex if λ > 0 and thus there is a unique minimum of the loss function satisfying the first-order condition. Furthermore, if λ = 0, which corresponds to an un-regularized objective, then if there is a solution it must also satisfy the first-order condition. The first-order condition can be written as follows:\nEQUATION\nHere, σ(x) = exp x 1+exp x is the logistic sigmoid function. Note that we want to show the following: BC(a) > BC(b) ⇐⇒ û(a) > û(b) where û is the optimal solution to ( 6).\nFirst consider the forward direction. Let a, b ∈ A such that BC(a) > BC(b), and assume by way of contradiction that û(a) ≤ û(b). Let f, g : R → R be defined as follows:\nf (α) = λα + c̸ =a σ(α -û(c)) -p u,Dz (a, c) g(α) = λα + c̸ =b σ(α -û(c)) -p u,Dz (b, c) .\nThus f (û(a)) = g(û(b)) = 0 by the first-order condition in (7). Observe that f and g are increasing functions in α. Now note the following: If there is a solution to preference learning, then it is equivalent to BC. Furthermore, the solution to L 2 -regularized preference learning is also equivalent to BC.\ng(α) -f (α) = σ(α -û(a)) -σ(α -û(b)) + c̸ =a p u,\nProof. Observe that as per Theorem 3.1, the feature over which the expectation is taken with respect to is the identifier i for each agent. Since agents are uniformly sampled, this is a scaling of Borda count."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "APRIL: Active Preference-learning based Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Riad",
+          "middle": [],
+          "last": "Akrour",
+          "suffix": ""
+        },
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Schoenauer",
+          "suffix": ""
+        },
+        {
+          "first": "Michèle",
+          "middle": [],
+          "last": "Sebag",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "A General Language Assistant as a Laboratory for Alignment",
+      "authors": [
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Yuntao",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Drain",
+          "suffix": ""
+        },
+        {
+          "first": "Deep",
+          "middle": [],
+          "last": "Ganguli",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Joseph",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Nova",
+          "middle": [],
+          "last": "Dassarma",
+          "suffix": ""
+        },
+        {
+          "first": "Nelson",
+          "middle": [],
+          "last": "Elhage",
+          "suffix": ""
+        },
+        {
+          "first": "Zac",
+          "middle": [],
+          "last": "Hatfield-Dodds",
+          "suffix": ""
+        },
+        {
+          "first": "Danny",
+          "middle": [],
+          "last": "Hernandez",
+          "suffix": ""
+        },
+        {
+          "first": "Jackson",
+          "middle": [],
+          "last": "Kernion",
+          "suffix": ""
+        },
+        {
+          "first": "Kamal",
+          "middle": [],
+          "last": "Ndousse",
+          "suffix": ""
+        },
+        {
+          "first": "Catherine",
+          "middle": [],
+          "last": "Olsson",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Mccandlish",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Olah",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [],
+          "last": "Kaplan",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Training a Helpful and Harmless Assistant with Reinforcement Learning from Human Feedback",
+      "authors": [
+        {
+          "first": "Yuntao",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Kamal",
+          "middle": [],
+          "last": "Ndousse",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Nova",
+          "middle": [],
+          "last": "Dassarma",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Drain",
+          "suffix": ""
+        },
+        {
+          "first": "Stanislav",
+          "middle": [],
+          "last": "Fort",
+          "suffix": ""
+        },
+        {
+          "first": "Deep",
+          "middle": [],
+          "last": "Ganguli",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Joseph",
+          "suffix": ""
+        },
+        {
+          "first": "Saurav",
+          "middle": [],
+          "last": "Kadavath",
+          "suffix": ""
+        },
+        {
+          "first": "Jackson",
+          "middle": [],
+          "last": "Kernion",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Conerly",
+          "suffix": ""
+        },
+        {
+          "first": "Sheer",
+          "middle": [],
+          "last": "El-Showk",
+          "suffix": ""
+        },
+        {
+          "first": "Nelson",
+          "middle": [],
+          "last": "Elhage",
+          "suffix": ""
+        },
+        {
+          "first": "Zac",
+          "middle": [],
+          "last": "Hatfield-Dodds",
+          "suffix": ""
+        },
+        {
+          "first": "Danny",
+          "middle": [],
+          "last": "Hernandez",
+          "suffix": ""
+        },
+        {
+          "first": "Tristan",
+          "middle": [],
+          "last": "Hume",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Johnston",
+          "suffix": ""
+        },
+        {
+          "first": "Shauna",
+          "middle": [],
+          "last": "Kravec",
+          "suffix": ""
+        },
+        {
+          "first": "Liane",
+          "middle": [],
+          "last": "Lovitt",
+          "suffix": ""
+        },
+        {
+          "first": "Neel",
+          "middle": [],
+          "last": "Nanda",
+          "suffix": ""
+        },
+        {
+          "first": "Catherine",
+          "middle": [],
+          "last": "Olsson",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Mccandlish",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Olah",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [],
+          "last": "Kaplan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Constitutional AI: Harmlessness from AI Feedback",
+      "authors": [
+        {
+          "first": "Yuntao",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Saurav",
+          "middle": [],
+          "last": "Kadavath",
+          "suffix": ""
+        },
+        {
+          "first": "Sandipan",
+          "middle": [],
+          "last": "Kundu",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Jackson",
+          "middle": [],
+          "last": "Kernion",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Goldie",
+          "suffix": ""
+        },
+        {
+          "first": "Azalia",
+          "middle": [],
+          "last": "Mirhoseini",
+          "suffix": ""
+        },
+        {
+          "first": "Cameron",
+          "middle": [],
+          "last": "Mckinnon",
+          "suffix": ""
+        },
+        {
+          "first": "Carol",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Catherine",
+          "middle": [],
+          "last": "Olsson",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Olah",
+          "suffix": ""
+        },
+        {
+          "first": "Danny",
+          "middle": [],
+          "last": "Hernandez",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Drain",
+          "suffix": ""
+        },
+        {
+          "first": "Deep",
+          "middle": [],
+          "last": "Ganguli",
+          "suffix": ""
+        },
+        {
+          "first": "Dustin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Eli",
+          "middle": [],
+          "last": "Tran-Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "Ethan",
+          "middle": [],
+          "last": "Perez",
+          "suffix": ""
+        },
+        {
+          "first": "Jamie",
+          "middle": [],
+          "last": "Kerr",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [],
+          "last": "Mueller",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Ladish",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [],
+          "last": "Landau",
+          "suffix": ""
+        },
+        {
+          "first": "Kamile",
+          "middle": [],
+          "last": "Kamal Ndousse",
+          "suffix": ""
+        },
+        {
+          "first": "Liane",
+          "middle": [],
+          "last": "Lukosuite",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Lovitt",
+          "suffix": ""
+        },
+        {
+          "first": "Nelson",
+          "middle": [],
+          "last": "Sellitto",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Elhage",
+          "suffix": ""
+        },
+        {
+          "first": "Noemi",
+          "middle": [],
+          "last": "Schiefer",
+          "suffix": ""
+        },
+        {
+          "first": "Nova",
+          "middle": [],
+          "last": "Mercado",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Dassarma",
+          "suffix": ""
+        },
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Lasenby",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Larson",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Ringer",
+          "suffix": ""
+        },
+        {
+          "first": "Shauna",
+          "middle": [],
+          "last": "Johnston",
+          "suffix": ""
+        },
+        {
+          "first": "Sheer",
+          "middle": [
+            "El"
+          ],
+          "last": "Kravec",
+          "suffix": ""
+        },
+        {
+          "first": "Stanislav",
+          "middle": [],
+          "last": "Showk",
+          "suffix": ""
+        },
+        {
+          "first": "Tamera",
+          "middle": [],
+          "last": "Fort",
+          "suffix": ""
+        },
+        {
+          "first": "Timothy",
+          "middle": [],
+          "last": "Lanham",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Telleen-Lawton",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Conerly",
+          "suffix": ""
+        },
+        {
+          "first": "Tristan",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [
+            "R"
+          ],
+          "last": "Hume",
+          "suffix": ""
+        },
+        {
+          "first": "Zac",
+          "middle": [],
+          "last": "Bowman",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Hatfield-Dodds",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Joseph",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Mccandlish",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kaplan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Which Examples Should be Multiply Annotated? Active Learning When Annotators May Disagree",
+      "authors": [
+        {
+          "first": "Connor",
+          "middle": [],
+          "last": "Baumler",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Sotnikova",
+          "suffix": ""
+        },
+        {
+          "first": "Hal",
+          "middle": [],
+          "last": "Daumé",
+          "suffix": ""
+        },
+        {
+          "first": "Iii",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Findings of the Association for Computational Linguistics: ACL 2023"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "LESS is More: Rethinking Probabilistic Models of Human Behavior",
+      "authors": [
+        {
+          "first": "Andreea",
+          "middle": [],
+          "last": "Bobu",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "R"
+          ],
+          "last": "Dexter",
+          "suffix": ""
+        },
+        {
+          "first": "Jaime",
+          "middle": [
+            "F"
+          ],
+          "last": "Scobee",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "Shankar"
+          ],
+          "last": "Fisac",
+          "suffix": ""
+        },
+        {
+          "first": "Anca",
+          "middle": [
+            "D"
+          ],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dragan",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the 2020 ACM/IEEE International Conference on Human-Robot Interaction"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "A Survey of Preference-Based Online Learning with Bandit Algorithms",
+      "authors": [
+        {
+          "first": "Róbert",
+          "middle": [],
+          "last": "Busa-Fekete",
+          "suffix": ""
+        },
+        {
+          "first": "Eyke",
+          "middle": [],
+          "last": "Hüllermeier",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Algorithmic Learning Theory"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Efficient Bayesian Inference for Generalized Bradley-Terry Models",
+      "authors": [
+        {
+          "first": "Francois",
+          "middle": [],
+          "last": "Caron",
+          "suffix": ""
+        },
+        {
+          "first": "Arnaud",
+          "middle": [],
+          "last": "Doucet",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Recovering Preferences From Finite Data",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Christopher",
+          "suffix": ""
+        },
+        {
+          "first": "Federico",
+          "middle": [],
+          "last": "Chambers",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [
+            "S"
+          ],
+          "last": "Echenique",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Lambert",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Econometrica"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Spectral MLE: Top-$K$ Rank Aggregation from Pairwise Comparisons",
+      "authors": [
+        {
+          "first": "Yuxin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Changho",
+          "middle": [],
+          "last": "Suh",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Deep reinforcement learning from human preferences",
+      "authors": [
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Christiano",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Leike",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [
+            "B"
+          ],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Miljan",
+          "middle": [],
+          "last": "Martic",
+          "suffix": ""
+        },
+        {
+          "first": "Shane",
+          "middle": [],
+          "last": "Legg",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Common Voting Rules as Maximum Likelihood Estimators",
+      "authors": [
+        {
+          "first": "Vincent",
+          "middle": [],
+          "last": "Conitzer",
+          "suffix": ""
+        },
+        {
+          "first": "Tuomas",
+          "middle": [],
+          "last": "Sandholm",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": "UAI '05, Proceedings of the 21st Conference in Uncertainty in Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Safe RLHF: Safe Reinforcement Learning from Human Feedback",
+      "authors": [
+        {
+          "first": "Josef",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Xuehai",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "Ruiyang",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Xinbo",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Mickel",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yizhou",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yaodong",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "AlpacaFarm: A Simulation Framework for Methods that Learn from Human Feedback",
+      "authors": [
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Dubois",
+          "suffix": ""
+        },
+        {
+          "first": "Xuechen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Rohan",
+          "middle": [],
+          "last": "Taori",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ishaan",
+          "middle": [],
+          "last": "Gulrajani",
+          "suffix": ""
+        },
+        {
+          "first": "Jimmy",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        },
+        {
+          "first": "Carlos",
+          "middle": [],
+          "last": "Guestrin",
+          "suffix": ""
+        },
+        {
+          "first": "Percy",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsunori",
+          "middle": [
+            "B"
+          ],
+          "last": "Hashimoto",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "The Borda count and agenda manipulation",
+      "authors": [
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Dummett",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": "Social Choice and Welfare"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "A density estimation perspective on learning from pairwise human preferences",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [
+            "D"
+          ],
+          "last": "Vincent Dumoulin",
+          "suffix": ""
+        },
+        {
+          "first": "Pablo",
+          "middle": [
+            "Samuel"
+          ],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Castro",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Larochelle",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dauphin",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Incentive Compatible Active Learning",
+      "authors": [
+        {
+          "first": "Federico",
+          "middle": [],
+          "last": "Echenique",
+          "suffix": ""
+        },
+        {
+          "first": "Siddharth",
+          "middle": [],
+          "last": "Prasad",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "The original Borda count and partial voting",
+      "authors": [
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Emerson",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Social Choice and Welfare"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Multi-Principal Assistance Games",
+      "authors": [
+        {
+          "first": "Arnaud",
+          "middle": [],
+          "last": "Fickinger",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Dylan",
+          "middle": [],
+          "last": "Hadfield-Menell",
+          "suffix": ""
+        },
+        {
+          "first": "Stuart",
+          "middle": [],
+          "last": "Russell",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Generative Social Choice",
+      "authors": [
+        {
+          "first": "Sara",
+          "middle": [],
+          "last": "Fish",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Gölz",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "C"
+          ],
+          "last": "Parkes",
+          "suffix": ""
+        },
+        {
+          "first": "Ariel",
+          "middle": [
+            "D"
+          ],
+          "last": "Procaccia",
+          "suffix": ""
+        },
+        {
+          "first": "Gili",
+          "middle": [],
+          "last": "Rusak",
+          "suffix": ""
+        },
+        {
+          "first": "Itai",
+          "middle": [],
+          "last": "Shapira",
+          "suffix": ""
+        },
+        {
+          "first": "Manuel",
+          "middle": [],
+          "last": "Wüthrich",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "When the Majority is Wrong: Modeling Annotator Disagreement for Subjective Tasks",
+      "authors": [
+        {
+          "first": "Eve",
+          "middle": [],
+          "last": "Fleisig",
+          "suffix": ""
+        },
+        {
+          "first": "Rediet",
+          "middle": [],
+          "last": "Abebe",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Klein",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Comparative analysis of Bradley-Terry and Thurstone-Mosteller paired comparison models for image quality assessment",
+      "authors": [
+        {
+          "first": "John",
+          "middle": [
+            "C"
+          ],
+          "last": "Handley",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "PICS"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Approximate Ranking from Pairwise Comparisons",
+      "authors": [
+        {
+          "first": "Reinhard",
+          "middle": [],
+          "last": "Heckel",
+          "suffix": ""
+        },
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Simchowitz",
+          "suffix": ""
+        },
+        {
+          "first": "Kannan",
+          "middle": [],
+          "last": "Ramchandran",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [
+            "J"
+          ],
+          "last": "Wainwright",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Minimax Rate for Learning From Pairwise Comparisons in the BTL Model",
+      "authors": [
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Hendrickx",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Olshevsky",
+          "suffix": ""
+        },
+        {
+          "first": "Venkatesh",
+          "middle": [],
+          "last": "Saligrama",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the 37th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "LoRA: Low-Rank Adaptation of Large Language Models",
+      "authors": [
+        {
+          "first": "Edward",
+          "middle": [
+            "J"
+          ],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Yelong",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Wallis",
+          "suffix": ""
+        },
+        {
+          "first": "Zeyuan",
+          "middle": [],
+          "last": "Allen-Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Shean",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Weizhu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Reward-Rational (Implicit) Choice: A Unifying Formalism for Reward Learning",
+      "authors": [
+        {
+          "first": "Smitha",
+          "middle": [],
+          "last": "Hong Jun Jeon",
+          "suffix": ""
+        },
+        {
+          "first": "Anca",
+          "middle": [
+            "D"
+          ],
+          "last": "Milli",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dragan",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Embedding Democratic Values into Social Media AIs via Societal Objective Functions",
+      "authors": [
+        {
+          "first": "Chenyan",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Michelle",
+          "middle": [
+            "S"
+          ],
+          "last": "Lam",
+          "suffix": ""
+        },
+        {
+          "first": "Minh",
+          "middle": [
+            "Chau"
+          ],
+          "last": "Mai",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Hancock",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "S"
+          ],
+          "last": "Bernstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Voting systems",
+      "authors": [
+        {
+          "first": "Paul",
+          "middle": [
+            "E"
+          ],
+          "last": "Johnson",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Models of human preference for learning reward functions",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [
+            "Bradley"
+          ],
+          "last": "Knox",
+          "suffix": ""
+        },
+        {
+          "first": "Stephane",
+          "middle": [],
+          "last": "Hatgis-Kessell",
+          "suffix": ""
+        },
+        {
+          "first": "Serena",
+          "middle": [],
+          "last": "Booth",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Niekum",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "Alessandro",
+          "middle": [],
+          "last": "Allievi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "The Boltzmann Policy Distribution: Accounting for Systematic Suboptimality in Human Models",
+      "authors": [
+        {
+          "first": "Cassidy",
+          "middle": [],
+          "last": "Laidlaw",
+          "suffix": ""
+        },
+        {
+          "first": "Anca",
+          "middle": [],
+          "last": "Dragan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Uncertain decisions facilitate better preference learning",
+      "authors": [
+        {
+          "first": "Cassidy",
+          "middle": [],
+          "last": "Laidlaw",
+          "suffix": ""
+        },
+        {
+          "first": "Stuart",
+          "middle": [],
+          "last": "Russell",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "B-Pref: Benchmarking Preference-Based Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Kimin",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Laura",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Anca",
+          "middle": [],
+          "last": "Dragan",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Math in Society",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Lippman",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Decoupled Weight Decay Regularization",
+      "authors": [
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Loshchilov",
+          "suffix": ""
+        },
+        {
+          "first": "Frank",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Fast and Accurate Inference of Plackett-Luce Models",
+      "authors": [
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Maystre",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Grossglauser",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "AI Alignment and Social Choice: Fundamental Limitations and Policy Implications",
+      "authors": [
+        {
+          "first": "Abhilash",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Training language models to follow instructions with human feedback",
+      "authors": [
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Diogo",
+          "middle": [],
+          "last": "Almeida",
+          "suffix": ""
+        },
+        {
+          "first": "Carroll",
+          "middle": [],
+          "last": "Wainwright",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Chong",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Katarina",
+          "middle": [],
+          "last": "Slama",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Ray",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Hilton",
+          "suffix": ""
+        },
+        {
+          "first": "Fraser",
+          "middle": [],
+          "last": "Kelton",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Miller",
+          "suffix": ""
+        },
+        {
+          "first": "Maddie",
+          "middle": [],
+          "last": "Simens",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Welinder",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [
+            "F"
+          ],
+          "last": "Christiano",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Leike",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Lowe",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Dueling RL: Reinforcement Learning with Trajectory Preferences",
+      "authors": [
+        {
+          "first": "Aldo",
+          "middle": [],
+          "last": "Pacchiano",
+          "suffix": ""
+        },
+        {
+          "first": "Aadirupa",
+          "middle": [],
+          "last": "Saha",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "PyTorch: An Imperative Style, High-Performance Deep Learning Library",
+      "authors": [
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Paszke",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Gross",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Lerer",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "Gregory",
+          "middle": [],
+          "last": "Chanan",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Killeen",
+          "suffix": ""
+        },
+        {
+          "first": "Zeming",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Natalia",
+          "middle": [],
+          "last": "Gimelshein",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Antiga",
+          "suffix": ""
+        },
+        {
+          "first": "Alban",
+          "middle": [],
+          "last": "Desmaison",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Köpf",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Zach",
+          "middle": [],
+          "last": "Devito",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Raison",
+          "suffix": ""
+        },
+        {
+          "first": "Alykhan",
+          "middle": [],
+          "last": "Tejani",
+          "suffix": ""
+        },
+        {
+          "first": "Sasank",
+          "middle": [],
+          "last": "Chilamkurthy",
+          "suffix": ""
+        },
+        {
+          "first": "Benoit",
+          "middle": [],
+          "last": "Steiner",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Junjie",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Soumith",
+          "middle": [],
+          "last": "Chintala",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "A Statistical Convergence Perspective of Algorithms for Rank Aggregation from Pairwise Data",
+      "authors": [
+        {
+          "first": "Arun",
+          "middle": [],
+          "last": "Rajkumar",
+          "suffix": ""
+        },
+        {
+          "first": "Shivani",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Proceedings of the 31st International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Active Preference-Based Learning of Reward Functions",
+      "authors": [
+        {
+          "first": "Dorsa",
+          "middle": [],
+          "last": "Sadigh",
+          "suffix": ""
+        },
+        {
+          "first": "Anca",
+          "middle": [],
+          "last": "Dragan",
+          "suffix": ""
+        },
+        {
+          "first": "Shankar",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Sanjit",
+          "middle": [],
+          "last": "Seshia",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Robotics: Science and Systems XIII. Robotics"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Simple, Robust and Optimal Ranking from Pairwise Comparisons",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Nihar",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [
+            "J"
+          ],
+          "last": "Shah",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wainwright",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Estimation from Pairwise Comparisons: Sharp Minimax Bounds with Topology Dependence",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Nihar",
+          "suffix": ""
+        },
+        {
+          "first": "Sivaraman",
+          "middle": [],
+          "last": "Shah",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Balakrishnan",
+          "suffix": ""
+        },
+        {
+          "first": "Abhay",
+          "middle": [],
+          "last": "Bradley",
+          "suffix": ""
+        },
+        {
+          "first": "Kannan",
+          "middle": [],
+          "last": "Parekh",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [
+            "J"
+          ],
+          "last": "Ramchandran",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wainwright",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Invariance in Policy Optimisation and Partial Identifiability in Reward Learning",
+      "authors": [
+        {
+          "first": "Joar",
+          "middle": [],
+          "last": "Max",
+          "suffix": ""
+        },
+        {
+          "first": "Viktor",
+          "middle": [],
+          "last": "Skalse",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Farrugia-Roberts",
+          "suffix": ""
+        },
+        {
+          "first": "Stuart",
+          "middle": [],
+          "last": "Russell",
+          "suffix": ""
+        },
+        {
+          "first": "Alessandro",
+          "middle": [],
+          "last": "Abate",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Gleave",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Proceedings of the 40th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Learning to summarize with human feedback",
+      "authors": [
+        {
+          "first": "Nisan",
+          "middle": [],
+          "last": "Stiennon",
+          "suffix": ""
+        },
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Ziegler",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Lowe",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Voss",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [
+            "F"
+          ],
+          "last": "Christiano",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Llama 2: Open Foundation and Fine-Tuned Chat Models",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Louis",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Albert",
+          "suffix": ""
+        },
+        {
+          "first": "Amjad",
+          "middle": [],
+          "last": "Almahairi",
+          "suffix": ""
+        },
+        {
+          "first": "Yasmine",
+          "middle": [],
+          "last": "Babaei",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolay",
+          "middle": [],
+          "last": "Bashlykov",
+          "suffix": ""
+        },
+        {
+          "first": "Soumya",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "Prajjwal",
+          "middle": [],
+          "last": "Bhargava",
+          "suffix": ""
+        },
+        {
+          "first": "Shruti",
+          "middle": [],
+          "last": "Bhosale",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Bikel",
+          "suffix": ""
+        },
+        {
+          "first": "Lukas",
+          "middle": [],
+          "last": "Blecher",
+          "suffix": ""
+        },
+        {
+          "first": "Cristian Canton",
+          "middle": [],
+          "last": "Ferrer",
+          "suffix": ""
+        },
+        {
+          "first": "Moya",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Guillem",
+          "middle": [],
+          "last": "Cucurull",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Esiobu",
+          "suffix": ""
+        },
+        {
+          "first": "Jude",
+          "middle": [],
+          "last": "Fernandes",
+          "suffix": ""
+        },
+        {
+          "first": "Jeremy",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Wenyin",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Fuller",
+          "suffix": ""
+        },
+        {
+          "first": "Cynthia",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Vedanuj",
+          "middle": [],
+          "last": "Goswami",
+          "suffix": ""
+        },
+        {
+          "first": "Naman",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Hartshorn",
+          "suffix": ""
+        },
+        {
+          "first": "Saghar",
+          "middle": [],
+          "last": "Hosseini",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Hakan",
+          "middle": [],
+          "last": "Inan",
+          "suffix": ""
+        },
+        {
+          "first": "Marcin",
+          "middle": [],
+          "last": "Kardas",
+          "suffix": ""
+        },
+        {
+          "first": "Viktor",
+          "middle": [],
+          "last": "Kerkez",
+          "suffix": ""
+        },
+        {
+          "first": "Madian",
+          "middle": [],
+          "last": "Khabsa",
+          "suffix": ""
+        },
+        {
+          "first": "Isabel",
+          "middle": [],
+          "last": "Kloumann",
+          "suffix": ""
+        },
+        {
+          "first": "Artem",
+          "middle": [],
+          "last": "Korenev",
+          "suffix": ""
+        },
+        {
+          "first": "Punit",
+          "middle": [],
+          "last": "Singh Koura",
+          "suffix": ""
+        },
+        {
+          "first": "Marie-Anne",
+          "middle": [],
+          "last": "Lachaux",
+          "suffix": ""
+        },
+        {
+          "first": "Thibaut",
+          "middle": [],
+          "last": "Lavril",
+          "suffix": ""
+        },
+        {
+          "first": "Jenya",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Diana",
+          "middle": [],
+          "last": "Liskovich",
+          "suffix": ""
+        },
+        {
+          "first": "Yinghai",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuning",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Xavier",
+          "middle": [],
+          "last": "Martinet",
+          "suffix": ""
+        },
+        {
+          "first": "Todor",
+          "middle": [],
+          "last": "Mihaylov",
+          "suffix": ""
+        },
+        {
+          "first": "Pushkar",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Molybog",
+          "suffix": ""
+        },
+        {
+          "first": "Yixin",
+          "middle": [],
+          "last": "Nie",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Poulton",
+          "suffix": ""
+        },
+        {
+          "first": "Jeremy",
+          "middle": [],
+          "last": "Reizenstein",
+          "suffix": ""
+        },
+        {
+          "first": "Rashi",
+          "middle": [],
+          "last": "Rungta",
+          "suffix": ""
+        },
+        {
+          "first": "Kalyan",
+          "middle": [],
+          "last": "Saladi",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [],
+          "last": "Schelten",
+          "suffix": ""
+        },
+        {
+          "first": "Ruan",
+          "middle": [],
+          "last": "Silva",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "Michael"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Ranjan",
+          "middle": [],
+          "last": "Subramanian",
+          "suffix": ""
+        },
+        {
+          "first": "Ellen",
+          "middle": [],
+          "last": "Xiaoqing",
+          "suffix": ""
+        },
+        {
+          "first": "Binh",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Adina",
+          "middle": [],
+          "last": "Taylor",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "Puxin",
+          "middle": [],
+          "last": "Xiang Kuan",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Iliyan",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Yuchen",
+          "middle": [],
+          "last": "Zarov",
+          "suffix": ""
+        },
+        {
+          "first": "Angela",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Melanie",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Sharan",
+          "middle": [],
+          "last": "Kambadur",
+          "suffix": ""
+        },
+        {
+          "first": "Aurelien",
+          "middle": [],
+          "last": "Narang",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Rodriguez",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Stojnic",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Edunov",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Scialom",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Jailbroken: How Does LLM Safety Training Fail?",
+      "authors": [
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Nika",
+          "middle": [],
+          "last": "Haghtalab",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF50",
+      "title": "HuggingFace's Transformers: Stateof-the-art Natural Language Processing",
+      "authors": [
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Wolf",
+          "suffix": ""
+        },
+        {
+          "first": "Lysandre",
+          "middle": [],
+          "last": "Debut",
+          "suffix": ""
+        },
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Sanh",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Chaumond",
+          "suffix": ""
+        },
+        {
+          "first": "Clement",
+          "middle": [],
+          "last": "Delangue",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Moi",
+          "suffix": ""
+        },
+        {
+          "first": "Pierric",
+          "middle": [],
+          "last": "Cistac",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Rault",
+          "suffix": ""
+        },
+        {
+          "first": "Rémi",
+          "middle": [],
+          "last": "Louf",
+          "suffix": ""
+        },
+        {
+          "first": "Morgan",
+          "middle": [],
+          "last": "Funtowicz",
+          "suffix": ""
+        },
+        {
+          "first": "Joe",
+          "middle": [],
+          "last": "Davison",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Shleifer",
+          "suffix": ""
+        },
+        {
+          "first": "Clara",
+          "middle": [],
+          "last": "Patrick Von Platen",
+          "suffix": ""
+        },
+        {
+          "first": "Yacine",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Jernite",
+          "suffix": ""
+        },
+        {
+          "first": "Canwen",
+          "middle": [],
+          "last": "Plu",
+          "suffix": ""
+        },
+        {
+          "first": "Teven",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Sylvain",
+          "middle": [],
+          "last": "Le Scao",
+          "suffix": ""
+        },
+        {
+          "first": "Mariama",
+          "middle": [],
+          "last": "Gugger",
+          "suffix": ""
+        },
+        {
+          "first": "Quentin",
+          "middle": [],
+          "last": "Drame",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [
+            "M"
+          ],
+          "last": "Lhoest",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Rush",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Learning Mixtures of Plackett-Luce Models",
+      "authors": [
+        {
+          "first": "Zhibing",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Piech",
+          "suffix": ""
+        },
+        {
+          "first": "Lirong",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Principled Reinforcement Learning with Human Feedback from Pairwise or $K$-wise Comparisons",
+      "authors": [
+        {
+          "first": "Banghua",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiantao",
+          "middle": [],
+          "last": "Jiao",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "I"
+          ],
+          "last": "Jordan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Consequences of Misaligned AI",
+      "authors": [
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Dylan",
+          "middle": [],
+          "last": "Hadfield-Menell",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Fine-Tuning Language Models from Human Preferences",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Daniel",
+          "suffix": ""
+        },
+        {
+          "first": "Nisan",
+          "middle": [],
+          "last": "Ziegler",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Stiennon",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [
+            "B"
+          ],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Christiano",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Irving",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    }
+  ]
+}

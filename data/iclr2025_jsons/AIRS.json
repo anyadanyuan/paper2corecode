@@ -1,0 +1,1735 @@
+{
+  "paper_id": "AIRS",
+  "title": "LEARNING TO DISCOVER REGULATORY ELEMENTS FOR GENE EXPRESSION PREDICTION",
+  "authors": [
+    {
+      "first": "Xingyu",
+      "middle": [],
+      "last": "Su",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Texas A&M University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Haiyang",
+      "middle": [],
+      "last": "Yu",
+      "affiliation": {}
+    },
+    {
+      "first": "Degui",
+      "middle": [],
+      "last": "Zhi",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Texas A&M University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Shuiwang",
+      "middle": [],
+      "last": "Ji",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Texas A&M University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "We consider the problem of predicting gene expressions from DNA sequences.\nA key challenge of this task is to find the regulatory elements that control gene expressions. Here, we introduce Seq2Exp, a Sequence to Expression network explicitly designed to discover and extract regulatory elements that drive target gene expression, enhancing the accuracy of the gene expression prediction. Our approach captures the causal relationship between epigenomic signals, DNA sequences and their associated regulatory elements. Specifically, we propose to decompose the epigenomic signals and the DNA sequence conditioned on the causal active regulatory elements, and apply an information bottleneck with the Beta distribution to combine their effects while filtering out non-causal components. Our experiments demonstrate that Seq2Exp outperforms existing baselines in gene expression prediction tasks and discovers influential regions compared to commonly used statistical methods for peak detection such as MACS3. The source code is released as part of the AIRS library (https://github.com/divelab/AIRS/).",
+  "body": {
+    "1_INTRODUCTION": "Gene expression serves as a fundamental process that dictates cellular function and variability, providing insights into the mechanisms underlying development (Pratapa et al., 2020) , disease (Cookson et al., 2009; Emilsson et al., 2008) , and responses to external factors (Schubert et al., 2018) . Despite the critical importance of gene expression, predicting it from genomic sequences remains a challenging task due to the complexity and variability of regulatory elements involved. Recent advances in deep learning techniques (Avsec et al., 2021; Gu & Dao, 2023; Nguyen et al., 2024; Badia-i Mompel et al., 2023) have shown remarkable capabilities and performance in modeling long sequential data like language and DNA sequence. By capturing intricate dependencies within genomic data, these techniques provide a deeper understanding of how regulatory elements contribute to transcription (Aristizabal et al., 2020) .\nTo predict gene expression, DNA language models are usually applied to encode long DNA sequences with a subsequent predictor to estimate the gene expression values (Avsec et al., 2021; Nguyen et al., 2024; Gu & Dao, 2023; Schiff et al., 2024) . However, those language models are typically designed to encode DNA sequences alone, overlooking the specific environments like different cell types, which leads to suboptimal performance. Instead of predicting the gene expression only using DNA sequence, which is invariant across cell types, a more biological relevant formulation is to predict gene expression levels using both DNA sequence and epigenomic signals. For example, GraphReg (Karbalayghareh et al., 2022) uses epigenomic signals as input data to predict gene expression values. However, it does not integrate DNA sequences and epigenomic signals in a unified manner to improve gene expression prediction. EPInformer (Lin et al., 2024) uses statistical methods to identify the epigenomic signal peaks, and focuses on regulatory elements identified by those peaks. Although obtaining better results, EPInformer still neglects the complex relationship between DNA sequences, epigenomic signals and regulatory elements, which is essential for improving prediction accuracy.\nThe task of predicting gene expression levels given the DNA sequences and epigenomic signals presents several challenges. First, epigenomic signals can be measured by a variety of experimental techniques, including ChIP-seq, DNase-seq, Hi-C, each with their own biases and limitations (Consortium et al., 2012; Bernstein et al., 2010; Moore et al., 2020) . Additionally, the regulatory elements influencing target gene expression are often sparse and may involve long-range interactions, making them challenging to identify and integrate into predictive models. These complexities highlight the need for models that can effectively discover the actively interacted regulatory elements with the target gene on long DNA sequences.\nIn response to these challenges, we propose Seq2Exp (Sequence to Expression), a novel framework designed to improve gene expression prediction by selectively extracting relevant sub-sequences from both DNA sequences and epigenomic signals. Since DNA sequences and epigenomic signals capture different aspects of biological information, their integration offers deeper insights. For example, Hi-C/HiChIP data reveals the physical interaction frequency between distal DNA regions, and DNase-seq reflects the functional activity of regulatory elements. Effectively incorporating these signals along with DNA sequences can be highly beneficial for addressing the above challenges for gene expression prediction task. Specifically, in this work, we suggest the causal relationship between genomic data and gene expression to guide the learning process as depicted in Figure 1 . Inspired by the causal relationship, we decompose the mask learning process into two components: one based on DNA sequences and the other on epigenomic signals. The proposed Seq2Exp first employs a generator module to learn a token-level mask based on both DNA sequences and epigenomic signals, to extract DNA sub-sequences. Then, the predictor module is applied on these extracted subsequences to predict gene expression. With information bottleneck, Seq2Exp can effectively filter out non-causal parts by constraining the mask size, ensuring that only the most relevant regions are extracted. Overall, the incorporation of the DNA sequences and epigenomic signals systematically discovers regions that are likely to influence gene expression.\nWe summarize our contributions here:\n• We propose a framework articulating the causal relationship between epigenomic signals, DNA sequences, target gene expression and related regulatory elements.\n• Based on the causal relationships, our framework is proposed to combine the mask probability distribution from DNA sequences and epigenomic signals, and filtering out non-causal region via information bottleneck.\n• The proposed Seq2Exp achieves SOTA performances compared to previous gene expression prediction baselines, and demonstrates the extracted regulatory elements serve as a better subsequences compared to statistical peaks calling methods of epigenomic signals such as MACS3. Specifically, in our implementation, each example contains one target gene. We first identify the transcription start site (TSS) of the target gene, then select input sequences X seq and X sig consist of L = 200, 000 base pairs, centered on the TSS. Then, the entire sequences provide sufficient contextual information for accurate prediction of the target gene expression value Y .",
+    "2_RELATED_WORKS_AND_PRELIMINARY": {
+      "2.2_RELATED_WORKS": "DNA language model has been proposed recently to apply language machine learning models to long DNA sequences (Nguyen et al., 2024; Gu & Dao, 2023; Schiff et al., 2024) and solve vari-ous downstream tasks. Two notable methods in this area are HyenaDNA (Nguyen et al., 2024) and Caduceus (Schiff et al., 2024) . HyenaDNA utilizes the Hyena operator (Poli et al., 2023) to process long DNA sequences. Caduceus introduces bidirectional Mamba (Gu & Dao, 2023) for DNA sequences, providing linear complexity for long sequence modeling while also considering the reverse complement of the DNA sequences. These methods offer a powerful approach for modeling long sequence data, such as DNA, and can be fine-tuned for tasks like gene expression prediction. However, they usually only considers DNA sequences as input, and do not explicitly consider the additional epigenomic signals during the prediction. Since these signals often carry meaningful information, such as physical interaction frequency and functional activity, incorporating them into the model could further enhance its performance on the gene expression prediction task.\nGene expression prediction is one of the fundamental tasks in bioinformatics (Segal et al., 2002) .\nNumerous studies (Agarwal & Shendure, 2020; Karbalayghareh et al., 2022; Avsec et al., 2021; Lin et al., 2024) have attempted to predict gene expression values directly from DNA sequences. Enformer (Avsec et al., 2021) , for instance, tries to only encode DNA sequences as input and employs convolutional and transformer blocks to predict 5,313 human genomic tracks and 1,643 mouse tracks. In contrast, GraphReg (Karbalayghareh et al., 2022) , incorporates a graph attention network to account for Hi-C/HiChIP interactions between DNA sub-sequences, improving gene expression predictions by considering physical interaction frequencies. However, both methods either rely on epigenomic signals or DNA sequences as input data, without integrating both data types. Recently, EPInformer (Lin et al., 2024) has advanced this approach by integrating both DNA sequences and epigenomic signals for gene expression prediction. EPInformer first identifies enhancer regions from the DNA sequences based on DNase-seq signals, treating epigenomic signals as enhancer features, and then use promoter-enhancer interactions for gene expression prediction. Despite this progress, EPInformer selects enhancer regions solely based on epigenomic signal peaks, overlooking the complex relationships between DNA sequences, epigenomic signals, and predicted gene expression values. This highlights the need for machine learning methods capable of learning to extract relevant regions in a more comprehensive manner.",
+      "2.3_BACKGROUND_OF_INFORMATION_BOTTLENECK": "To effectively extract active regulatory elements from DNA sequences, it is important to understand the concept of the information bottleneck. The information bottleneck method is a widely used technique in machine learning on tasks for images (Alemi et al., 2016; Chen et al., 2018) , language data (Belinkov et al., 2020; Lei et al., 2016; Paranjape et al., 2020; Bastings et al., 2019; Jain et al., 2020) or graph data (Wu et al., 2020; Miao et al., 2022) . Its goal is to maximize the mutual information between compressed representations Z and the target variable Y , expressed as I(Z; Y ), while controlling the information extracted from the input X. Note that in the proposed method, Y represents the target gene expression. A straightforward approach would be to set Z = X, but this retains the full complexity of X, which makes the optimization process challenging, especially with the long and noisy nature of DNA sequences.\nTo address this, researchers impose a constraint on the information transferred from X to Z, ensuring that I(X; Z) ≤ I c , where I c is an information constraint that allows us to capture only the most critical compressed representations. The information bottleneck objective becomes maximizing:\nEQUATION\nwhere β is a hyperparameter that balances the trade-off between compression and relevance. However, directly optimizing this objective is challenging. To overcome this, Chen et al. (2018) proposes to maximize a lower bound approximation, which leads to minimizing the following expression:\nEQUATION\nwhere p θ (Z|x i ) is a parametric approximation of Z, q ϕ (y i |Z) is a variational approximation of the true distribution p(y i |Z), and r(Z) approximates the marginal distribution p(Z). ",
+      "_text": "2.1 TASK DESCRIPTION Let X seq = [x 1 , • • • , x L ] denote"
+    },
+    "3_PROPOSED_METHODS": {
+      "3.1_CAUSAL_RELATIONSHIP_AMONG_REGULATORY_ELEMENTS,_DNA_SEQUENCE_AND_EPIGENOMIC_SIGNALS": "The interactions between target gene and regulatory elements are complex, particularly when multiple potential regulatory elements are involved. Meanwhile, long sequences and distal interactions require a large search region, further complicating the discovery of effective regulatory elements that influence target gene expression. In this study, we take use of epigenomic signals X sig from laboratory experiments as well as the DNA sequence X seq for target gene expression Y , and formulate their relationships with the proposed three categories of regulatory elements.\n• R g : Regulatory elements that have the potential to interact with target gene. However, they might not influence target gene expression if they are inactive in a specific cell type or are distant from the target gene.\n• R m : Regulatory elements discovered from measurement. Typically, the region with strong measured epigenomic signals, such as peaks in DNase-seq, are more likely to influence the gene expression. However, there are usually multiple genes within a sequence and the association of R m with target gene remains unknown.\n• R ag : Regulatory elements actively interacted with target gene. It is identified as the causal component for the final target gene expression Y .\nThe causal relationship between these variables is depicted in Figure 1 . Note that each variable corresponds to a distribution and link represents a causal connection. The flow of this SCM illustrates the perspective of data generation.\n• X seq ←-R g . The DNA sequence consists of R g and other non-causal parts.\n• R ag -→ Y . The causal part R ag directly influences the final gene expression. For example, an active enhancer interacting with a gene can significantly impact its expression.\n• R g ←-R ag -→ R m . The key causal component R ag is shared by both R g and R m . It can be detected through epigenomic signals in laboratory experiments and also participates in interactions with the target gene.\n• R m -→ X sig . X sig usually contains strong observable signals, such as peaks in DNase-seq, whereas regions without such signals often provide limited useful information.",
+      "3.2_TASK_OBJECTIVE": "Based on information bottleneck, Equation 2 describes how to learn compressed representations Z rather than selecting specific sub-sequences. To directly select regulatory elements, we define the latent representations as Z = M ⊙ X, where M is a binary variable controlling the selection of each DNA base or a soft mask M indicating the importance of each DNA base. We assume that each selection is independent given the input sequence X, i.e., p(M |X) = i p(m i |X). Following the method of Paranjape et al. (2020) , the objective becomes:\nEQUATION\nwhere the first term is the task-specific loss, such as mean square error in DNA gene expression prediction, and the second term imposes a constraint on the learned mask m, aligning it with the predefined distribution r(m) without conditioning on any specific sequence x. In our case, we use this second term to enforce sparsity in the learned regulatory elements.",
+      "3.3_DECOMPOSITION_OF_SEQUENCES_AND_SIGNALS": "By using information bottleneck shown in Equation 3, our primary focus is on estimating p θ (M |X), i.e., learning the mask from the input sequences. Given that the input X consists of both DNA sequences and epigenomic signals, we need to estimate p θ (M |{X seq , X sig }). Assumption 1 (Conditional Independence of Sequences and Signals). We assume that, conditioned on the selection of regulatory elements M , the DNA sequences and epigenomic signals are conditional independent to each other, i.e.,\nEQUATION\n)\nAssumption 1 is based on the causal relationships outlined in Section 3.1. The selected subsequences of a full given sequence, represented by M ⊙ X, can be viewed as the optimal regulatory elements (R ag ) for a specific gene in a particular cell type. From a data generation perspective, both the regulatory elements detected through measurements (R m ) and those interacting with the gene (R g ) originate from the optimal regulatory elements (R ag ). Therefore, given the optimal regulatory elements, the distributions p(X sig |M ) and p(X seq |M ) should be independent of each other. Proposition 1. Based on Assumption 1, the estimation of p θ (M |X) can be decomposed into terms involving X seq and X sig . Specifically, we have\nEQUATION\nwhere p θ1 (M |X seq ) and p θ2 (M |X sig ) represent the contributions from the DNA sequence and the epigenomic signals, respectively.\nThe detailed proof of this decomposition is provided in Appendix A.1. Proposition 1 allows us to factorize the estimation of p θ (M |X) into two independent components, corresponding to the DNA sequence X seq and the epigenomic signals X sig . As a result, we can independently estimate p θ1 (M |X seq ) and p θ2 (M |X sig ), which simplifies the overall estimation process. This decomposition is based on the assumption that, conditioned on the selection of regulatory elements m, the DNA sequences and epigenomic signals are independent, thus enabling more efficient and targeted modeling of each component.",
+      "3.4_MASK_DISTRIBUTION": "With the conditional independence property shown in Proposition 1, the estimation of the mask M can be decomposed into two components: one based on DNA sequences p θ1 (M |X seq ) and the other on epigenomic signals p θ2 (M |X sig ). We assume that both components follow the Beta distribution, as described in Assumption 2. The sampled values from the Beta distribution represent the probability of selecting specific base pairs from a DNA sequence.\nAssumption 2 (Mask Distribution). We assume that the soft mask m s follows the Beta distribution, i.e., m s ∼ Beta(α, β).\nUnlike the binary hard mask M , the soft mask m s takes values between 0 and 1, making it more suitable for the Beta distribution. The hard mask M can then be obtained by applying a threshold to the soft mask. For the implementation, we apply both hard mask version and soft mask version.\nThere are several reasons for choosing the Beta distribution. First, the Beta distribution typically quantifies success rates (DeGroot & Schervish, 2013; Gelman et al., 2013) . The input parameters α and β represent the weights for selecting and not selecting the base pair, respectively. Therefore, when α > β, the base pair is more likely to be selected, and vice versa. Second, as both α and β increase simultaneously, the selection process will exhibit lower variance, indicating more confidence in the selection. Third, the product of two Beta distributions, when properly normalized, results in another Beta distribution. This ensures that the distributions within the framework remain in the same family, simplifying subsequent mathematical calculations and providing consistent fitting objectives for the models.\nBased on these properties of the Beta distribution, we assume that both p θ1 (m s |X seq ) and p θ2 (m s |X sig ) follow Beta distributions, but with different parameters α and β.\nProposition 2. Given p θ1 (m s |X seq ) ∼ Beta(α 1 , β 1 ) and p θ2 (m s |X sig ) ∼ Beta(α 2 , β 2 ), the product of these distributions also follows a Beta distribution, with parameters:\nEQUATION\nThe proof of Proposition 2 is provided in Appendix A.2. When combining the probability distributions learned from the DNA sequence and signals, Proposition 2 ensures that the resulting distribution remains within the same family. And the final mask m s is then obtained through the combined Beta distribution. Specifically, deep learning models are applied in our framework to learn these two distributions by predicting the parameters α and β.",
+      "3.5_SPARSE_OBJECTIVE": "In this part, we focus on the mask prior distribution r(m). From the objective in Equation 3, the KL divergence between p θ (m i |x i ) and r(m i ) needs to be computed. To simplify this calculation, we assume the prior distribution of the soft mask r(m s ) follows the Beta distribution as well. Therefore, we have r(m s ) ∼ Beta(α 3 , β 3 ), where α 3 and β 3 are related to the sparsity of mask.\nThe expectation of the Beta distribution is\nEQUATION\nwhere µ approximately represents the proportion of regulatory elements within the DNA sequences. Therefore, by setting the hyperparameters α 3 and β 3 , the sparsity of the mask is taken into consideration, acting as a bottleneck to filter out non-causal parts.",
+      "_text": "In this section, we present our framework Seq2Exp. We first present our motivation for predicting gene expression with learnable extraction of effective regulatory elements. We illustrate the causal relationship among regulatory elements, epigenomic signals and DNA sequences as shown in Figure 1. Motivated by this structural causal model (SCM) (Pearl, 2009; Pearl et al., 2000; Wu et al., 2022) , our framework provides a learnable approach to effectively extract effective regulatory elements, considering both DNA sequences and epigenomic signals, through an information bottleneck mechanism."
+    },
+    "4.1_ARCHITECTURE": "As shown in Figure 2 , our proposed model generate the mask distribution p θ (M |X) from the DNA sequences and epigenomic signals X = {X seq , X sig }, and an predictor, q ϕ (Y |M ⊙ X), provides gene expression values from the masked sequences Z = M ⊙X. Those two modules will be trained together.\nGenerator. As outlined in Section 3.4, we aim to generate a mask M to identify the critical regions within the DNA sequences. To achieve this, we first learn a soft mask m s , which is a probabilistic representation of each base pair's relevance, where m s ∈ [0, 1]. The soft mask is modeled using the Beta distribution, whose parameters-α 1 , α 2 , β 1 , and β 2 -are estimated from the combination of DNA sequences and epigenomic signals, as detailed in Proposition 2. For the parameters derived from the DNA sequences, the neural network f θ is used to predict α 1 and β 1 . Specifically, we have\nEQUATION\nwhere the network f θ outputs the L-dimensional parameters α 1 and β 1 , with L being the length of the input DNA sequence. Each position in the sequence is associated with a pair of values α 1 and β 1 , which parameterize the Beta distribution for that base pair.\nFor the parameters related to epigenomic signals, we use the intuition that higher signal values increase the likelihood of selecting the corresponding base pair. To capture this, we directly use the epigenomic signal values as the parameter α 2 , which influences the selection weight for each base pair. The parameter β 2 , representing a selection threshold, is set as a fixed constant. Specifically, we define α 2 = X sig ; β 2 = C β .\n(9)\nBy the above modeling procedure, we simplify the modeling process, making the learning of α 2 and β 2 non-parametric while maintaining the influence of signal strength without introducing additional learnable parameters.\nAfter estimating the parameters, based on Proposition 2, the soft mask m s is sampled from the combined Beta distribution, p θ1 (m s |X seq )p(m s |X sig ) ∼ Beta(α 1 + α 2 -1, β 1 + β 2 -1), which represents the probability of selecting each base pair in the sequence. This probabilistic formulation allows us to model the selection process effectively.\nFinally, for the hard mask version, a threshold is applied to the soft mask to generate the hard mask, M = I(m s ≥ C m ), where C m is the threshold (e.g., 0.5). The hard mask M provides a binary decision for selecting or ignoring specific base pairs. Through this approach, we model the mask generation process by leveraging both DNA sequences and epigenomic signals, combining parametric and non-parametric methods for more efficient region selection.\nPredictor. After obtaining the mask M , we apply it to the input sequences to extract the relevant sub-sequences, represented as M ⊙ X. The extracted sub-sequences are then fed into a secondary neural network, denoted by g ϕ , to estimate the probability distribution of the target gene expression Y . The conditional distribution is expressed as q ϕ (Y |M ⊙ X), where ϕ represents the parameters of the network, and M ⊙ X refers to the masked input sequences.\nTo incorporate epigenomic signals alongside the DNA sequences, the input X is formed by concatenating the one-hot encoded DNA sequence embeddings with the epigenomic signal values. This combined input allows the model to leverage both DNA sequence information and epigenomic signals, enhancing the model's predictive capability during the estimation process.",
+    "4.2_OPTIMIZATION": "To optimize the loss function introduced in Equation 3, it is essential that every step remains differentiable to allow for gradient-based optimization during training. After obtaining the parameters of the Beta distribution through the neural network p θ , we generate the soft mask m s by sampling from this distribution. To maintain differentiability, we treat the Beta distribution as a special case of the Dirichlet distribution (Figurnov et al., 2018; Bishop, 2006) . Using the reparameterization trick, we achieve differentiable sampling from the Dirichlet distribution by first sampling from the Gamma distribution and then normalizing the results (Figurnov et al., 2018) . This method ensures that the sampling process remains differentiable with respect to the parameters α and β, allowing for efficient backpropagation and optimization.\nDuring inference, instead of sampling from the Beta distribution, we directly use the expected value of the Beta distribution as the soft mask m s for each base pair. The expected value of a Beta distribution with parameters α and β is given by E[m s ] = α α+β , which provides a deterministic and efficient way to generate the soft mask without introducing randomness during inference, thus stabilizing the model's predictions.\nFor the soft mask version, we multiply the soft mask value. And for the hard mask version, when the soft mask m s is obtained, we need to convert it into a hard binary mask M to make final selections for each base pair. To retain differentiability in this process, we apply the straight-through estimator (STE) commonly used in Gumbel-Softmax (Jang et al., 2016) . The STE allows us to make the forward pass non-differentiable by applying a hard threshold (e.g., setting values greater than 0.5 to 1 and others to 0), while during the backward pass, the gradient is propagated through the soft mask as if it were continuous. This approach ensures that the model can learn effectively while using discrete decisions during the forward pass, preserving differentiability in the overall optimization process.",
+    "5.1.1_DATASETS_AND_INPUT_FEATURES": "In this study, we aim to predict gene expression by modeling CAGE values, as it serves as key indicators of gene expression levels. Since gene expression varies across different cell types, we focus on two well-studied cell types: K562 and GM12878, both commonly used in biological research. The CAGE data are sourced from the ENCODE project (Consortium et al., 2012) , and we follow the methodology of Lin et al. (2024) to predict gene expression values for 18,377 protein-coding genes.\nFor the input data, we utilize the HG38 human reference genome to provide the reference DNA sequences. Additionally, the model incorporates several types of epigenomic signals:\n• DNase-seq data is used to capture chromatin accessibility by identifying regions of the genome that are open and accessible to transcription factors and other regulatory proteins. The signals are extracted from bigWig files, providing genome-wide distributions of chromatin accessibility.\n• H3K27ac ChIP-seq data is used to detect histone modifications, specifically the acetylation of lysine 27 on histone H3, which is often associated with active enhancers and promoters. This data is also extracted from bigWig files to provide genome-wide information on histone modification patterns.\n• Hi-C data is processed to calculate the contact frequencies between each base pair and the target transcription start site (TSS), following the ABC pipeline method as described by Fulco et al. (2019) .\nFurthermore, we incorporate additional features such as mRNA half-life and promoter activity from previous studies (Lin et al., 2024) , which improve the model's prediction accuracy on gene expression levels. The detailed information about these signals can be found in Appendix A.3.\nA detailed description of data acquisition, preprocessing, and extraction, including downloading, filtering, and alignment, is provided in Appendix A.3.",
+    "5.1.2_BASELINES": "To benchmark our model's performance, we compare it against several well-established baselines in gene expression prediction:\n• Enformer (Avsec et al., 2021) : A widely used deep learning model for gene expression prediction, designed to capture long-range interactions across DNA sequences. Enformer employs the CNN and transformer architecture to model the DNA sequence to get the gene expression.\n• HyenaDNA (Nguyen et al., 2024) : A cutting-edge method for modeling long DNA sequences, building on the Hyena (Poli et al., 2023) operator, which introduces a novel way to handle longrange dependencies efficiently. HyenaDNA is designed to maintain high accuracy while significantly reducing computational complexity compared to traditional transformer-based models.\n• Mamba (Gu & Dao, 2023) : A long-sequence modeling approach based on the state space model (SSM), offering linear computational complexity. Mamba is specifically tailored for efficiently handling long sequences, making it highly scalable while retaining strong predictive performance.\n• Caduceus (Schiff et al., 2024) : The state-of-the-art model for long genomic sequence modeling, built upon the Mamba architecture. Caduceus is optimized for learning rich representations of genomic sequences. In our study, we utilize Caduceus-Ph. A classification layer is appended to evaluate its performance on our specific task.\n• EPInformer (Lin et al., 2024) : A recently developed model extends the Activity-By-Contact (ABC) model (Fulco et al., 2019) for gene expression prediction. EPInformer utilizes DNase-seq peak data to define potential regulatory regions and applies an attention mechanism to aggregate enhancer signals. By leveraging both epigenomic and spatial information, EPInformer effectively models the enhancer information for gene expression prediction.\nNote that the size of the field of view of Enformer, HyenaDNA, Mamba, Caduceus are longrange DNA sequence, while the EPInformer is the extracted potential enhancer candidates based on DNase-seq measurement following ABC model [5] . Moreover, our proposed Seq2Exp also has the view of long-range DNA sequence, since the generator will take the long-range DNA sequence to extract the relevant sub-sequences for the prediction.",
+    "5.1.3_EVALUATION_METRICS": "We employ the following evaluation metrics to assess the performance of our model and baselines on the gene expression regression task: Mean Squared Error (MSE) measures the average squared difference between the predicted and target gene expression values, capturing large deviations strongly. Mean Absolute Error (MAE) evaluates the absolute differences between predicted and actual values, providing a more direct measure of average prediction error. Pearson Correlation is used to assess the linear correlation between the predicted and actual gene expression values, reflecting how well the model captures the relative ordering of gene expression. While MSE and MAE focus on the absolute errors in predictions, Pearson Correlation assess the model's ability to capture relative ranking and overall trends in the data.",
+    "5.1.4_IMPLEMENTATION_DETAILS": "We evaluate model performance using a cross-chromosome validation strategy. The model is trained on all chromosomes except those designated for validation and testing. Specifically, chromosomes 3 and 21 are used as the validation set, and chromosomes 22 and X are reserved for the test set. The inclusion of chromosome X is particularly challenging due to its unique biological characteristics compared to autosomes, thus providing a more stringent test of the model's robustness.\nBoth generator p θ and predictor q ϕ are based on Caduceus architecture (Schiff et al., 2024) , an advanced long-sequence model considering the bi-direction and RC-equivariance for DNA. Specifically, we train for 50,000 steps on a 4-layer Caduceus architecture from scratch with a hidden dimension of 128, and more hyperparameters can be found in the Appendix A.4\nAll experiments were conducted on a system equipped with an NVIDIA A100 80GB PCIe GPU.\nThe input sequences consist of 200,000 base pairs, centered around the promoter regions of the target genes, providing sufficient contextual information for accurate gene expression prediction.",
+    "5.2_RESULTS_OF_GENE_EXPRESSION_PREDICTION": "Table 1 presents the gene expression results based on CAGE values. Enformer, HyenaDNA, Mamba, and Caduceus are all DNA sequence-based methods, relying solely on DNA sequences without incorporating epigenomic signals. Among these, Caduceus achieves the best performance. We Finally, our proposed model, Seq2Exp, achieves the best performance overall. By using the Caduceus sequence model as both the generator and predictor, and incorporating epigenomic signals as additional features to the predictor, Seq2Exp explicitly learns the positions of regulatory elements from both DNA sequences and epigenomic signals, resulting in superior performance. We propose two versions of Seq2Exp. Seq2Exp-hard is to have a binary mask, and Seq2Exp-soft takes use of soft mask values to denote the importance, resulting in an even better performances regarding the CAGE prediction task.",
+    "5.3_COMPARISON_WITH_PEAK_DETECTION_METHOD": "Table 2 compares the performance of Seq2Exp with regions identified through peak calling by MACS3 (Zhang et al., 2008) on DNase-seq epigenomic signals. While DNase-seq is a crucial technique for identifying the positions of regulatory elements, statistical peak-calling methods, such as MACS3, can be considered a simple approach for measuring these elements. Our results show that Seq2Exp significantly outperforms MACS3 in terms of predictive performance. Seq2Exp-hard utilizes a hard binary mask. Seq2Exp-retrain builds on a soft mask, and explicitly select the top 10% of base pairs and retrain the predictor model using only the selected ones. Both models outperform MACS3, suggesting the ability of discovering regulatory elements.",
+    "6_CONCLUSION": "In this work, we introduced Seq2Exp, a framework for gene expression prediction that learns critical regulatory elements from both DNA sequences and epigenomic signals. By generating a binary mask to identify relevant sub-sequences, Seq2Exp reduces input complexity and focuses on key regions for prediction. Our experiments demonstrate its effectiveness in identifying important regulatory elements and improving predictive performances, though current evaluations are limited to two cell types and several epigenomic signals.\nFor the future direction, expanding the framework to more cell types and integrating diverse epigenomic data will be important for validating its generalizability. Beyond gene expression, applying this approach to other tasks related to regulatory element discovery and sequence analysis presents exciting research opportunities. Developing pretraining models focused on regulatory element extraction could also advance the field, enhancing generalization across genomic tasks. In this study, we use CAGE data from the FANTOM5 project (Andersson et al., 2014 ) (K562: CNhs11250; GM12878: CNhs12333). We follow the procedures outlined in Agarwal & Shendure (2020) and Lin et al. (2024) to derive the target values for each gene.\nDNase-seq. DNase-seq (DNase I hypersensitive site sequencing) is a technique used to identify regions of open chromatin within the genome. It pinpoints areas that are less compacted by nucleosomes, typically corresponding to promoters, enhancers, and transcription factor binding sites. The value derived from DNase-seq represents the frequency of DNase I cleavage at specific sites, with higher values indicating regions that are more accessible to regulatory elements.\nWe obtained the DNase-seq data from the ENCODE project (Consortium et al., 2012) (K562: ENCFF414OGC; GM12878: ENCFF960FMM). We directly downloaded the data in bigWig format, as it provides a genome-wide distribution of DNase-seq values.\nH3K27ac. H3K27ac refers to the acetylation of lysine 27 on histone H3, a post-translational modification associated with active enhancers and promoters. High levels of H3K27ac in a genomic region indicate that it is likely an active enhancer or promoter, playing a significant role in gene expression regulation.\nWe also obtained H3K27ac data from the ENCODE project (Consortium et al., 2012) (K562: ENCFF465GBD; GM12878: ENCFF798KYP), again in bigWig format, which provides the value distribution across the genome."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Predicting mrna abundance directly from genomic sequence using deep convolutional neural networks",
+      "authors": [
+        {
+          "first": "Vikram",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Jay",
+          "middle": [],
+          "last": "Shendure",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Cell reports"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Deep variational information bottleneck",
+      "authors": [
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Alexander A Alemi",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [
+            "V"
+          ],
+          "last": "Fischer",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Dillon",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Murphy",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "An atlas of active enhancers across human cell types and tissues",
+      "authors": [
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Andersson",
+          "suffix": ""
+        },
+        {
+          "first": "Claudia",
+          "middle": [],
+          "last": "Gebhard",
+          "suffix": ""
+        },
+        {
+          "first": "Irene",
+          "middle": [],
+          "last": "Miguel-Escalada",
+          "suffix": ""
+        },
+        {
+          "first": "Ilka",
+          "middle": [],
+          "last": "Hoof",
+          "suffix": ""
+        },
+        {
+          "first": "Jette",
+          "middle": [],
+          "last": "Bornholdt",
+          "suffix": ""
+        },
+        {
+          "first": "Mette",
+          "middle": [],
+          "last": "Boyd",
+          "suffix": ""
+        },
+        {
+          "first": "Yun",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaobei",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Schmidl",
+          "suffix": ""
+        },
+        {
+          "first": "Takahiro",
+          "middle": [],
+          "last": "Suzuki",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Biological embedding of experience: a primer on epigenetics",
+      "authors": [
+        {
+          "first": "Maria",
+          "middle": [
+            "J"
+          ],
+          "last": "Aristizabal",
+          "suffix": ""
+        },
+        {
+          "first": "Ina",
+          "middle": [],
+          "last": "Anreiter",
+          "suffix": ""
+        },
+        {
+          "first": "Thorhildur",
+          "middle": [],
+          "last": "Halldorsdottir",
+          "suffix": ""
+        },
+        {
+          "first": "Candice",
+          "middle": [
+            "L"
+          ],
+          "last": "Odgers",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [
+            "W"
+          ],
+          "last": "Mcdade",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Goldenberg",
+          "suffix": ""
+        },
+        {
+          "first": "Sara",
+          "middle": [],
+          "last": "Mostafavi",
+          "suffix": ""
+        },
+        {
+          "first": "Elisabeth",
+          "middle": [
+            "B"
+          ],
+          "last": "Michael S Kobor",
+          "suffix": ""
+        },
+        {
+          "first": "Marla",
+          "middle": [
+            "B"
+          ],
+          "last": "Binder",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Sokolowski",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Effective gene expression prediction from sequence by integrating long-range interactions",
+      "authors": [
+        {
+          "first": "Žiga",
+          "middle": [],
+          "last": "Avsec",
+          "suffix": ""
+        },
+        {
+          "first": "Vikram",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Visentin",
+          "suffix": ""
+        },
+        {
+          "first": "Agnieszka",
+          "middle": [],
+          "last": "Joseph R Ledsam",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Grabska-Barwinska",
+          "suffix": ""
+        },
+        {
+          "first": "Yannis",
+          "middle": [],
+          "last": "Kyle R Taylor",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Assael",
+          "suffix": ""
+        },
+        {
+          "first": "Pushmeet",
+          "middle": [],
+          "last": "Jumper",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "R"
+          ],
+          "last": "Kohli",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kelley",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Nature methods"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Gene regulatory network inference in the era of single-cell multi-omics",
+      "authors": [
+        {
+          "first": "Pau",
+          "middle": [],
+          "last": "Badia-I Mompel",
+          "suffix": ""
+        },
+        {
+          "first": "Lorna",
+          "middle": [],
+          "last": "Wessels",
+          "suffix": ""
+        },
+        {
+          "first": "Sophia",
+          "middle": [],
+          "last": "Müller-Dott",
+          "suffix": ""
+        },
+        {
+          "first": "Rémi",
+          "middle": [],
+          "last": "Trimbour",
+          "suffix": ""
+        },
+        {
+          "first": "Ricardo O Ramirez",
+          "middle": [],
+          "last": "Flores",
+          "suffix": ""
+        },
+        {
+          "first": "Ricard",
+          "middle": [],
+          "last": "Argelaguet",
+          "suffix": ""
+        },
+        {
+          "first": "Julio",
+          "middle": [],
+          "last": "Saez-Rodriguez",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Nature Reviews Genetics"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Interpretable neural predictions with differentiable binary variables",
+      "authors": [
+        {
+          "first": "Joost",
+          "middle": [],
+          "last": "Bastings",
+          "suffix": ""
+        },
+        {
+          "first": "Wilker",
+          "middle": [],
+          "last": "Aziz",
+          "suffix": ""
+        },
+        {
+          "first": "Ivan",
+          "middle": [],
+          "last": "Titov",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "57th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Variational information bottleneck for effective lowresource fine-tuning",
+      "authors": [
+        {
+          "first": "Yonatan",
+          "middle": [],
+          "last": "Belinkov",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Henderson",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "The nih roadmap epigenomics mapping consortium",
+      "authors": [
+        {
+          "first": "John",
+          "middle": [
+            "A"
+          ],
+          "last": "Bradley E Bernstein",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [
+            "F"
+          ],
+          "last": "Stamatoyannopoulos",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Costello",
+          "suffix": ""
+        },
+        {
+          "first": "Aleksandar",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Milosavljevic",
+          "suffix": ""
+        },
+        {
+          "first": "Manolis",
+          "middle": [],
+          "last": "Meissner",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [
+            "A"
+          ],
+          "last": "Kellis",
+          "suffix": ""
+        },
+        {
+          "first": "Arthur",
+          "middle": [
+            "L"
+          ],
+          "last": "Marra",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [
+            "R"
+          ],
+          "last": "Beaudet",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ecker",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "Nature biotechnology"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Pattern Recognition and Machine Learning",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [
+            "M"
+          ],
+          "last": "Bishop",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Information Science and Statistics"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Learning to explain: An information-theoretic perspective on model interpretation",
+      "authors": [
+        {
+          "first": "Jianbo",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Le",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Wainwright",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Jordan",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "An integrated encyclopedia of dna elements in the human genome",
+      "authors": [],
+      "year": 2012,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Mapping complex disease traits with global gene expression",
+      "authors": [
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Cookson",
+          "suffix": ""
+        },
+        {
+          "first": "Liming",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Miriam",
+          "middle": [],
+          "last": "Gonc ¸alo Abecasis",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Moffatt",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Lathrop",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "Nature Reviews Genetics"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Probability and Statistics",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [
+            "H"
+          ],
+          "last": "Degroot",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "J"
+          ],
+          "last": "Schervish",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Pearson custom library"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "The 4d nucleome project",
+      "authors": [
+        {
+          "first": "Job",
+          "middle": [],
+          "last": "Dekker",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "S"
+          ],
+          "last": "Belmont",
+          "suffix": ""
+        },
+        {
+          "first": "Mitchell",
+          "middle": [],
+          "last": "Guttman",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [
+            "T"
+          ],
+          "last": "Victor O Leshyk",
+          "suffix": ""
+        },
+        {
+          "first": "Stavros",
+          "middle": [],
+          "last": "Lis",
+          "suffix": ""
+        },
+        {
+          "first": "Leonid",
+          "middle": [
+            "A"
+          ],
+          "last": "Lomvardas",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mirny",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Clodagh",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "J"
+          ],
+          "last": "O'shea",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Genetics of gene expression and its effect on disease",
+      "authors": [
+        {
+          "first": "Gudmar",
+          "middle": [],
+          "last": "Valur Emilsson",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Thorleifsson",
+          "suffix": ""
+        },
+        {
+          "first": "Amy",
+          "middle": [
+            "S"
+          ],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Leonardson",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zink",
+          "suffix": ""
+        },
+        {
+          "first": "Sonia",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Agnar",
+          "middle": [],
+          "last": "Carlson",
+          "suffix": ""
+        },
+        {
+          "first": "G Bragi",
+          "middle": [],
+          "last": "Helgason",
+          "suffix": ""
+        },
+        {
+          "first": "Steinunn",
+          "middle": [],
+          "last": "Walters",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gunnarsdottir",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Implicit reparameterization gradients",
+      "authors": [
+        {
+          "first": "Mikhail",
+          "middle": [],
+          "last": "Figurnov",
+          "suffix": ""
+        },
+        {
+          "first": "Mohamed",
+          "middle": [],
+          "last": "Shakir",
+          "suffix": ""
+        },
+        {
+          "first": "Andriy",
+          "middle": [],
+          "last": "Mnih",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Activity-by-contact model of enhancer-promoter regulation from thousands of crispr perturbations",
+      "authors": [
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Charles P Fulco",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nasser",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Thouis",
+          "suffix": ""
+        },
+        {
+          "first": "Glen",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Drew",
+          "middle": [
+            "T"
+          ],
+          "last": "Munson",
+          "suffix": ""
+        },
+        {
+          "first": "Vidya",
+          "middle": [],
+          "last": "Bergman",
+          "suffix": ""
+        },
+        {
+          "first": "Sharon",
+          "middle": [
+            "R"
+          ],
+          "last": "Subramanian",
+          "suffix": ""
+        },
+        {
+          "first": "Rockwell",
+          "middle": [],
+          "last": "Grossman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Anyoha",
+          "suffix": ""
+        },
+        {
+          "first": "Tejal",
+          "middle": [
+            "A"
+          ],
+          "last": "Benjamin R Doughty",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Patwardhan",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Nature genetics"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Bayesian Data Analysis, Third Edition",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gelman",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "B"
+          ],
+          "last": "Carlin",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "S"
+          ],
+          "last": "Stern",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "B"
+          ],
+          "last": "Dunson",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vehtari",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "B"
+          ],
+          "last": "Rubin",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Chapman & Hall/CRC Texts in Statistical Science"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Mamba: Linear-time sequence modeling with selective state spaces",
+      "authors": [
+        {
+          "first": "Albert",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Tri",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Learning to faithfully rationalize by construction",
+      "authors": [
+        {
+          "first": "Sarthak",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Sarah",
+          "middle": [],
+          "last": "Wiegreffe",
+          "suffix": ""
+        },
+        {
+          "first": "Yuval",
+          "middle": [],
+          "last": "Pinter",
+          "suffix": ""
+        },
+        {
+          "first": "Byron",
+          "middle": [
+            "C"
+          ],
+          "last": "Wallace",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the Association for Computational Linguistics (ACL)"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Categorical reparameterization with gumbel-softmax",
+      "authors": [
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "Shixiang",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Poole",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Chromatin interaction-aware gene regulatory modeling with graph attention networks",
+      "authors": [
+        {
+          "first": "Alireza",
+          "middle": [],
+          "last": "Karbalayghareh",
+          "suffix": ""
+        },
+        {
+          "first": "Merve",
+          "middle": [],
+          "last": "Sahin",
+          "suffix": ""
+        },
+        {
+          "first": "Christina",
+          "middle": [
+            "S"
+          ],
+          "last": "Leslie",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Genome Research"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Rationalizing neural predictions",
+      "authors": [
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Lei",
+          "suffix": ""
+        },
+        {
+          "first": "Regina",
+          "middle": [],
+          "last": "Barzilay",
+          "suffix": ""
+        },
+        {
+          "first": "Tommi",
+          "middle": [],
+          "last": "Jaakkola",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the 2016 Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Epinformer: a scalable deep learning framework for gene expression prediction by integrating promoter-enhancer sequences with multimodal epigenomic data",
+      "authors": [
+        {
+          "first": "Jiecong",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Ruibang",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Pinello",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "bioRxiv"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Interpretable and generalizable graph learning via stochastic attention mechanism",
+      "authors": [
+        {
+          "first": "Siqi",
+          "middle": [],
+          "last": "Miao",
+          "suffix": ""
+        },
+        {
+          "first": "Mia",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Pan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Expanded encyclopaedias of dna elements in the human and mouse genomes",
+      "authors": [
+        {
+          "first": "Jill",
+          "middle": [
+            "E"
+          ],
+          "last": "Moore",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "J"
+          ],
+          "last": "Purcaro",
+          "suffix": ""
+        },
+        {
+          "first": "Henry",
+          "middle": [
+            "E"
+          ],
+          "last": "Pratt",
+          "suffix": ""
+        },
+        {
+          "first": "Charles",
+          "middle": [
+            "B"
+          ],
+          "last": "Epstein",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shoresh",
+          "suffix": ""
+        },
+        {
+          "first": "Jessika",
+          "middle": [],
+          "last": "Adrian",
+          "suffix": ""
+        },
+        {
+          "first": "Trupti",
+          "middle": [],
+          "last": "Kawli",
+          "suffix": ""
+        },
+        {
+          "first": "Carrie",
+          "middle": [
+            "A"
+          ],
+          "last": "Davis",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Dobin",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Hyenadna: Long-range genomic sequence modeling at single nucleotide resolution",
+      "authors": [
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Poli",
+          "suffix": ""
+        },
+        {
+          "first": "Marjan",
+          "middle": [],
+          "last": "Faizi",
+          "suffix": ""
+        },
+        {
+          "first": "Armin",
+          "middle": [],
+          "last": "Thomas",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Wornow",
+          "suffix": ""
+        },
+        {
+          "first": "Callum",
+          "middle": [],
+          "last": "Birch-Sykes",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Massaroli",
+          "suffix": ""
+        },
+        {
+          "first": "Aman",
+          "middle": [],
+          "last": "Patel",
+          "suffix": ""
+        },
+        {
+          "first": "Clayton",
+          "middle": [],
+          "last": "Rabideau",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "An information bottleneck approach for controlling conciseness in rationale extraction",
+      "authors": [
+        {
+          "first": "Bhargavi",
+          "middle": [],
+          "last": "Paranjape",
+          "suffix": ""
+        },
+        {
+          "first": "Mandar",
+          "middle": [],
+          "last": "Joshi",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Thickstun",
+          "suffix": ""
+        },
+        {
+          "first": "Hannaneh",
+          "middle": [],
+          "last": "Hajishirzi",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Causal inference in statistics: An overview",
+      "authors": [
+        {
+          "first": "Judea",
+          "middle": [],
+          "last": "Pearl",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Models, reasoning and inference",
+      "authors": [
+        {
+          "first": "Judea",
+          "middle": [],
+          "last": "Pearl",
+          "suffix": ""
+        }
+      ],
+      "year": 2000,
+      "venue": "CambridgeUniversityPress"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Hyena hierarchy: Towards larger convolutional language models",
+      "authors": [
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Poli",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Massaroli",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [
+            "Y"
+          ],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Tri",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Baccus",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Ré",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Benchmarking algorithms for gene regulatory network inference from single-cell transcriptomic data",
+      "authors": [
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Pratapa",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Amogh",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [
+            "N"
+          ],
+          "last": "Jalihal",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Law",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bharadwaj",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Murali",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature methods"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Caduceus: Bi-directional equivariant long-range dna sequence modeling",
+      "authors": [
+        {
+          "first": "Yair",
+          "middle": [],
+          "last": "Schiff",
+          "suffix": ""
+        },
+        {
+          "first": "Chia-Hsiang",
+          "middle": [],
+          "last": "Kao",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Gokaslan",
+          "suffix": ""
+        },
+        {
+          "first": "Tri",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        },
+        {
+          "first": "Albert",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Volodymyr",
+          "middle": [],
+          "last": "Kuleshov",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Perturbation-response genes reveal signaling footprints in cancer gene expression",
+      "authors": [
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Schubert",
+          "suffix": ""
+        },
+        {
+          "first": "Bertram",
+          "middle": [],
+          "last": "Klinger",
+          "suffix": ""
+        },
+        {
+          "first": "Martina",
+          "middle": [],
+          "last": "Klünemann",
+          "suffix": ""
+        },
+        {
+          "first": "Anja",
+          "middle": [],
+          "last": "Sieber",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Uhlitz",
+          "suffix": ""
+        },
+        {
+          "first": "Sascha",
+          "middle": [],
+          "last": "Sauer",
+          "suffix": ""
+        },
+        {
+          "first": "Mathew",
+          "middle": [
+            "J"
+          ],
+          "last": "Garnett",
+          "suffix": ""
+        },
+        {
+          "first": "Nils",
+          "middle": [],
+          "last": "Blüthgen",
+          "suffix": ""
+        },
+        {
+          "first": "Julio",
+          "middle": [],
+          "last": "Saez-Rodriguez",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Nature communications"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "From promoter sequence to expression: a probabilistic framework",
+      "authors": [
+        {
+          "first": "Eran",
+          "middle": [],
+          "last": "Segal",
+          "suffix": ""
+        },
+        {
+          "first": "Yoseph",
+          "middle": [],
+          "last": "Barash",
+          "suffix": ""
+        },
+        {
+          "first": "Itamar",
+          "middle": [],
+          "last": "Simon",
+          "suffix": ""
+        },
+        {
+          "first": "Nir",
+          "middle": [],
+          "last": "Friedman",
+          "suffix": ""
+        },
+        {
+          "first": "Daphne",
+          "middle": [],
+          "last": "Koller",
+          "suffix": ""
+        }
+      ],
+      "year": 2002,
+      "venue": "Proceedings of the sixth annual international conference on Computational biology"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Graph information bottleneck",
+      "authors": [
+        {
+          "first": "Tailin",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Hongyu",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Pan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jure",
+          "middle": [],
+          "last": "Leskovec",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Discovering invariant rationales for graph neural networks",
+      "authors": [
+        {
+          "first": "Ying-Xin",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "An",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangnan",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Tat-Seng",
+          "middle": [],
+          "last": "Chua",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Model-based analysis of chip-seq (macs)",
+      "authors": [
+        {
+          "first": "Yong",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Clifford",
+          "middle": [
+            "A"
+          ],
+          "last": "Meyer",
+          "suffix": ""
+        },
+        {
+          "first": "Jérôme",
+          "middle": [],
+          "last": "Eeckhoute",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "S"
+          ],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "Bradley",
+          "middle": [
+            "E"
+          ],
+          "last": "Bernstein",
+          "suffix": ""
+        },
+        {
+          "first": "Chad",
+          "middle": [],
+          "last": "Nusbaum",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [
+            "M"
+          ],
+          "last": "Myers",
+          "suffix": ""
+        },
+        {
+          "first": "Myles",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Genome biology"
+    }
+  ]
+}

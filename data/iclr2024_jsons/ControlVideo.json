@@ -1,0 +1,2334 @@
+{
+  "paper_id": "ControlVideo",
+  "title": "CONTROLVIDEO: TRAINING-FREE CONTROLLABLE TEXT-TO-VIDEO GENERATION",
+  "authors": [
+    {
+      "first": "Yabo",
+      "middle": [],
+      "last": "Zhang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Harbin Institute of Technology",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yuxiang",
+      "middle": [],
+      "last": "Wei",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Harbin Institute of Technology",
+        "location": {}
+      }
+    },
+    {
+      "first": "Dongsheng",
+      "middle": [],
+      "last": "Jiang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Huawei Cloud",
+        "location": {}
+      }
+    },
+    {
+      "first": "Xiaopeng",
+      "middle": [],
+      "last": "Zhang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Huawei Cloud",
+        "location": {}
+      }
+    },
+    {
+      "first": "Wangmeng",
+      "middle": [],
+      "last": "Zuo",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Harbin Institute of Technology",
+        "location": {}
+      }
+    },
+    {
+      "first": "Qi",
+      "middle": [],
+      "last": "Tian",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Huawei Cloud",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Text-driven diffusion models have unlocked unprecedented abilities in image generation, whereas their video counterpart lags behind due to the excessive training cost. To avert the training burden, we propose a training-free ControlVideo to produce high-quality videos based on the provided text prompts and motion sequences. Specifically, ControlVideo adapts a pre-trained text-to-image model (i.e., Con-trolNet) for controllable text-to-video generation. To generate continuous videos without flicker effects, we propose an interleaved-frame smoother to smooth the intermediate frames. In particular, interleaved-frame smoother splits the whole video with successive three-frame clips, and stabilizes each clip by updating the middle frame with the interpolation among other two frames in latent space. Furthermore, a fully cross-frame interaction mechanism is exploited to further enhance the frame consistency, while a hierarchical sampler is employed to produce long videos efficiently. Extensive experiments demonstrate that our ControlVideo outperforms the state-of-the-arts both quantitatively and qualitatively. It is worth noting that, thanks to the efficient designs, ControlVideo could generate both short and long videos within several minutes using one NVIDIA 2080Ti. Code and videos are available at this link.",
+  "body": {
+    "1_INTRODUCTION": "Large-scale diffusion models have made a tremendous breakthrough on text-to-image synthesis (Nichol et al., 2021; Rombach et al., 2022; Balaji et al., 2022; Ramesh et al., 2022; Saharia et al., 2022) and their creative applications (Gal et al., 2022; Wei et al., 2023; Ni et al., 2022; Hertz et al., 2022) . Several studies (Ho et al., 2022b; a; Singer et al., 2022; Esser et al., 2023; Hong et al., 2022) attempt to replicate this success in the video counterpart, i.e., modeling higher-dimensional complex video distributions in the wild world. However, training such a text-to-video model requires massive amounts of high-quality videos and computational resources, which limits further research and applications by relevant communities.\nIn this work, we study a new and efficient form to avert the excessive training requirements: controllable text-to-video generation with text-to-image models. As shown in Fig. 1 , our method, termed ControlVideo, takes textual description and motion sequence (e.g., depth or edge maps) as conditions to generate videos. Instead of learning the video distribution from scratch, ControlVideo adapts the pre-trained text-to-image models (e.g., ControlNet (Zhang & Agrawala, 2023) ) for high-quality video generation. With the structural information from motion sequence and the superior generation capability of image models, it is feasible to produce a vivid video without additional training.\nHowever, as shown in Fig. 1 , due to the lack of temporal interaction, individually producing each frame with ControlNet (Zhang & Agrawala, 2023) fails to ensure both (i) frame consistency and (ii) video continuity. Frame consistency requires all frames to be generated with a coherent appearance, while video continuity ensures smooth transitions between frames. Tune-A-Video (Wu et al., 2022b) and Text2Video-Zero (Khachatryan et al., 2023) facilitate appearance consistency by extending self-attention to sparser cross-frame attention. Nonetheless, such a cross-frame interaction is not sufficient to guarantee video continuity, and visible flickers appear in their synthesized videos (as shown in Fig. 1 and corresponding videos).\nx-t slice Source video Text2Video-Zero x t ControlNet A man in alpine wildness ControlVideo A man in alpine wildness Frame consistency x-t slice x t Figure 1: Training-free controllable text-to-video generation. Left: We visualize the frames and x-t slice (pixels in red line of original frame) of Text2Video-Zero, and observe visible discontinuity in x-t slice. Right: ControlVideo, adapted from ControlNet, achieves more continuous x-t slice across time, along with improved appearance consistency than Text2Video-Zero. See videos for better view.\nIntuitively, a continuous video could be considered as multiple continuous three-frame clips, so the problem of ensuring the video continuity is converted to ensuring all three-frame clips continuous. Driven by this analysis, we propose an interleaved-frame smoother to enable continuous video generation. Specifically, interleaved-frame smoother divides all three-frame clips into even and odd clips based on indices of middle frames, and separately smooths out their corresponding latents at different denoising steps. To stabilize the latent of each clip, we first convert it to predicted RGB frames with DDIM, followed by replacing the middle frame with the interpolated frame. Note that, the smoother is only applied at a few timesteps, and the quality and individuality of interpolated frames can be well retained by the following denoising steps.\nWe further investigate the cross-frame mechanisms in terms of effectiveness and efficiency. Firstly, we explore fully cross-frame interaction that concatenates all frames to become a \"larger image\", and first empirically demonstrate its superior consistency and quality than sparser counterparts (see Sec. 4.4). Secondly, applying existing cross-frame mechanisms for long-video generation suffers from either heavy computational burden or long-term inconsistency. Therefore, a hierarchical sampler is presented to produce a long video in a top-down way. In specific, it pre-generates the key frames with fully cross-frame attention for long-range coherence, followed by efficiently generating the short clips conditioned on pairs of key frames.\nWe conduct the experiments on extensively collected motion-prompt pairs, and show that Con-trolVideo outperforms alternative competitors qualitatively and quantitatively. Thanks to the efficient designs, ControlVideo produces short and long videos in several minutes using one NVIDIA 2080Ti.\nIn summary, our contributions are presented as follows:\n• We propose training-free ControlVideo with interleaved-frame smoother for consistent and continuous controllable text-to-video generation.\n• Interleaved-frame smoother alternately smooths out the latents of three-frame clips, effectively stabilizing the entire video during sampling.\n• We empirically demonstrate the superior consistency and quality of fully cross-frame interaction, while presenting a hierarchical sampler for long-video generation in commodity GPUs.",
+    "2_BACKGROUND": "Latent diffusion model (LDM) (Rombach et al., 2022) is an efficient variant of diffusion models (Ho et al., 2020) by applying the diffusion process in the latent space. LDM uses an encoder to compress an image x into latent code z = (x). It learns the distribution of image latent codes z 0 ∼ p data (z 0 ) in a DDPM formulation (Ho et al., 2020) , including a forward and a backward process. The forward diffusion process gradually adds gaussian noise at each timestep t to obtain z t :\nEQUATION\nor ControlNet",
+    "3_CONTROLVIDEO": {
+      "3.1_PRELIMINARY": "The main challenge of adapting text-to-image models to the video counterpart is to ensure temporal consistency. Leveraging the controllability of ControlNet, motion sequences could provide coarselevel consistency in structure. Nonetheless, due to the lack of temporal interaction, individually producing each frame with ControlNet leads to drastic inconsistency in appearance (see row 2 in Algorithm 1 Interleaved-frame smoother\nRequire: z t = {z i t } N -1 i=0 , c = {c i } N -1 i=0 , τ , timestep t. 1: z t→0 ← zt- √ 1-αtϵ θ (zt,t,c,τ ) √ αt .\n▷ predict clean latents 2: x t→0 ← D(z t→0 ); xt→0 ← x t→0 ▷ convert latents to RGB space 3: if (t mod 2) = 0 then ▷ smooth all even three-frame clips ( x2k-1 t→0 , x2k t→0 , x2k+1\nfor k from 0 to N/2 do 5:\nEQUATION\n) 6: else if (t mod 2) = 1 then ▷ smooth all odd three-frame clips ( x2k t→0 , x2k+1 t→0 , x2k+2\nfor k from 0 to N/2 do 8:\nx2k+1 t→0 ← Interpolate(x 2k t→0 , x 2k+2 t→0 ) 9: zt→0 ← E( xt→0 ) ▷ convert frames to latent space 10: z t-1 ← √ α t-1 zt→0 + √ 1 -α t-1 • ϵ θ (z t , t, c, τ ).\n▷ predict less noisy latent 11: return z t-1 Fig. 5 ). Similar to previous works (Wu et al., 2022b; Khachatryan et al., 2023) , we also extend original self-attention of SD U-Net to cross-frame attention, so that the video content could be temporally shared via inter-frame interaction.\nIn specific, ControlVideo inflates the main U-Net from Stable Diffusion along the temporal axis, while keeping the auxiliary U-Net from ControlNet. Analogous to (Ho et al., 2022b; Wu et al., 2022b; Khachatryan et al., 2023) , it directly converts 2D convolution layers to 3D counterpart by replacing 3 × 3 kernels with 1 × 3 × 3 kernels. Self-attention is converted to cross-frame attention by querying from other frames as:\nEQUATION\n)\nwhere W Q , W K , and W V project z t into query, key, and value, respectively. z i t and z t denote ith latent frame and the latents of reference frames at timestep t. We will discuss the choices of cross-frame mechanisms (i.e., reference frames) in Sec. 3.3",
+      "3.2_INTERLEAVED-FRAME_SMOOTHER": "Albeit cross-frame interaction promisingly keeps frame consistency in appearance, they are still visibly flickering in structure. Discrete motion sequences only ensure coarse-level structural consistency, not sufficient to keep the continuous inter-frame transition. Intuitively, a continuous video could be considered as multiple continuous three-frame clips, so we simplify the problem of ensuring the video continuity to ensuring all three-frame clips continuous.\nInspired by this, we propose an interleaved-frame smoother to enable continuous video generation. In Alg. 1, interleaved-frame smoother divides all three-frame clips into even and odd clips based on indices of middle frames, and individually smooths their corresponding latents at different timesteps. To stabilize the latent of each clip, we first convert it to predicted RGB frames with DDIM, following by replacing middle frame with the interpolated frame.\nSpecifically, at timestep t, we first predict the clean video latent z t→0 according to z t :\nEQUATION\nAfter projecting z t→0 into a RGB video x t→0 = D(z t→0 ), we convert it to a more smoothed video xt→0 by replacing each middle frame with the interpolated one. Based on smoothed video latent zt→0 = E( xt→0 ), we compute the less noisy latent z t-1 following DDIM denoising in Eq. 3:\nEQUATION\nWe note that the above process is only performed at a few intermediate timesteps, the individuality and quality of interpolated frames are also well retained by the following denoising steps. Additionally, the newly computational burden can be negligible (See Table 3 ). ",
+      "3.3_CROSS-FRAME_MECHANISMS_FOR_EFFECTIVENESS_AND_EFFICIENCY": "Fully cross-frame interaction. Previous works (Wu et al., 2022b; Khachatryan et al., 2023) usually replace self-attention with sparser cross-frame mechanisms, e.g., taking the reference frames as first or previous frames. Such mechanisms will increase the discrepancy between the query and key in self-attention modules, resulting in the degradation of video quality and consistency. In contrast, fully cross-frame interaction considers all frames as reference (i.e., becoming a \"large image\"), so has a less generation gap with text-to-image models. We conduct comparison experiments on above mechanisms in Fig. 5 and Table 3 . Despite slightly more computational burden, fully cross-frame interaction empirically shows better consistency and quality than the sparser counterparts.\nHierarchical sampler. Applying existing cross-frame mechanisms for long-video generation suffers from either heavy computational burden or long-term inconsistency, limiting the practicability of ControlVideo. For more efficient long-video synthesis, we introduce a hierarchical sampler to produce a long video clip-by-clip, which is implemented with two types of cross-frame mechanisms. At each timestep, a long video z t = {z i t } N -foot_0 i=0 is separated into multiple short video clips with the selected key frames z key t = {z kNc t } N Nc k=0 , where each clip is of length N c -1 and the kth clip is denoted as\nz k t = {z j t } (k+1)Nc-1 j=kNc+1\n. Then, we pre-generate the key frames with fully cross-frame attention for long-range coherence, where reference frames are z key t = {z kNc t } N Nc k=0 . Conditioned on each pair of key frames, i.e., reference frames as {z kNc t , z (k+1)Nc t }, we sequentially synthesize their corresponding clip z k t holding the holistic consistency.",
+      "_text": "Controllable text-to-video generation aims to produce a video of length N conditioned on motion sequences c = {c i } N -1 i=0 and a text prompt τ . As illustrated in Fig. 2 , we propose ControlVideo with interleaved-frame smoother towards consistent and continuous video generation. ControlVideo, adapted from ControlNet, adds cross-frame interaction to self-attention modules for frame consistency (in Sec. 3.1). To ensure video continuity, interleaved-frame smoother divides all three-frame clips into even and odd clips, and separately smooths out their corresponding latents at different denoising steps (in Sec. 3.2). Finally, we further investigate the cross-frame mechanisms in terms of effectiveness and efficiency, including fully cross-frame interaction and hierarchical sampler (in Sec. 3.3)."
+    },
+    "4.1_EXPERIMENTAL_SETTINGS_Implementation_details.": "ControlVideo is adapted from ControlNet 1 (Zhang & Agrawala, 2023) , and our interleaved-frame smoother employs a lightweight RIFE (Huang et al., 2022) to interpolate the middle frame of each three-frame clip. The synthesized short videos are of length 15, while the long videos usually contain about 100 frames. Unless otherwise noted, their resolution is both 512 × 512. During sampling, we adopt DDIM sampling (Song et al., 2020a) with 50 timesteps, and interleaved-frame smoother is performed on predicted RGB frames at timesteps {30, 31} by default.\nWith the efficient implementation of xFormers (Lefaudeux et al., 2022) , ControVideo could produce both short and long videos with one NVIDIA RTX 2080Ti in about 2 and 10 minutes, respectively.",
+    "4.2_QUALITATIVE_AND_QUANTITATIVE_COMPARISONS": "Qualitative results. Fig. 3 first illustrates the visual comparisons of synthesized videos conditioned on both (a) depth maps and (b) canny edges. As shown in Fig. 3 (a) , our ControlVideo demonstrates better consistency in both appearance and structure than alternative competitors. Tune-A-Video fails to keep the temporal consistency of both appearance and fine-grained structure, e.g., the color of coat and the structure of road. With the motion information from depth maps, Text2Video-Zero achieves promising consistency in structure, but still struggles with incoherent appearance in videos e.g., the color of coat. Besides, ControlVideo also performs more robustly when dealing with large motion inputs. As illustrated in Fig. 3 (b), Tune-A-Video ignores the structure information from source videos. Text2Video-Zero adopts the first-only cross-frame mechanism to trade off frame quality and appearance consistency, and generates later frames with visible artifacts. In contrast, with the proposed fully cross-frame mechanism and interleaved-frame smoother, our ControlVideo can handle large motion to generate high-quality and consistent videos. Source Video Individual First-only Sparse-causal Fully Cross-frame Fully Cross-frame + Smoother A mighty elephant marches steadily through the rugged terrain. Fully cross-frame interaction produces video frames with higher quality and consistency than other mechanisms, and adding the smoother further enhances the video smoothness. See corresponding videos for better comparison.\nQuantitative results. We have also compared our ControlVideo with existing methods quantitatively on 125 video-prompt pairs. From Table 1 , our ControlVideo conditioned on depth outperforms the state-of-the-art methods in terms of all metrics, which is consistent with the qualitative results. In contrast, despite finetuning on a source video, Tune-A-Video still struggles to produce temporally coherent videos. Although conditioned on the same structure information, Text2Video-Zero obtains worse frame consistency and warping error than ControlVideo. For each method, the depth-conditioned models generate videos with higher frame and prompt consistency than the canny-condition counterpart, since depth maps provide smoother motion information.",
+    "4.3_USER_STUDY": "We then perform the user study to compare our ControlVideo conditioned on depth maps with other competing methods. In specific, we provide each rater a structure sequence, a text prompt, and synthesized videos from two different methods (in random order). Then we ask them to select the better synthesized videos for each of three measurements: (i) video quality, (ii) temporal consistency throughout all frames, and (iii) text alignment between prompts and synthesized videos. The evaluation set consists of 125 representative structure-prompt pairs. Each pair is evaluated by 5 raters, and we take a majority vote for the final result. From Table 2 , the raters strongly favor our synthesized videos from all three perspectives, especially in temporal consistency. On the other hand, Tune-A-Video fails to generate consistent and high-quality videos with only DDIM inversion for structural guidance, and Text2Video-Zero also produces videos with lower quality and coherency. steamship on the ocean, at sunset, sketch style ",
+    "4.5_EXTENSION_TO_LONG-VIDEO_GENERATION": "Producing a long video usually requires an advanced GPU with high memory. With the proposed hierarchical sampler, our ControlVideo achieves long video generation (more than 100 frames) in a memory-efficient manner. As shown in Fig. 6 , our ControlVideo can produce a long video with consistently high quality. Notably, benefiting from our efficient sampling, it only takes approximately ten minutes to generate 100 frames with resolution 512 × 512 in one NVIDIA RTX 2080Ti. More visualizations of long videos can be found in Appendix D.",
+    "6_DISCUSSION": "In this paper, we present a training-free framework, namely ControlVideo, towards consistent and continuous controllable text-to-video generation. ControlVideo, inflated from ControlNet, introduces an interleaved-frame smoother to ensure video continuity. Particularly, interleaved-frame smoother alternately smooths out the latents of three-frame clips, and stabilizes each clip by updating the middle frame with the interpolation among other two frames in latent space. Moreover, we empirically demonstrate the superior performance of fully cross-frame interaction, while presenting hierarchical sampler for long-video generation in commodity GPUs. Quantitative and qualitative experiments on extensive motion-prompt pairs demonstrate that ControlVideo achieves state-of-the-arts in terms of frame consistency and video continuity.\nBroader impact. Large-scale diffusion models have made tremendous progress in text-to-video synthesis, yet these models are costly and unavailable to the public. ControlVideo focuses on trainingfree controllable text-to-video generation, and takes an essential step in efficient video creation. Concretely, ControlVideo could synthesize high-quality videos with commodity hardware, hence, being accessible to most researchers and users. For example, artists may leverage our approach to create fascinating videos with less time. Moreover, ControlVideo provides insights into the tasks involved in videoss, e.g., video rendering, video editing, and video-to-video translation. On the flip side, albeit we do not intend to use our model for harmful purposes, it might be misused and bring some potential negative impacts, such as producing deceptive, harmful, or explicit videos. Despite the above concerns, we believe that they could be well minimized with some steps. For example, an NSFW filter can be employed to filter out unhealthy and violent content. Also, we hope that the government could establish and improve relevant regulations to restrict the abuse of video creation."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "ediffi: Text-to-image diffusion models with an ensemble of expert denoisers",
+      "authors": [
+        {
+          "first": "Yogesh",
+          "middle": [],
+          "last": "Balaji",
+          "suffix": ""
+        },
+        {
+          "first": "Seungjun",
+          "middle": [],
+          "last": "Nah",
+          "suffix": ""
+        },
+        {
+          "first": "Xun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Arash",
+          "middle": [],
+          "last": "Vahdat",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Karsten",
+          "middle": [],
+          "last": "Kreis",
+          "suffix": ""
+        },
+        {
+          "first": "Miika",
+          "middle": [],
+          "last": "Aittala",
+          "suffix": ""
+        },
+        {
+          "first": "Timo",
+          "middle": [],
+          "last": "Aila",
+          "suffix": ""
+        },
+        {
+          "first": "Samuli",
+          "middle": [],
+          "last": "Laine",
+          "suffix": ""
+        },
+        {
+          "first": "Bryan",
+          "middle": [],
+          "last": "Catanzaro",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Muse: Text-to-image generation via masked generative transformers",
+      "authors": [
+        {
+          "first": "Huiwen",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jarred",
+          "middle": [],
+          "last": "Barber",
+          "suffix": ""
+        },
+        {
+          "first": "Jose",
+          "middle": [],
+          "last": "Maschinot",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Lezama",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Hsuan",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Murphy",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "William T Freeman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Rubinstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Cogview: Mastering text-to-image generation via transformers",
+      "authors": [
+        {
+          "first": "Ming",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuoyi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenyi",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Wendi",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Chang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Da",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Junyang",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "Zhou",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        },
+        {
+          "first": "Hongxia",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Cogview2: Faster and better text-to-image generation via hierarchical transformers",
+      "authors": [
+        {
+          "first": "Ming",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Wendi",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Wenyi",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Structure and content-guided video synthesis with diffusion models",
+      "authors": [
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "Johnathan",
+          "middle": [],
+          "last": "Chiu",
+          "suffix": ""
+        },
+        {
+          "first": "Parmida",
+          "middle": [],
+          "last": "Atighehchian",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Granskog",
+          "suffix": ""
+        },
+        {
+          "first": "Anastasis",
+          "middle": [],
+          "last": "Germanidis",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "An image is worth one word: Personalizing text-to-image generation using textual inversion",
+      "authors": [
+        {
+          "first": "Rinon",
+          "middle": [],
+          "last": "Gal",
+          "suffix": ""
+        },
+        {
+          "first": "Yuval",
+          "middle": [],
+          "last": "Alaluf",
+          "suffix": ""
+        },
+        {
+          "first": "Yuval",
+          "middle": [],
+          "last": "Atzmon",
+          "suffix": ""
+        },
+        {
+          "first": "Or",
+          "middle": [],
+          "last": "Patashnik",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Amit",
+          "suffix": ""
+        },
+        {
+          "first": "Gal",
+          "middle": [],
+          "last": "Bermano",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Chechik",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Cohen-Or",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Generative adversarial networks",
+      "authors": [
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "Jean",
+          "middle": [],
+          "last": "Pouget-Abadie",
+          "suffix": ""
+        },
+        {
+          "first": "Mehdi",
+          "middle": [],
+          "last": "Mirza",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Warde-Farley",
+          "suffix": ""
+        },
+        {
+          "first": "Sherjil",
+          "middle": [],
+          "last": "Ozair",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Communications of the ACM"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Promptto-prompt image editing with cross attention control",
+      "authors": [
+        {
+          "first": "Amir",
+          "middle": [],
+          "last": "Hertz",
+          "suffix": ""
+        },
+        {
+          "first": "Ron",
+          "middle": [],
+          "last": "Mokady",
+          "suffix": ""
+        },
+        {
+          "first": "Jay",
+          "middle": [],
+          "last": "Tenenbaum",
+          "suffix": ""
+        },
+        {
+          "first": "Kfir",
+          "middle": [],
+          "last": "Aberman",
+          "suffix": ""
+        },
+        {
+          "first": "Yael",
+          "middle": [],
+          "last": "Pritch",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Cohen-Or",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Denoising diffusion probabilistic models",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Ajay",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Imagen video: High definition video generation with diffusion models",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "Chitwan",
+          "middle": [],
+          "last": "Saharia",
+          "suffix": ""
+        },
+        {
+          "first": "Jay",
+          "middle": [],
+          "last": "Whang",
+          "suffix": ""
+        },
+        {
+          "first": "Ruiqi",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Gritsenko",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Diederik",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Poole",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "J"
+          ],
+          "last": "Norouzi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Fleet",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Video diffusion models",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Gritsenko",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Norouzi",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "J"
+          ],
+          "last": "Fleet",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Cogvideo: Large-scale pretraining for text-to-video generation via transformers",
+      "authors": [
+        {
+          "first": "Wenyi",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Ming",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Wendi",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Xinghan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Textfield3d: Towards enhancing open-vocabulary 3d generation with noisy text fields",
+      "authors": [
+        {
+          "first": "Tianyu",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Yihan",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Bowen",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Hang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Songcen",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Rynson",
+          "middle": [
+            "Wh"
+          ],
+          "last": "Lau",
+          "suffix": ""
+        },
+        {
+          "first": "Wangmeng",
+          "middle": [],
+          "last": "Zuo",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Real-time intermediate flow estimation for video frame interpolation",
+      "authors": [
+        {
+          "first": "Zhewei",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyuan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Wen",
+          "middle": [],
+          "last": "Heng",
+          "suffix": ""
+        },
+        {
+          "first": "Boxin",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Shuchang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Scaling up gans for text-to-image synthesis",
+      "authors": [
+        {
+          "first": "Minguk",
+          "middle": [],
+          "last": "Kang",
+          "suffix": ""
+        },
+        {
+          "first": "Jun-Yan",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jaesik",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Eli",
+          "middle": [],
+          "last": "Shechtman",
+          "suffix": ""
+        },
+        {
+          "first": "Sylvain",
+          "middle": [],
+          "last": "Paris",
+          "suffix": ""
+        },
+        {
+          "first": "Taesung",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Text2video-zero: Text-to-image diffusion models are zero-shot video generators",
+      "authors": [
+        {
+          "first": "Levon",
+          "middle": [],
+          "last": "Khachatryan",
+          "suffix": ""
+        },
+        {
+          "first": "Andranik",
+          "middle": [],
+          "last": "Movsisyan",
+          "suffix": ""
+        },
+        {
+          "first": "Vahram",
+          "middle": [],
+          "last": "Tadevosyan",
+          "suffix": ""
+        },
+        {
+          "first": "Roberto",
+          "middle": [],
+          "last": "Henschel",
+          "suffix": ""
+        },
+        {
+          "first": "Zhangyang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Shant",
+          "middle": [],
+          "last": "Navasardyan",
+          "suffix": ""
+        },
+        {
+          "first": "Humphrey",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Multi-concept customization of text-to-image diffusion",
+      "authors": [
+        {
+          "first": "Nupur",
+          "middle": [],
+          "last": "Kumari",
+          "suffix": ""
+        },
+        {
+          "first": "Bingliang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Eli",
+          "middle": [],
+          "last": "Shechtman",
+          "suffix": ""
+        },
+        {
+          "first": "Jun-Yan",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Learning blind video temporal consistency",
+      "authors": [
+        {
+          "first": "Wei-Sheng",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "Jia-Bin",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Oliver",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Eli",
+          "middle": [],
+          "last": "Shechtman",
+          "suffix": ""
+        },
+        {
+          "first": "Ersin",
+          "middle": [],
+          "last": "Yumer",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Hsuan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the European conference on computer vision (ECCV)"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "xformers: A modular and hackable transformer modelling library",
+      "authors": [
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Lefaudeux",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Diana",
+          "middle": [],
+          "last": "Liskovich",
+          "suffix": ""
+        },
+        {
+          "first": "Wenhan",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Vittorio",
+          "middle": [],
+          "last": "Caggiano",
+          "suffix": ""
+        },
+        {
+          "first": "Sean",
+          "middle": [],
+          "last": "Naren",
+          "suffix": ""
+        },
+        {
+          "first": "Min",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Jieru",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Marta",
+          "middle": [],
+          "last": "Tintore",
+          "suffix": ""
+        },
+        {
+          "first": "Susan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Labatut",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Haziza",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Follow your pose: Pose-guided text-to-video generation using pose-free videos",
+      "authors": [
+        {
+          "first": "Yue",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Yingqing",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaodong",
+          "middle": [],
+          "last": "Cun",
+          "suffix": ""
+        },
+        {
+          "first": "Xintao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Shan",
+          "suffix": ""
+        },
+        {
+          "first": "Xiu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Qifeng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Sdedit: Image synthesis and editing with stochastic differential equations",
+      "authors": [
+        {
+          "first": "Chenlin",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Jiajun",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Jun-Yan",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "T2i-adapter: Learning adapters to dig out more controllable ability for text-to-image diffusion models",
+      "authors": [
+        {
+          "first": "Chong",
+          "middle": [],
+          "last": "Mou",
+          "suffix": ""
+        },
+        {
+          "first": "Xintao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Liangbin",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhongang",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Shan",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohu",
+          "middle": [],
+          "last": "Qie",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Imaginarynet: Learning object detectors without real images and annotations",
+      "authors": [
+        {
+          "first": "Minheng",
+          "middle": [],
+          "last": "Ni",
+          "suffix": ""
+        },
+        {
+          "first": "Zitong",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Kailai",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Wangmeng",
+          "middle": [],
+          "last": "Zuo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Glide: Towards photorealistic image generation and editing with text-guided diffusion models",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Nichol",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Pranav",
+          "middle": [],
+          "last": "Shyam",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Bob",
+          "middle": [],
+          "last": "Mcgrew",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Chatgpt: Optimizing language models for dialogue",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Tb Openai",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "The 2017 davis challenge on video object segmentation",
+      "authors": [
+        {
+          "first": "Jordi",
+          "middle": [],
+          "last": "Pont-Tuset",
+          "suffix": ""
+        },
+        {
+          "first": "Federico",
+          "middle": [],
+          "last": "Perazzi",
+          "suffix": ""
+        },
+        {
+          "first": "Sergi",
+          "middle": [],
+          "last": "Caelles",
+          "suffix": ""
+        },
+        {
+          "first": "Pablo",
+          "middle": [],
+          "last": "Arbeláez",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Sorkine-Hornung",
+          "suffix": ""
+        },
+        {
+          "first": "Luc",
+          "middle": [],
+          "last": "Van Gool",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Fatezero: Fusing attentions for zero-shot text-based video editing",
+      "authors": [
+        {
+          "first": "Chenyang",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaodong",
+          "middle": [],
+          "last": "Cun",
+          "suffix": ""
+        },
+        {
+          "first": "Yong",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Chenyang",
+          "middle": [],
+          "last": "Lei",
+          "suffix": ""
+        },
+        {
+          "first": "Xintao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Shan",
+          "suffix": ""
+        },
+        {
+          "first": "Qifeng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Zero-shot text-to-image generation",
+      "authors": [
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Mikhail",
+          "middle": [],
+          "last": "Pavlov",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Goh",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Gray",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Voss",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Hierarchical textconditional image generation with clip latents",
+      "authors": [
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Nichol",
+          "suffix": ""
+        },
+        {
+          "first": "Casey",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Towards robust monocular depth estimation: Mixing datasets for zero-shot cross-dataset transfer",
+      "authors": [
+        {
+          "first": "René",
+          "middle": [],
+          "last": "Ranftl",
+          "suffix": ""
+        },
+        {
+          "first": "Katrin",
+          "middle": [],
+          "last": "Lasinger",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Hafner",
+          "suffix": ""
+        },
+        {
+          "first": "Konrad",
+          "middle": [],
+          "last": "Schindler",
+          "suffix": ""
+        },
+        {
+          "first": "Vladlen",
+          "middle": [],
+          "last": "Koltun",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "TPAMI"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Highresolution image synthesis with latent diffusion models",
+      "authors": [
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "Dominik",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "Björn",
+          "middle": [],
+          "last": "Ommer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "U-net: Convolutional networks for biomedical image segmentation",
+      "authors": [
+        {
+          "first": "Olaf",
+          "middle": [],
+          "last": "Ronneberger",
+          "suffix": ""
+        },
+        {
+          "first": "Philipp",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Brox",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "MICCAI"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Dreambooth: Fine tuning text-to-image diffusion models for subject-driven generation",
+      "authors": [
+        {
+          "first": "Nataniel",
+          "middle": [],
+          "last": "Ruiz",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Varun",
+          "middle": [],
+          "last": "Jampani",
+          "suffix": ""
+        },
+        {
+          "first": "Yael",
+          "middle": [],
+          "last": "Pritch",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Rubinstein",
+          "suffix": ""
+        },
+        {
+          "first": "Kfir",
+          "middle": [],
+          "last": "Aberman",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Photorealistic text-to-image diffusion models with deep language understanding",
+      "authors": [
+        {
+          "first": "Chitwan",
+          "middle": [],
+          "last": "Saharia",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "Saurabh",
+          "middle": [],
+          "last": "Saxena",
+          "suffix": ""
+        },
+        {
+          "first": "Lala",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jay",
+          "middle": [],
+          "last": "Whang",
+          "suffix": ""
+        },
+        {
+          "first": "Emily",
+          "middle": [],
+          "last": "Denton",
+          "suffix": ""
+        },
+        {
+          "first": "Seyed",
+          "middle": [],
+          "last": "Kamyar",
+          "suffix": ""
+        },
+        {
+          "first": "Seyed",
+          "middle": [],
+          "last": "Ghasemipour",
+          "suffix": ""
+        },
+        {
+          "first": "Burcu",
+          "middle": [],
+          "last": "Karagol Ayan",
+          "suffix": ""
+        },
+        {
+          "first": "Sara",
+          "middle": [],
+          "last": "Mahdavi",
+          "suffix": ""
+        },
+        {
+          "first": "Rapha",
+          "middle": [],
+          "last": "Gontijo Lopes",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Stylegan-t: Unlocking the power of gans for fast large-scale text-to-image synthesis",
+      "authors": [
+        {
+          "first": "Axel",
+          "middle": [],
+          "last": "Sauer",
+          "suffix": ""
+        },
+        {
+          "first": "Tero",
+          "middle": [],
+          "last": "Karras",
+          "suffix": ""
+        },
+        {
+          "first": "Samuli",
+          "middle": [],
+          "last": "Laine",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Geiger",
+          "suffix": ""
+        },
+        {
+          "first": "Timo",
+          "middle": [],
+          "last": "Aila",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Make-a-video: Text-to-video generation without text-video data",
+      "authors": [
+        {
+          "first": "Uriel",
+          "middle": [],
+          "last": "Singer",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Polyak",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Hayes",
+          "suffix": ""
+        },
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "An",
+          "suffix": ""
+        },
+        {
+          "first": "Songyang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Qiyuan",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Harry",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Oron",
+          "middle": [],
+          "last": "Ashual",
+          "suffix": ""
+        },
+        {
+          "first": "Oran",
+          "middle": [],
+          "last": "Gafni",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Denoising diffusion implicit models",
+      "authors": [
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Chenlin",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Denoising diffusion implicit models",
+      "authors": [
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Chenlin",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Phenaki: Variable length video generation from open domain textual description",
+      "authors": [
+        {
+          "first": "Ruben",
+          "middle": [],
+          "last": "Villegas",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Babaeizadeh",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter-Jan",
+          "middle": [],
+          "last": "Kindermans",
+          "suffix": ""
+        },
+        {
+          "first": "Hernan",
+          "middle": [],
+          "last": "Moraldo",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Taghi Saffar",
+          "suffix": ""
+        },
+        {
+          "first": "Santiago",
+          "middle": [],
+          "last": "Castro",
+          "suffix": ""
+        },
+        {
+          "first": "Julius",
+          "middle": [],
+          "last": "Kunze",
+          "suffix": ""
+        },
+        {
+          "first": "Dumitru",
+          "middle": [],
+          "last": "Erhan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Zeroshot video editing using off-the-shelf image diffusion models",
+      "authors": [
+        {
+          "first": "Wen",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zide",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yue",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xinlong",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Chunhua",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Elite: Encoding visual concepts into textual embeddings for customized text-to-image generation",
+      "authors": [
+        {
+          "first": "Yuxiang",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Yabo",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhilong",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Jinfeng",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Wangmeng",
+          "middle": [],
+          "last": "Zuo",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Godiva: Generating open-domain videos from natural descriptions",
+      "authors": [
+        {
+          "first": "Chenfei",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Lun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Qianxi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Binyang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Guillermo",
+          "middle": [],
+          "last": "Sapiro",
+          "suffix": ""
+        },
+        {
+          "first": "Nan",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Nüwa: Visual synthesis pre-training for neural visual world creation",
+      "authors": [
+        {
+          "first": "Chenfei",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuejian",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Daxin",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Nan",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Tune-a-video: One-shot tuning of image diffusion models for text-to-video generation",
+      "authors": [
+        {
+          "first": "Jay Zhangjie",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yixiao",
+          "middle": [],
+          "last": "Ge",
+          "suffix": ""
+        },
+        {
+          "first": "Xintao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Weixian",
+          "middle": [],
+          "last": "Lei",
+          "suffix": ""
+        },
+        {
+          "first": "Yuchao",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Wynne",
+          "middle": [],
+          "last": "Hsu",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Shan",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohu",
+          "middle": [],
+          "last": "Qie",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [
+            "Zheng"
+          ],
+          "last": "Shou",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Advancing high-resolution video-language representation with large-scale video transcriptions",
+      "authors": [
+        {
+          "first": "Tiankai",
+          "middle": [],
+          "last": "Hongwei Xue",
+          "suffix": ""
+        },
+        {
+          "first": "Yanhong",
+          "middle": [],
+          "last": "Hang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuchong",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Bei",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Huan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianlong",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Baining",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Scaling autoregressive models for contentrich text-to-image generation",
+      "authors": [
+        {
+          "first": "Jiahui",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhong",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Jing",
+          "middle": [],
+          "last": "Yu Koh",
+          "suffix": ""
+        },
+        {
+          "first": "Thang",
+          "middle": [],
+          "last": "Luong",
+          "suffix": ""
+        },
+        {
+          "first": "Gunjan",
+          "middle": [],
+          "last": "Baid",
+          "suffix": ""
+        },
+        {
+          "first": "Zirui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Vijay",
+          "middle": [],
+          "last": "Vasudevan",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Ku",
+          "suffix": ""
+        },
+        {
+          "first": "Yinfei",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Burcu",
+          "middle": [],
+          "last": "Karagol Ayan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Adding conditional control to text-to-image diffusion models",
+      "authors": [
+        {
+          "first": "Lvmin",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Maneesh",
+          "middle": [],
+          "last": "Agrawala",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    }
+  ]
+}

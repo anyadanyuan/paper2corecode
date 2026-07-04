@@ -1,0 +1,3597 @@
+{
+  "paper_id": "SEABO",
+  "title": "SEABO: A SIMPLE SEARCH-BASED METHOD FOR OFFLINE IMITATION LEARNING",
+  "authors": [
+    {
+      "first": "Jiafei",
+      "middle": [],
+      "last": "Lyu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Tsinghua University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Xiaoteng",
+      "middle": [],
+      "last": "Ma",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Tsinghua University",
+        "location": {}
+      }
+    },
+    {
+      "first": "",
+      "middle": [],
+      "last": "Le Wan",
+      "affiliation": {
+        "laboratory": "IEG",
+        "institution": "",
+        "location": {}
+      }
+    },
+    {
+      "first": "Runze",
+      "middle": [],
+      "last": "Liu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Tsinghua University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Xiu",
+      "middle": [],
+      "last": "Li",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Tsinghua University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Zongqing",
+      "middle": [],
+      "last": "Lu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Peking University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Offline reinforcement learning (RL) has attracted much attention due to its ability in learning from static offline datasets and eliminating the need of interacting with the environment. Nevertheless, the success of offline RL relies heavily on the offline transitions annotated with reward labels. In practice, we often need to hand-craft the reward function, which is sometimes difficult, labor-intensive, or inefficient. To tackle this challenge, we set our focus on the offline imitation learning (IL) setting, and aim at getting a reward function based on the expert data and unlabeled data. To that end, we propose a simple yet effective search-based offline IL method, tagged SEABO. SEABO allocates a larger reward to the transition that is close to its closest neighbor in the expert demonstration, and a smaller reward otherwise, all in an unsupervised learning manner. Experimental results on a variety of D4RL datasets indicate that SEABO can achieve competitive performance to offline RL algorithms with ground-truth rewards, given only a single expert trajectory, and can outperform prior reward learning and offline IL methods across many tasks. Moreover, we demonstrate that SEABO also works well if the expert demonstrations contain only observations. Our code is publicly available at https://github.com/dmksjfl/SEABO.",
+  "body": {
+    "1_INTRODUCTION": "In recent years, reinforcement learning (RL) (Sutton & Barto, 2018) has made prominent achievements in fields like video games (Mnih et al., 2015; Schrittwieser et al., 2020) , robotics (Kober et al., 2013) , nuclear fusion control (Degrave et al., 2022) , etc. It is known that RL is a reward-oriented learning paradigm. Online RL algorithms typically require an interactive environment for data collection and improve the policy through trial-and-error. However, continual online interactions are usually expensive, time-consuming, or even dangerous in many practical applications. Offline RL (Lange et al., 2012; Levine et al., 2020) , instead, resorts to learning optimal policies from previously gathered datasets, which are composed of trajectories containing observations, actions, and rewards.\nA bare fact is that reward engineering is often difficult, expensive, and labor-intensive. It is also hard to specify or abstract a good reward function given some rules. To overcome this challenge in the offline setting, there are generally two methods. First, one can train the policy via the behavior cloning (BC) algorithm (Pomerleau, 1988) , but its performance is heavily determined by the performance of the data-collecting policy (a.k.a., the behavior policy). Second, one can learn a reward function from some expert demonstrations and assign rewards to the unlabeled data in the dataset. Then, the policy can be optimized by leveraging the reward. This is also known as offline imitation learning (offline IL). Note that in many real-world tasks, acquiring a few expert demonstrations is easy (e.g., ask a human expert to operate the system) and affordable.\nHowever, it turns out that, similar to offline RL, offline IL also suffers from distribution shift issue (Kim et al., 2022b; DeMoss et al., 2023) , where the learned policy deviates from the data-collecting policy, leading to poor performance during evaluation. Prior works concerning on distribution cor- The key idea behind SEABO. We assign larger rewards to transitions that are closer to the expert demonstration, and smaller rewards otherwise. The dotted lines connect the query samples with their nearest neighbors along the demonstration. Right: Illustration of the SEABO framework. Given an expert demonstration, we first construct a KD-tree and then feed the unlabeled samples into the tree to query their nearest neighbors. We use the resulting distance to calculate the reward label. Then one can adopt any existing offline RL algorithm to train on the labeled dataset.\nrection estimation (DICE family) address this by enforcing the learned policy to be close to the behavior policy via a distribution divergence measure (e.g., f -divergence (Ghasemipour et al., 2019; Ke et al., 2019) ). However, such distribution matching schemes can incur training instability (Ma et al., 2022) and over-conservatism (Yu et al., 2023) , and they often involve training task-specific discriminators. On the other hand, some works seek to decouple the processes of reward annotation and policy optimization (Zolna et al., 2020; Luo et al., 2023) . However, they involve solving complex optimal transport problems or contrasting expert states and unlabeled trajectory states.\nIn this paper, we propose a simple yet effective alternative, SEArch-Based method for Offline imitation learning, namely SEABO, that leverages search algorithms to acquire reward signals in an unsupervised learning manner. As illustrated in Figure 1 (left), we hypothesize that the transition is near-optimal if it lies close to the expert trajectory, hence larger reward ought to be assigned to it, and vice versa. To that end, we propose to determine whether the sample approaches the expert trajectory via measuring the distance between the query sample and its nearest neighbor in the expert trajectory. In practice, as depicted in Figure 1 (right), SEABO first builds a KD-tree upon expert demonstrations. Then for each unlabeled sample in the dataset, we query the tree to find its nearest neighbor, and measure their distance. If the distance is small (i.e., close to expert trajectory), a large reward will be annotated, while if the distance is large (i.e., stray away from the expert trajectory), the assigned reward is low. SEABO is efficient and easy to implement. It can be combined with any existing offline RL algorithm to acquire a meaningful policy from the static offline dataset.\nEmpirical results on the D4RL (Fu et al., 2020) datasets show that SEABO can enable the offline RL algorithm to achieve competitive or even better performance against its performance under groundtruth rewards with only one expert trajectory. SEABO also beats recent strong reward annotation methods and imitation learning baselines on many datasets. Furthermore, we also demonstrate that SEABO can learn effectively when the expert demonstrations are composed of pure observations.",
+    "2_PRELIMINARY": "We formulate the interaction between the environment and policy as a Markov Decision Process (MDP) specified by the tuple ⟨S, A, p, r, γ, p 0 ⟩, where S is the state space, A is the action space, p : S × A → S is the transition dynamics, r : S × A → R is the scalar reward signal, γ ∈ [0, 1] is the discount factor, p 0 is the initial state distribution. A policy π(a|s) outputs the action based on the state s. We assume that the underlying MDP has a finite horizon. The goal of RL is to maximize the discounted future reward:\nJ(π) = E s0∼p0 E a∼π,st+1∼p(•|st,at) [ T -1 t=0 γ t r(s t , a t )].\nWhereas, in many scenarios, it is often hard for one to get the reward signals. It is more common that the unlabeled trajectory, τ = {s 0 , a 0 , . . . , s t , a t , . . . , s T }, is collected. This poses veritable challenges for applying offline RL algorithms.\nIn this paper, we focus on the offline IL setting. We assume that we have access to the dataset of expert demonstrations D e = {τ (i) e } M i=1 , and a dataset of unlabeled data D u = {τ (i) u } N i=1 , where M and N are the sizes of the expert dataset and unlabeled dataset, respectively. The unlabeled trajectories are gathered by some unknown behavior policy µ. Note that we allow the expert demonstrations to either contain actions or do not contain actions. We aim at attaining the reward function by extracting information from the expert trajectories and unlabeled trajectories, and assigning rewards to the unlabeled datasets, without any interactions with the environment. Then we can train the policy using any offline RL algorithm.",
+    "3_RELATED_WORK": "Offline Reinforcement Learning. In offline RL (Lange et al., 2012; Levine et al., 2020) , the agent is not permitted to interact with the environment, and can only learn policies from previously gathered\ndataset D = {(s i , a i , r i , s i+1 )} N\ni=1 , where N is the dataset size. Existing work on offline RL can be generally categorized into model-based (Yu et al., 2020; 2021; Kidambi et al., 2020; Lyu et al., 2022b; Rigter et al., 2022; Lu et al., 2022a; Chen et al., 2021; Janner et al., 2021; Uehara & Sun, 2022; Zhang et al., 2023) and model-free approaches (Fujimoto et al., 2019; Fujimoto & Gu, 2021; Kumar et al., 2020; Kostrikov et al., 2022; Lyu et al., 2022c; a; Cheng et al., 2022; Zhou et al., 2020; Ran et al., 2023; Bai et al., 2022; Yang et al., 2024) . The success of these methods rely heavily on the requirement that the datasets must contain annotated reward signals.\nImitation Learning. Imitation Learning (IL) considers optimizing the behavior of the agent given some expert demonstrations, and no reward is needed. The primary goal of IL is to mimic the behavior of the expert demonstrator. Behavior cloning (BC) (Pomerleau, 1988) directly performs supervised regression or maximum-likelihood on expert demonstrations. Yet, BC can suffer from compounding error and may result in performance collapse upon unseen states (Ross et al., 2011) . Another line of work, inverse reinforcement learning (IRL) (Arora & Doshi, 2021) , first learns a reward function using expert demonstrations, and then utilizes this reward function to train policies with RL algorithms. Typical IRL algorithms include adversarial methods (Ho & Ermon, 2016; Jeon et al., 2018; Kostrikov et al., 2019; Baram et al., 2017) , maximum-entropy approaches (Ziebart et al., 2008; Boularias et al., 2011) , normalizing flows (Freund et al., 2023) , etc. However, these methods often require abundant online transitions to train a good policy. Imitation learning without online interactions, which is the focus of our work, is hence attractive and remains an active area. There are many advances in offline IL, such as applying online IRL algorithms in the offline setting (Zolna et al., 2020; Yue et al., 2023) , using energy-based methods (Jarrett et al., 2020) , weighting the BC loss with the output of the trained discriminator (Xu et al., 2022) , etc. Among them, DICE (Nachum et al., 2019) family receives much attention. Methods like ValueDICE (Kostrikov et al., 2020) , DemoDICE (Kim et al., 2022b) , and LobsDICE (Kim et al., 2022a) can consistently drub BC in the offline setting. Notably, a recent work, OTR (Luo et al., 2023) , acquires the reward function in the offline setting via optimal transport. OTR decouples the processes of reward learning and policy optimization. Still, OTR needs to solve complex optimal transport problems. We, instead, explore to get the reward function via a search-based method.\nSearch Algorithms. Search algorithms (Korf, 1999) are critical components in artificial intelligence. Typical search algorithms include brute-force search algorithms (Dijkstra, 1959; Stickel & Tyson, 1985; Korf, 1985; Taylor & Korf, 1993 ), heuristic search approaches (Doran & Michie, 1966; Hart et al., 1968; Pohl, 1970; Edelkamp & Schrödl, 2011) , etc. In this paper, we resort to the simple search approach, KD-tree (Bentley, 1975) , for capturing the nearest neighbors of the unlabeled data in the expert demonstrations.",
+    "4_OFFLINE_IMITATION_LEARNING_VIA_SEARCH-BASED_METHOD": "In this section, we formally present our novel approach for offline imitation learning, SEArch-Based Offline imitation learning (SEABO). We begin by analyzing the common formulation adopted in distribution matching IL methods (Ho & Ermon, 2016; Kim et al., 2020; Kostrikov et al., 2020) , which attempt to match the state-action distribution of the agent p π and the expert p e , often by means of minimizing some f -divergence measurement D f : arg min π D f (p π ∥p e ). Though these methods have promising results, they usually require training task-specific discriminators and suffer from training instability (Wang et al., 2020; Ma et al., 2022) . A natural question arises, can we get the reward signals without training neural networks?\nInstead of measuring the distribution of states or state-action pairs, we want to determine the optimality of a single transition. Our idea is quite straightforward, the closer the transition is to the expert trajectory, the more optimal this transition is. The agent ought to pay more attention to those optimal transitions. This motivates us to measure how close the unlabeled transition is to the expert trajectories. We propose to achieve this by finding the nearest neighbor of the query transition in the expert demonstrations, and then measuring their distance (e.g., Euclidean distance). If the distance is large, then the transition is away from the expert demonstration. While if the distance is small, it indicates that the transition is near-optimal, or even is exact expert data if the distance approaches 0. Intuitively, this distance can be interpreted as a reward signal.\nTo that end, we construct a function dubbed NearestNeighbor(demo,query sample) that returns the nearest neighbor of the query sample in the expert demonstrations. Suppose the expert trajectories are made up of state-action pairs, then for the query sample (s, a, s ′ ), we have:\n(s e , ãe , s′ e ) = NearestNeighbor(D e , (s, a, s ′ )).\n(1)\nThen we measure their deviation using some distance measurement D: d = D((s e , ãe , s′ e ), (s, a, s ′ )).\nAfterward, following prior work (Cohen et al., 2022; Freund et al., 2023; Dadashi et al., 2021; Luo et al., 2023) , we get the rewards via a squashing function: r = α exp(-β × d), where α and β are hyperparameters that control the scale of the reward and the impact of the distance, respectively.\nAlgorithm 1 SEArch-Based Offline Imitation Learning (SEABO) 1: Require: expert demonstrations D e , unlabeled dataset D u 2: Initialize D label ← ∅. Given distance measurement D 3: for (s, a, s ′ ) in D u do 4:\nFind its nearest neighbor, (s e , ãe , s′ e ) = NearestNeighbor(D e , (s, a, s ′ ))\n5:\nMeasure the distance: d = D((s e , ãe , s′ e ), (s, a, s ′ ))\n6:\nGet the reward signal via Equation 37:\nD label ← D label ∪ (s, a, r, s ′ ) 8: end for\nWe name the resulting method SEABO, and list its pseudo-code in Algorithm 1. For practical implementation of SEABO, we leverage KD-tree (Bentley, 1975) for searching the nearest neighbors, and adopt Euclidean distance (Torabi et al., 2019) as the distance measurement for simplicity (i.e., the default setting of KD-tree). We also slightly modify the aforementioned formula of the reward function to make it better adapt to different tasks with one set of hyperparameters, which gives:\nEQUATION\nwhere |A| is the dimension of the action space. Note that this technique is also adopted in Dadashi et al. (2021) . We choose to use (s, a, s ′ ) to query since the magnitude of states and actions may be different. One possible solution is to query the demonstrations via (ξ × s, a), ξ ∈ R + , but it introduces an additional hyperparameter that may need to be tuned per dataset. We empirically find that involving s ′ in the query sample can ensure good performance across many tasks. The above procedure (as specified in Figure 1 (right)) also applies when the expert demonstrations contain only observations, because it is feasible that we find the nearest neighbors using only observations.\nSEABO enjoys many advantages over prior reward learning methods or offline imitation learning algorithms. First, SEABO does not require any additional processing upon the offline datasetfoot_0 .\nThe unlabeled dataset can have different trajectory lengths, and the unlabeled trajectories can be fragmented, or even scattered, since SEABO computes the rewards only using the single transition instead of the entire trajectory. Second, SEABO does not require training reward models or discriminators, hence getting rid of the issues of training instability and hyperparameter tuning of the neural networks. Third, SEABO is easy to implement and can be combined with any offline RL algorithm. To show the effectiveness of our method, we plot the distribution of ground-truth rewards (oracle) and rewards given by SEABO. We choose two datasets, halfcheetah-medium-expert-v2 and hopper-medium-v2 from D4RL (Fu et al., 2020) as examples, and use α = 1, β = 0.5, which is the same as our hyperparameter setup in Section 5. The results are summarized in Figure 2 . We find that the reward distributions of SEABO resemble those of oracle. Notably, SEABO successfully gives two peaks in halfcheetah-medium-expert, indicating that it can distinguish samples of different qualities. These reveal that SEABO can serve as a good reward labeler, which validates its combination with off-the-shelf offline RL algorithms.",
+    "5_EXPERIMENTS": {
+      "5.2_COMPARISON_AGAINST_OFFLINE_IL_ALGORITHMS": "To further show the advantages of SEABO, we additionally compare it against recent strong offline imitation learning approaches, including DemoDICE (Kim et al., 2022b) and SMODICE (Ma et al., 2022) . We also convert two online IL algorithms into the offline setting, SQIL (Reddy et al., 2020) and PWIL (Dadashi et al., 2021) , where we replace the base algorithm in SQIL with TD3 BC and utilize IQL as the base algorithm for PWIL. All algorithms are run using their official implementations under the identical experimental setting as SEABO (i.e., one single expert demonstration). For a fair comparison, we involve actions when training discriminators in SMODICE and measuring the distance in PWIL. We use IQL as the base algorithm for SEABO. The empirical results in Table 4 show that IQL+SEABO achieves the best performance on 6 out of 9 datasets, and has the highest total score (surpassing the second highest one by 13.9%). Though SEABO underperforms PWIL on some datasets, it significantly beats PWIL on tasks like hopper-medium-v2. Note that SMODICE behaves poorly on many tasks, which is also observed in Li et al. (2023) .",
+      "5.3_STATE-ONLY_REGIMES": "We now examine how SEABO behaves when the expert demonstrations consist of only observations, i.e., D e = {τ i e } M i=1 , where M is the size of the demonstration and τ = {s 0 , s 1 , . . . , s T }. In principle, SEABO can also calculate rewards by querying the KD-tree with only states, (s e , s′ e ) = NearestNeighbor(D e , (s, s ′ )). The distance can then be calculated with some distance metric D, d = D((s e , s′ e ), (s, s ′ )), and the rewards can be computed accordingly, via Equation 3. For baselines, since DemoDICE and ValueDICE are inapplicable to state-only regimes (Zhu et al., 2021) , we compare against LobsDICE (Kim et al., 2022a) , which is a state-of-the-art offline IL algorithm that learns from expert observations. We also involve SMODICE, PWIL, and OTR for comparison, and train them using only expert observations. All baselines are run with their official implementa-Table 5 : Experimental results on the state-only regime. SEABO, PWIL, and OTR utilize IQL as the base offline RL algorithm. PWIL-state denotes that PWIL only uses observations to compute rewards. The results are averaged over the final 10 evaluations, and ± captures the standard deviation. We highlight the cell with the best mean performance. ",
+      "5.4_COMPARISON_OF_DIFFERENT_SEARCH_ALGORITHMS": "The most critical component in SEABO is the nearest neighbor search algorithm. It is interesting to check how SEABO performs under different search algorithms. To that end, we build SEABO on top of Ball-tree (Omohundro, 1989; Liu et al., 2006) , and HNSW (Hierarchical Navigable Small World graphs, Malkov & Yashunin ( 2018)). These are widely applied nearest neighbor algorithms, where Ball-tree partitions regions via hyper-spheres and HNSW is a fully graph-based search structure. We allow the single expert demonstration to involve actions (i.e., query with (s, a, s ′ )), and run all of the variants of SEABO using the same set of hyperparameters for a fair comparison. Empirical results on 9 D4RL locomotion datasets are shown in Table 6 . It is interesting to see that SEABO with Ball-tree is competitive with SEABO with KD-tree (their performance differences are minor), while SEABO with HNSW exhibits poor performance on many datasets. This means that the choice of the search algorithm counts in SEABO, and simply employing KD-tree can already guarantee good performance. Please see more discussions in Appendix C.",
+      "5.5_PARAMETER_STUDY": "It is vital to examine how sensitive SEABO is to the introduced hyperparameters. Due to the space limit, we can only report part of the experiments here and defer more experiments to Appendix B.3. 0LOOLRQ6WHSV 1RUPDOL]HGVFRUH KDOIFKHHWDKPHGLXPUHSOD\\Y 0LOOLRQ6WHSV 1RUPDOL]HGVFRUH KRSSHUPHGLXPY = 0.1 = 0.5 = 1 = 5 (a) Weighting coefficient β. Reward scale α. α controls the scale of the resulting rewards. To check its influence, we conduct experiments on three datasets from D4RL locomotion tasks and sweep α across {1, 5, 10}. Results in Figure 3 demonstrate that the best α may depend on the dataset while a smaller α is preferred.\nWeighting coefficient β. β is probably the most critical hyperparameter which decides the scale of the distance. In Figure 4 (a), we vary β across {0.1, 0.5, 1, 5}, and find that the performance drops with too small or too large β. It seems that β = 0.5 or β = 1 can achieve a good trade-off.",
+      "_text": "In this section, we empirically evaluate SEABO on D4RL datasets. We are targeted at examining, given only one single expert demonstration, whether SEABO can make different base offline RL algorithms recover or beat their performance with ground-truth rewards across varied tasks. We are also interested in exploring how SEABO competes against prior reward learning and offline imitation learning methods. We further investigate whether SEABO can work well if the expert demonstrations are composed of pure observations. Moreover, we check how different choices of search algorithms affect the performance of SEABO.\nWe discard reward signals in the D4RL datasets to form unlabeled datasets. For expert demonstrations, we follow Luo et al. (2023) and utilize the trajectory with the highest return in the raw dataset for ease of evaluation. One can also use a separate expert trajectory. All of the experiments in this paper are run for 1M gradient steps over five different random seeds, and the results are averaged at the final gradient step. We report the mean performance in conjunction with the corresponding standard deviation. We adopt the same squashing function for tasks under the same domain. Unless specified, we use the number of expert demonstrations K = 1 for evaluation. It is worth noting that SEABO is computationally efficient since there is only a single expert trajectory, and the time complexity of KD-tree gives O(d f log |D e |), where d f is the feature dimension size. It takes SEABO about 1 minute to annotate 1 million unlabeled transitions using merely CPUs. Hence, we believe the overall computation overhead from SEABO is minor and tolerable. We defer the experimental details and hyperparameter setup for all of our experiments to Appendix A."
+    },
+    "6_CONCLUSION": "In this paper, we propose a novel search-based offline imitation learning method, dubbed SEABO, that annotates the unlabeled offline trajectories in an unsupervised learning manner. SEABO builds a KD-tree using the expert demonstration(s), and searches the nearest neighbors of the query sample.\nWe then measure their distance and output the reward signal via a squashing function. SEABO is easy to implement and can be incorporated with any offline RL algorithm. Experiments on D4RL datasets show that SEABO can incur competitive or even better offline policies than pre-defined reward functions. SEABO can also function well if the expert demonstrations are made up of only observations. For future work, it is interesting to apply SEABO in visual offline RL datasets (e.g., Lu et al. (2022b) ), or adapt SEABO to cross-domain offline imitation learning tasks.\nA HYPERPARAMETER SETUP\nIn this section, we detail the hyperparameter setup utilized in our experiments. We conduct experiments on 9 MuJoCo locomotion \"-v2\" medium-level datasets, 6 AntMaze \"-v0\" datasets, and 8 Adroit \"-v0\" datasets, yielding a total of 23 tasks. We list the hyperparameter setup for IQL and TD3 BC on MuJoCo locomotion tasks in Table 8 . We keep the hyperparameter setup of the base offline RL algorithms unchanged for both IQL and TD3 BC. For IQL, we do not rescale the rewards in the datasets by 1000 /max return-min return, as we have an additional hyperparameter α to control the reward scale. In practice, we find minor performance differences if we rescale the rewards. We generally utilize the same formula of squashing function for most of the datasets, except that we set β = 1 in hopper-medium-replay-v2, and α = 10, β = 0.1 in hopper-medium-expert-v2 for better performance. Note that using α = 1, β = 0.5 on these tasks can also produce a good performance (e.g., setting α = 1, β = 0.5 on hopper-medium-replay-v2 leads to an average performance of 87.2, still outperforming strong baselines like OTR), while slightly modifying the hyperparameter setup can result in better performance. We divide the scaled distance by the action dimension of the task to strike a balance between different tasks (as we use one set of hyperparameters). This is also adopted in PWIL paper (Dadashi et al., 2021) . For TD3 BC, we use the same type of squashing function as IQL on the locomotion tasks, with α = 1, β = 0.5, except that we use α = 10 for walker2d-medium-v2 and walker2d-medium-replay-v2 for slightly better performance. We use the official implementation of TD3 BC (https://github.com/sfujim/TD3 BC) and adopt the PyTorch (Paszke et al. (2019) ) version of IQL for evaluation. We summarize the hyperparameter setup of SEABO (using IQL as the underlying algorithm) on the AntMaze domain and Adroit domain in Table 9 and Table 10 , respectively. We only list the different hyperparameters in these tables and the other hyperparameters follow those presented in Table 8 . Note that we filter the highest return trajectory as the expert demonstration in the Adroit domain, while selecting the goal-reached trajectory as the expert demonstration in the AntMaze domain, which is also adopted in OTR paper (Luo et al., 2023) . We adopt a comparatively large β = 5 on AntMaze tasks. We also follow the IQL paper (Kostrikov et al., 2022) to subtract 1 from the rewards, which we find can result in better performance. For Adroit tasks, we remove the action dimension in the squashing function, since these tasks have large action space dimensions. If one insists on involving |A|, a much larger β than 0.5 is then necessary to mitigate its influence. We find Note that OTR (Luo et al., 2023) also adopts different forms of squashing functions for different domains. We query with (s, s ′ ) for Adroit tasks and (s, a, s ′ ) for other domains.\nTo acquire expert demonstrations, we use the trajectory with the highest return as expert demonstrations on MuJoCo locomotion tasks and Adroit tasks, and filter the goal-reached trajectory in AntMaze tasks. For all of the baseline reward learning and offline imitation learning algorithms, we follow this setting and run them with their official codebasesfoot_2 over five different random seeds. We use the PWIL implementation from Acme (Hoffman et al., 2020) foot_3 .\nIn SEABO, we use the KD-tree implementation from the scipy library (Virtanen et al., 2020) , i.e., scipy.spatial.KDTree. We set the number of nearest neighbors N = 1, and keep other default hyperparameters in KD-tree. Note that we can directly get the desired distance by querying the KD-tree. For Ball-tree, we use its implementation in the scikit-learn package (Pedregosa et al., 2011) , i.e., sklearn.neighbors.BallTree. We also keep its original hyperparameters unchanged. For HNSW, we use its implementation in hnswlibfoot_4 . We use the suggested hyperparameter setting in its GitHub page and set ef construction=200 (which defines a construction time/accuracy trade-off) and M=16 (which defines the maximum number of outgoing connections in the graph). All these search algorithms adopt the Euclidean distance as the distance measurement.\nIn our experiments, we use MuJoCo 2.0 (Todorov et al., 2012) with Gym version 0.18.3, PyTorch (Paszke et al., 2019) version 1.8. We use the normalized score metric recommended in the D4RL paper (Fu et al., 2020) , where 0 corresponds to a random policy, and 100 corresponds to an expert policy. Formally, suppose we get the average return J by deploying the learned policy in the test environment, the normalized score gives:\nEQUATION\nwhere J r is the return of a random policy, and J e is the return of an expert policy."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "A Survey of Inverse Reinforcement Learning: Challenges, Methods and Progress",
+      "authors": [
+        {
+          "first": "Saurabh",
+          "middle": [],
+          "last": "Arora",
+          "suffix": ""
+        },
+        {
+          "first": "Prashant",
+          "middle": [],
+          "last": "Doshi",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Pessimistic Bootstrapping for Uncertainty-Driven Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Chenjia",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Lingxiao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuoran",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhi-Hong",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Animesh",
+          "middle": [],
+          "last": "Garg",
+          "suffix": ""
+        },
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaoran",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "End-to-End Differentiable Adversarial Imitation Learning",
+      "authors": [
+        {
+          "first": "Nir",
+          "middle": [],
+          "last": "Baram",
+          "suffix": ""
+        },
+        {
+          "first": "Oron",
+          "middle": [],
+          "last": "Anschel",
+          "suffix": ""
+        },
+        {
+          "first": "Itai",
+          "middle": [],
+          "last": "Caspi",
+          "suffix": ""
+        },
+        {
+          "first": "Shie",
+          "middle": [],
+          "last": "Mannor",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Multidimensional binary search trees used for associative searching",
+      "authors": [
+        {
+          "first": "Jon",
+          "middle": [],
+          "last": "Louis",
+          "suffix": ""
+        },
+        {
+          "first": "Bentley",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 1975,
+      "venue": "Communications of the ACM"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Relative Entropy Inverse Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Abdeslam",
+          "middle": [],
+          "last": "Boularias",
+          "suffix": ""
+        },
+        {
+          "first": "Jens",
+          "middle": [],
+          "last": "Kober",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Peters",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Decision Transformer: Reinforcement Learning via Sequence Modeling",
+      "authors": [
+        {
+          "first": "Lili",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Aravind",
+          "middle": [],
+          "last": "Rajeswaran",
+          "suffix": ""
+        },
+        {
+          "first": "Kimin",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Grover",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Laskin",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Srinivas",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Mordatch",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Adversarially Trained Actor Critic for Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Ching-An",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Tengyang",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Nan",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Alekh",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the 39th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Imitation Learning by Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Kamil",
+          "middle": [],
+          "last": "Ciosek",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Imitation Learning from Pixel Observations for Continuous Control",
+      "authors": [
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "Brandon",
+          "middle": [],
+          "last": "Amos",
+          "suffix": ""
+        },
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Peter Deisenroth",
+          "suffix": ""
+        },
+        {
+          "first": "Mikael",
+          "middle": [],
+          "last": "Henaff",
+          "suffix": ""
+        },
+        {
+          "first": "Eugene",
+          "middle": [],
+          "last": "Vinitsky",
+          "suffix": ""
+        },
+        {
+          "first": "Denis",
+          "middle": [],
+          "last": "Yarats",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Primal Wasserstein Imitation Learning",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Dadashi",
+          "suffix": ""
+        },
+        {
+          "first": "Leonard",
+          "middle": [],
+          "last": "Hussenot",
+          "suffix": ""
+        },
+        {
+          "first": "Matthieu",
+          "middle": [],
+          "last": "Geist",
+          "suffix": ""
+        },
+        {
+          "first": "Olivier",
+          "middle": [],
+          "last": "Pietquin",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Magnetic control of tokamak plasmas through deep reinforcement learning",
+      "authors": [
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Degrave",
+          "suffix": ""
+        },
+        {
+          "first": "Federico",
+          "middle": [],
+          "last": "Felici",
+          "suffix": ""
+        },
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Buchli",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Neunert",
+          "suffix": ""
+        },
+        {
+          "first": "Brendan",
+          "middle": [],
+          "last": "Tracey",
+          "suffix": ""
+        },
+        {
+          "first": "Francesco",
+          "middle": [],
+          "last": "Carpanese",
+          "suffix": ""
+        },
+        {
+          "first": "Timo",
+          "middle": [],
+          "last": "Ewalds",
+          "suffix": ""
+        },
+        {
+          "first": "Roland",
+          "middle": [],
+          "last": "Hafner",
+          "suffix": ""
+        },
+        {
+          "first": "Abbas",
+          "middle": [],
+          "last": "Abdolmaleki",
+          "suffix": ""
+        },
+        {
+          "first": "Diego",
+          "middle": [],
+          "last": "De Las",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Casas",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "DITTO: Offline Imitation Learning with World Models",
+      "authors": [
+        {
+          "first": "Branton",
+          "middle": [],
+          "last": "Demoss",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Duckworth",
+          "suffix": ""
+        },
+        {
+          "first": "Nick",
+          "middle": [],
+          "last": "Hawes",
+          "suffix": ""
+        },
+        {
+          "first": "Ingmar",
+          "middle": [],
+          "last": "Posner",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "A note on two problems in connexion with graphs",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Edsger",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dijkstra",
+          "suffix": ""
+        }
+      ],
+      "year": 1959,
+      "venue": "Numerische Mathematik"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Experiments with the graph traverser program",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "James",
+          "suffix": ""
+        },
+        {
+          "first": "Donald",
+          "middle": [],
+          "last": "Doran",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Michie",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Proceedings of the Royal Society of London. Series A. Mathematical and Physical Sciences"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Heuristic search: theory and applications",
+      "authors": [
+        {
+          "first": "Stefan",
+          "middle": [],
+          "last": "Edelkamp",
+          "suffix": ""
+        },
+        {
+          "first": "Stefan",
+          "middle": [],
+          "last": "Schrödl",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "A Coupled Flow Approach to Imitation Learning",
+      "authors": [
+        {
+          "first": "Gideon",
+          "middle": [
+            "Joseph"
+          ],
+          "last": "Freund",
+          "suffix": ""
+        },
+        {
+          "first": "Elad",
+          "middle": [],
+          "last": "Sarafian",
+          "suffix": ""
+        },
+        {
+          "first": "Sarit",
+          "middle": [],
+          "last": "Kraus",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "D4RL: Datasets for Deep Data-Driven Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Ofir",
+          "middle": [],
+          "last": "Nachum",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Tucker",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "A Minimalist Approach to Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Fujimoto",
+          "suffix": ""
+        },
+        {
+          "first": "Shixiang",
+          "middle": [
+            "Shane"
+          ],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Off-Policy Deep Reinforcement Learning without Exploration",
+      "authors": [
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Fujimoto",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Meger",
+          "suffix": ""
+        },
+        {
+          "first": "Doina",
+          "middle": [],
+          "last": "Precup",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "A Divergence Minimization Perspective on Imitation Learning Methods",
+      "authors": [
+        {
+          "first": "Seyed",
+          "middle": [],
+          "last": "Kamyar",
+          "suffix": ""
+        },
+        {
+          "first": "Seyed",
+          "middle": [],
+          "last": "Ghasemipour",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [
+            "S"
+          ],
+          "last": "Zemel",
+          "suffix": ""
+        },
+        {
+          "first": "Shixiang",
+          "middle": [
+            "Shane"
+          ],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Conference on Robot Learning"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Relay Policy Learning: Solving Long-Horizon Tasks via Imitation and Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Abhishek",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "Vikash",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Corey",
+          "middle": [],
+          "last": "Lynch",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "Karol",
+          "middle": [],
+          "last": "Hausman",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "A formal basis for the heuristic determination of minimum cost paths",
+      "authors": [
+        {
+          "first": "Nils",
+          "middle": [
+            "J"
+          ],
+          "last": "Peter E Hart",
+          "suffix": ""
+        },
+        {
+          "first": "Bertram",
+          "middle": [],
+          "last": "Nilsson",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Raphael",
+          "suffix": ""
+        }
+      ],
+      "year": 1968,
+      "venue": "IEEE transactions on Systems Science and Cybernetics"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "FurnitureBench: Reproducible Real-World Benchmark for Long-Horizon Complex Manipulation",
+      "authors": [
+        {
+          "first": "Minho",
+          "middle": [],
+          "last": "Heo",
+          "suffix": ""
+        },
+        {
+          "first": "Youngwoon",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Doohyun",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [
+            "J"
+          ],
+          "last": "Lim",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Generative Adversarial Imitation Learning",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Acme: A Research Framework for Distributed Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Matthew",
+          "middle": [
+            "W"
+          ],
+          "last": "Hoffman",
+          "suffix": ""
+        },
+        {
+          "first": "Bobak",
+          "middle": [],
+          "last": "Shahriari",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Aslanides",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Barth-Maron",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "P"
+          ],
+          "last": "Feryal",
+          "suffix": ""
+        },
+        {
+          "first": "Tamara",
+          "middle": [],
+          "last": "Behbahani",
+          "suffix": ""
+        },
+        {
+          "first": "Abbas",
+          "middle": [],
+          "last": "Norman",
+          "suffix": ""
+        },
+        {
+          "first": "Albin",
+          "middle": [],
+          "last": "Abdolmaleki",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Cassirer",
+          "suffix": ""
+        },
+        {
+          "first": "Kate",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Sarah",
+          "middle": [],
+          "last": "Baumli",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Henderson",
+          "suffix": ""
+        },
+        {
+          "first": "Sergio",
+          "middle": [],
+          "last": "Novikov",
+          "suffix": ""
+        },
+        {
+          "first": "Serkan",
+          "middle": [],
+          "last": "Gomez Colmenarejo",
+          "suffix": ""
+        },
+        {
+          "first": "Caglar",
+          "middle": [],
+          "last": "Cabi",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [
+            "Le"
+          ],
+          "last": "Gulcehre",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Paine",
+          "suffix": ""
+        },
+        {
+          "first": "Ziyun",
+          "middle": [],
+          "last": "Cowie",
+          "suffix": ""
+        },
+        {
+          "first": "Bilal",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Nando",
+          "middle": [],
+          "last": "Piot",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "De Freitas",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Offline Reinforcement Learning as One Big Sequence Modeling Problem",
+      "authors": [
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Janner",
+          "suffix": ""
+        },
+        {
+          "first": "Qiyang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Strictly Batch Imitation Learning by Energybased Distribution Matching",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Jarrett",
+          "suffix": ""
+        },
+        {
+          "first": "Ioana",
+          "middle": [],
+          "last": "Bica",
+          "suffix": ""
+        },
+        {
+          "first": "Mihaela",
+          "middle": [],
+          "last": "Van Der Schaar",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "A Bayesian Approach to Generative Adversarial Imitation Learning",
+      "authors": [
+        {
+          "first": "Wonseok",
+          "middle": [],
+          "last": "Jeon",
+          "suffix": ""
+        },
+        {
+          "first": "Seokin",
+          "middle": [],
+          "last": "Seo",
+          "suffix": ""
+        },
+        {
+          "first": "Kee-Eung",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Imitation Learning as f-Divergence Minimization",
+      "authors": [
+        {
+          "first": "Liyiming",
+          "middle": [],
+          "last": "Ke",
+          "suffix": ""
+        },
+        {
+          "first": "Matt",
+          "middle": [],
+          "last": "Barnes",
+          "suffix": ""
+        },
+        {
+          "first": "Wen",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Gilwoo",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Sanjiban",
+          "middle": [],
+          "last": "Choudhury",
+          "suffix": ""
+        },
+        {
+          "first": "Siddhartha",
+          "middle": [
+            "S"
+          ],
+          "last": "Srinivasa",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Workshop on the Algorithmic Foundations of Robotics"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "MOReL: Model-Based Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Rahul",
+          "middle": [],
+          "last": "Kidambi",
+          "suffix": ""
+        },
+        {
+          "first": "Aravind",
+          "middle": [],
+          "last": "Rajeswaran",
+          "suffix": ""
+        },
+        {
+          "first": "Praneeth",
+          "middle": [],
+          "last": "Netrapalli",
+          "suffix": ""
+        },
+        {
+          "first": "Thorsten",
+          "middle": [],
+          "last": "Joachims",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Lobs-DICE: Offline Learning from Observation via Stationary Distribution Correction Estimation",
+      "authors": [
+        {
+          "first": "Geon-Hyeong",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Jongmin",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Youngsoo",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "Hongseok",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Kee-Eung",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "DemoDICE: Offline Imitation Learning with Supplementary Imperfect Demonstrations",
+      "authors": [
+        {
+          "first": "Geon-Hyeong",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Seokin",
+          "middle": [],
+          "last": "Seo",
+          "suffix": ""
+        },
+        {
+          "first": "Jongmin",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Wonseok",
+          "middle": [],
+          "last": "Jeon",
+          "suffix": ""
+        },
+        {
+          "first": "Hyeongjoo",
+          "middle": [],
+          "last": "Hwang",
+          "suffix": ""
+        },
+        {
+          "first": "Hongseok",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Kee-Eung",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Imitation with Neural Density Models",
+      "authors": [
+        {
+          "first": "Kuno",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Akshat",
+          "middle": [],
+          "last": "Jindal",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Yanan",
+          "middle": [],
+          "last": "Sui",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Adam: A Method for Stochastic Optimization",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Diederik",
+          "suffix": ""
+        },
+        {
+          "first": "Jimmy",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International Conference on Learning Representation"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Reinforcement learning in robotics: A survey",
+      "authors": [
+        {
+          "first": "Jens",
+          "middle": [],
+          "last": "Kober",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Bagnell",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Peters",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "The International Journal of Robotics Research"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Depth-first iterative-deepening: An optimal admissible tree search",
+      "authors": [
+        {
+          "first": "Richard",
+          "middle": [
+            "E"
+          ],
+          "last": "Korf",
+          "suffix": ""
+        }
+      ],
+      "year": 1985,
+      "venue": "Artificial intelligence"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Artificial Intelligence Search Algorithms",
+      "authors": [
+        {
+          "first": "Richard",
+          "middle": [
+            "E"
+          ],
+          "last": "Korf",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": "Algorithms and Theory of Computation Handbook"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Discriminator-Actor-Critic: Addressing Sample Inefficiency and Reward Bias in Adversarial Imitation Learning",
+      "authors": [
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Kostrikov",
+          "suffix": ""
+        },
+        {
+          "first": "Krishna",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Debidatta",
+          "middle": [],
+          "last": "Agrawal",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Dwibedi",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Tompson",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Imitation Learning via Off-Policy Distribution Matching",
+      "authors": [
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Kostrikov",
+          "suffix": ""
+        },
+        {
+          "first": "Ofir",
+          "middle": [],
+          "last": "Nachum",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Tompson",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Offline Reinforcement Learning with Implicit Q-Learning",
+      "authors": [
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Kostrikov",
+          "suffix": ""
+        },
+        {
+          "first": "Ashvin",
+          "middle": [],
+          "last": "Nair",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Conservative Q-Learning for Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Aurick",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Tucker",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Batch Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Sascha",
+          "middle": [],
+          "last": "Lange",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Gabel",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [
+            "A"
+          ],
+          "last": "Riedmiller",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Reinforcement Learning"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "IKEA Furniture Assembly Environment for Long-Horizon Complex Manipulation Tasks",
+      "authors": [
+        {
+          "first": "Youngwoon",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [
+            "S"
+          ],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengyu",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [
+            "J"
+          ],
+          "last": "Lim",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "IEEE International Conference on Robotics and Automation (ICRA)"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Adversarial Skill Chaining for Long-Horizon Robot Manipulation via Terminal State Regularization",
+      "authors": [
+        {
+          "first": "Youngwoon",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [
+            "J"
+          ],
+          "last": "Lim",
+          "suffix": ""
+        },
+        {
+          "first": "Anima",
+          "middle": [],
+          "last": "Anandkumar",
+          "suffix": ""
+        },
+        {
+          "first": "Yuke",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Conference on Robot Learning"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Offline Reinforcement Learning: Tutorial, Review, and Perspectives on Open Problems",
+      "authors": [
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Tucker",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "MAHALO: Unifying Offline Reinforcement Learning and Imitation Learning from Observations",
+      "authors": [
+        {
+          "first": "Anqi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Byron",
+          "middle": [],
+          "last": "Boots",
+          "suffix": ""
+        },
+        {
+          "first": "Ching-An",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "New Algorithms for Efficient High-Dimensional Nonparametric Classification",
+      "authors": [
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "W"
+          ],
+          "last": "Moore",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Gray",
+          "suffix": ""
+        },
+        {
+          "first": "Claire",
+          "middle": [],
+          "last": "Cardie",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Revisiting Design Choices in Offline Model Based Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Cong",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [],
+          "last": "Ball",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Parker-Holder",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Osborne",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [
+            "J"
+          ],
+          "last": "Roberts",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Challenges and Opportunities in Offline Reinforcement Learning from Visual Observations",
+      "authors": [
+        {
+          "first": "Cong",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [
+            "J"
+          ],
+          "last": "Ball",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [
+            "Gj"
+          ],
+          "last": "Rudner",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Parker-Holder",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "A"
+          ],
+          "last": "Osborne",
+          "suffix": ""
+        },
+        {
+          "first": "Yee",
+          "middle": [
+            "Whye"
+          ],
+          "last": "Teh",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Optimal Transport for Offline Imitation Learning",
+      "authors": [
+        {
+          "first": "Yicheng",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [],
+          "last": "Grefenstette",
+          "suffix": ""
+        },
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Peter",
+          "suffix": ""
+        },
+        {
+          "first": "Deisenroth",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "State Advantage Weighting for Offline RL",
+      "authors": [
+        {
+          "first": "Jiafei",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        },
+        {
+          "first": "Le",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Zongqing",
+          "middle": [],
+          "last": "Wan",
+          "suffix": ""
+        },
+        {
+          "first": "Xiu",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "3rd Offline RL Workshop: Offline RL as a \"Launchpad"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Double Check Your State Before Trusting It: Confidence-Aware Bidirectional Offline Model-Based Imagination",
+      "authors": [
+        {
+          "first": "Jiafei",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zongqing",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Mildly Conservative Q-Learning for Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Jiafei",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoteng",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Xiu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zongqing",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Versatile Offline Imitation from Observations and Examples via Regularized State-Occupancy Matching",
+      "authors": [
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Yecheng",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Dinesh",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Osbert",
+          "middle": [],
+          "last": "Jayaraman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bastani",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Efficient and robust approximate nearest neighbor search using hierarchical navigable small world graphs",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Dmitry",
+          "middle": [
+            "A"
+          ],
+          "last": "Malkov",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Yashunin",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "IEEE transactions on pattern analysis and machine intelligence"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Human-level Control through Deep Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Volodymyr",
+          "middle": [],
+          "last": "Mnih",
+          "suffix": ""
+        },
+        {
+          "first": "Koray",
+          "middle": [],
+          "last": "Kavukcuoglu",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Silver",
+          "suffix": ""
+        },
+        {
+          "first": "Andrei",
+          "middle": [
+            "A"
+          ],
+          "last": "Rusu",
+          "suffix": ""
+        },
+        {
+          "first": "Joel",
+          "middle": [],
+          "last": "Veness",
+          "suffix": ""
+        },
+        {
+          "first": "Marc",
+          "middle": [
+            "G"
+          ],
+          "last": "Bellemare",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Graves",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [
+            "A"
+          ],
+          "last": "Riedmiller",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [
+            "Kirkeby"
+          ],
+          "last": "Fidjeland",
+          "suffix": ""
+        },
+        {
+          "first": "Georg",
+          "middle": [],
+          "last": "Ostrovski",
+          "suffix": ""
+        },
+        {
+          "first": "Stig",
+          "middle": [],
+          "last": "Petersen",
+          "suffix": ""
+        },
+        {
+          "first": "Charlie",
+          "middle": [],
+          "last": "Beattie",
+          "suffix": ""
+        },
+        {
+          "first": "Amir",
+          "middle": [],
+          "last": "Sadik",
+          "suffix": ""
+        },
+        {
+          "first": "Ioannis",
+          "middle": [],
+          "last": "Antonoglou",
+          "suffix": ""
+        },
+        {
+          "first": "Helen",
+          "middle": [],
+          "last": "King",
+          "suffix": ""
+        },
+        {
+          "first": "Dharshan",
+          "middle": [],
+          "last": "Kumaran",
+          "suffix": ""
+        },
+        {
+          "first": "Daan",
+          "middle": [],
+          "last": "Wierstra",
+          "suffix": ""
+        },
+        {
+          "first": "Shane",
+          "middle": [],
+          "last": "Legg",
+          "suffix": ""
+        },
+        {
+          "first": "Demis",
+          "middle": [],
+          "last": "Hassabis",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "DualDICE: Behavior-Agnostic Estimation of Discounted Stationary Distribution Corrections",
+      "authors": [
+        {
+          "first": "Ofir",
+          "middle": [],
+          "last": "Nachum",
+          "suffix": ""
+        },
+        {
+          "first": "Yinlam",
+          "middle": [],
+          "last": "Chow",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Lihong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Five balltree construction algorithms",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Stephen",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Omohundro",
+          "suffix": ""
+        }
+      ],
+      "year": 1989,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF58",
+      "title": "The surprising effectiveness of representation learning for visual imitation",
+      "authors": [
+        {
+          "first": "Jyothish",
+          "middle": [],
+          "last": "Pari",
+          "suffix": ""
+        },
+        {
+          "first": "Nur",
+          "middle": [],
+          "last": "Muhammad",
+          "suffix": ""
+        },
+        {
+          "first": "(",
+          "middle": [],
+          "last": "Mahi",
+          "suffix": ""
+        },
+        {
+          "first": ")",
+          "middle": [],
+          "last": "Shafiullah",
+          "suffix": ""
+        },
+        {
+          "first": "Lerrel",
+          "middle": [],
+          "last": "Sridhar Pandian Arunachalam",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Pinto",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "PyTorch: An Imperative Style, High-Performance Deep Learning Library",
+      "authors": [
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Paszke",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Gross",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Lerer",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "Gregory",
+          "middle": [],
+          "last": "Chanan",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Killeen",
+          "suffix": ""
+        },
+        {
+          "first": "Zeming",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Natalia",
+          "middle": [],
+          "last": "Gimelshein",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Antiga",
+          "suffix": ""
+        },
+        {
+          "first": "Alban",
+          "middle": [],
+          "last": "Desmaison",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Köpf",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Zach",
+          "middle": [],
+          "last": "Devito",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Raison",
+          "suffix": ""
+        },
+        {
+          "first": "Alykhan",
+          "middle": [],
+          "last": "Tejani",
+          "suffix": ""
+        },
+        {
+          "first": "Sasank",
+          "middle": [],
+          "last": "Chilamkurthy",
+          "suffix": ""
+        },
+        {
+          "first": "Benoit",
+          "middle": [],
+          "last": "Steiner",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Junjie",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Soumith",
+          "middle": [],
+          "last": "Chintala",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Scikit-learn: Machine learning in Python",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Pedregosa",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Varoquaux",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gramfort",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Michel",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Thirion",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Grisel",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Blondel",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Prettenhofer",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Weiss",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Dubourg",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Vanderplas",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Passos",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Cournapeau",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Brucher",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Perrot",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Duchesnay",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Heuristic search viewed as path finding in a graph",
+      "authors": [
+        {
+          "first": "Ira",
+          "middle": [],
+          "last": "Pohl",
+          "suffix": ""
+        }
+      ],
+      "year": 1970,
+      "venue": "Artificial intelligence"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Alvinn: An autonomous land vehicle in a neural network",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dean",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Pomerleau",
+          "suffix": ""
+        }
+      ],
+      "year": 1988,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Policy Regularization with Dataset Constraint for Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Yuhang",
+          "middle": [],
+          "last": "Ran",
+          "suffix": ""
+        },
+        {
+          "first": "Yichen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Fuxiang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zongzhang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "{SQIL}: Imitation Learning via Reinforcement Learning with Sparse Rewards",
+      "authors": [
+        {
+          "first": "Siddharth",
+          "middle": [],
+          "last": "Reddy",
+          "suffix": ""
+        },
+        {
+          "first": "Anca",
+          "middle": [
+            "D"
+          ],
+          "last": "Dragan",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "RAMBO-RL: Robust Adversarial Model-Based Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Rigter",
+          "suffix": ""
+        },
+        {
+          "first": "Bruno",
+          "middle": [],
+          "last": "Lacerda",
+          "suffix": ""
+        },
+        {
+          "first": "Nick",
+          "middle": [],
+          "last": "Hawes",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "A Reduction of Imitation Learning and Structured Prediction to No-Regret Online Learning",
+      "authors": [
+        {
+          "first": "Stéphane",
+          "middle": [],
+          "last": "Ross",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "J"
+          ],
+          "last": "Gordon",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "Andrew"
+          ],
+          "last": "Bagnell",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Mastering atari, go, chess and shogi by planning with a learned model",
+      "authors": [
+        {
+          "first": "Julian",
+          "middle": [],
+          "last": "Schrittwieser",
+          "suffix": ""
+        },
+        {
+          "first": "Ioannis",
+          "middle": [],
+          "last": "Antonoglou",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Hubert",
+          "suffix": ""
+        },
+        {
+          "first": "Karen",
+          "middle": [],
+          "last": "Simonyan",
+          "suffix": ""
+        },
+        {
+          "first": "Laurent",
+          "middle": [],
+          "last": "Sifre",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Schmitt",
+          "suffix": ""
+        },
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Guez",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [],
+          "last": "Lockhart",
+          "suffix": ""
+        },
+        {
+          "first": "Demis",
+          "middle": [],
+          "last": "Hassabis",
+          "suffix": ""
+        },
+        {
+          "first": "Thore",
+          "middle": [],
+          "last": "Graepel",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "An analysis of consecutively bounded depth-first search with applications in automated deduction",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Mark",
+          "suffix": ""
+        },
+        {
+          "first": "Mabry",
+          "middle": [],
+          "last": "Stickel",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Tyson",
+          "suffix": ""
+        }
+      ],
+      "year": 1985,
+      "venue": "IJCAI"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Reinforcement learning: An introduction",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Richard",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "G"
+          ],
+          "last": "Sutton",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Barto",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Pruning Duplicate Nodes in Depth-First Search",
+      "authors": [
+        {
+          "first": "Larry",
+          "middle": [
+            "A"
+          ],
+          "last": "Taylor",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [
+            "E"
+          ],
+          "last": "Korf",
+          "suffix": ""
+        }
+      ],
+      "year": 1993,
+      "venue": "AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "MuJoCo: A Physics Engine for Model-based Control",
+      "authors": [
+        {
+          "first": "Emanuel",
+          "middle": [],
+          "last": "Todorov",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Erez",
+          "suffix": ""
+        },
+        {
+          "first": "Yuval",
+          "middle": [],
+          "last": "Tassa",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "IEEE/RSJ International Conference on Intelligent Robots and Systems"
+    },
+    {
+      "id": "BIBREF72",
+      "title": "Recent Advances in Imitation Learning from Observation",
+      "authors": [
+        {
+          "first": "Faraz",
+          "middle": [],
+          "last": "Torabi",
+          "suffix": ""
+        },
+        {
+          "first": "Garrett",
+          "middle": [],
+          "last": "Warnell",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Joint Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF73",
+      "title": "Pessimistic Model-based Offline Reinforcement Learning under Partial Coverage",
+      "authors": [
+        {
+          "first": "Masatoshi",
+          "middle": [],
+          "last": "Uehara",
+          "suffix": ""
+        },
+        {
+          "first": "Wen",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF74",
+      "title": "SciPy 1.0 Contributors. SciPy 1.0: Fundamental Algorithms for Scientific Computing in Python",
+      "authors": [
+        {
+          "first": "Pauli",
+          "middle": [],
+          "last": "Virtanen",
+          "suffix": ""
+        },
+        {
+          "first": "Ralf",
+          "middle": [],
+          "last": "Gommers",
+          "suffix": ""
+        },
+        {
+          "first": "Travis",
+          "middle": [
+            "E"
+          ],
+          "last": "Oliphant",
+          "suffix": ""
+        },
+        {
+          "first": "Matt",
+          "middle": [],
+          "last": "Haberland",
+          "suffix": ""
+        },
+        {
+          "first": "Tyler",
+          "middle": [],
+          "last": "Reddy",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Cournapeau",
+          "suffix": ""
+        },
+        {
+          "first": "Evgeni",
+          "middle": [],
+          "last": "Burovski",
+          "suffix": ""
+        },
+        {
+          "first": "Pearu",
+          "middle": [],
+          "last": "Peterson",
+          "suffix": ""
+        },
+        {
+          "first": "Warren",
+          "middle": [],
+          "last": "Weckesser",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Bright",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Stéfan",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Van Der Walt",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [],
+          "last": "Brett",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Wilson",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolay",
+          "middle": [],
+          "last": "Jarrod Millman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mayorov",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "J"
+          ],
+          "last": "Andrew",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Nelson",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Kern",
+          "suffix": ""
+        },
+        {
+          "first": "C J",
+          "middle": [],
+          "last": "Larson",
+          "suffix": ""
+        },
+        {
+          "first": "İlhan",
+          "middle": [],
+          "last": "Carey",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Polat",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "W"
+          ],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Jake",
+          "middle": [],
+          "last": "Moore",
+          "suffix": ""
+        },
+        {
+          "first": "Denis",
+          "middle": [],
+          "last": "Vanderplas",
+          "suffix": ""
+        },
+        {
+          "first": "Josef",
+          "middle": [],
+          "last": "Laxalde",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Perktold",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Cimrman",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "A"
+          ],
+          "last": "Henriksen",
+          "suffix": ""
+        },
+        {
+          "first": "Charles",
+          "middle": [
+            "R"
+          ],
+          "last": "Quintero",
+          "suffix": ""
+        },
+        {
+          "first": "Anne",
+          "middle": [
+            "M"
+          ],
+          "last": "Harris",
+          "suffix": ""
+        },
+        {
+          "first": "Antônio",
+          "middle": [
+            "H"
+          ],
+          "last": "Archibald",
+          "suffix": ""
+        },
+        {
+          "first": "Fabian",
+          "middle": [],
+          "last": "Ribeiro",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Pedregosa",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature Methods"
+    },
+    {
+      "id": "BIBREF75",
+      "title": "Support-weighted Adversarial Imitation Learning",
+      "authors": [
+        {
+          "first": "Ruohan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Carlo",
+          "middle": [],
+          "last": "Ciliberto",
+          "suffix": ""
+        },
+        {
+          "first": "Pierluigi",
+          "middle": [],
+          "last": "Vito Amadori",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Demiris",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF76",
+      "title": "Discriminator-Weighted Offline Imitation Learning from Suboptimal Demonstrations",
+      "authors": [
+        {
+          "first": "Haoran",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Xianyuan",
+          "middle": [],
+          "last": "Zhan",
+          "suffix": ""
+        },
+        {
+          "first": "Honglei",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Huiling",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF77",
+      "title": "Exploration and anti-exploration with distributional random network distillation",
+      "authors": [
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Tao",
+          "suffix": ""
+        },
+        {
+          "first": "Jiafei",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF78",
+      "title": "Offline Imitation Learning with Suboptimal Demonstrations via Relaxed Distribution Matching",
+      "authors": [
+        {
+          "first": "Lantao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Tianhe",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Willie",
+          "middle": [],
+          "last": "Neiswanger",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF79",
+      "title": "MOPO: Model-based Offline Policy Optimization",
+      "authors": [
+        {
+          "first": "Tianhe",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Garrett",
+          "middle": [],
+          "last": "Thomas",
+          "suffix": ""
+        },
+        {
+          "first": "Lantao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [
+            "Y"
+          ],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "Tengyu",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF80",
+      "title": "COMBO: Conservative Offline Model-Based Policy Optimization",
+      "authors": [
+        {
+          "first": "Tianhe",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Rafael",
+          "middle": [],
+          "last": "Rafailov",
+          "suffix": ""
+        },
+        {
+          "first": "Aravind",
+          "middle": [],
+          "last": "Rajeswaran",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF81",
+      "title": "How to Leverage Unlabeled Data in Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Tianhe",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Yevgen",
+          "middle": [],
+          "last": "Chebotar",
+          "suffix": ""
+        },
+        {
+          "first": "Karol",
+          "middle": [],
+          "last": "Hausman",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF82",
+      "title": "CLARE: Conservative Model-Based Reward Learning for Offline Inverse Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Sheng",
+          "middle": [],
+          "last": "Yue",
+          "suffix": ""
+        },
+        {
+          "first": "Guanbo",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofeng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sen",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Ju",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Junshan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF83",
+      "title": "Uncertainty-driven Trajectory Truncation for Model-based Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Junjie",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiafei",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoteng",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Jiangpeng",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Le",
+          "middle": [],
+          "last": "Wan",
+          "suffix": ""
+        },
+        {
+          "first": "Xiu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF84",
+      "title": "PLAS: Latent Action Space for Offline Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Wenxuan",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Sujay",
+          "middle": [],
+          "last": "Bajracharya",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Held",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Conference on Robot Learning"
+    },
+    {
+      "id": "BIBREF85",
+      "title": "Off-Policy Imitation Learning from Observations",
+      "authors": [
+        {
+          "first": "Zhuangdi",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Kaixiang",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Jiayu",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF86",
+      "title": "Maximum Entropy Inverse Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Brian",
+          "middle": [
+            "D"
+          ],
+          "last": "Ziebart",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "L"
+          ],
+          "last": "Maas",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "Andrew"
+          ],
+          "last": "Bagnell",
+          "suffix": ""
+        },
+        {
+          "first": "Anind",
+          "middle": [
+            "K"
+          ],
+          "last": "Dey",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF87",
+      "title": "Offline Learning from Demonstrations and Unlabeled Experience",
+      "authors": [
+        {
+          "first": "Konrad",
+          "middle": [],
+          "last": "Zolna",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Novikov",
+          "suffix": ""
+        },
+        {
+          "first": "Ksenia",
+          "middle": [],
+          "last": "Konyushkova",
+          "suffix": ""
+        },
+        {
+          "first": "Caglar",
+          "middle": [],
+          "last": "Gulcehre",
+          "suffix": ""
+        },
+        {
+          "first": "Ziyun",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yusuf",
+          "middle": [],
+          "last": "Aytar",
+          "suffix": ""
+        },
+        {
+          "first": "Misha",
+          "middle": [],
+          "last": "Denil",
+          "suffix": ""
+        },
+        {
+          "first": "Nando",
+          "middle": [],
+          "last": "De Freitas",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [
+            "E"
+          ],
+          "last": "Reed",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    }
+  ]
+}

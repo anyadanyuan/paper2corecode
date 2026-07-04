@@ -1,0 +1,2969 @@
+{
+  "paper_id": "sparseformer",
+  "title": "SPARSEFORMER: SPARSE VISUAL RECOGNITION VIA LIMITED LATENT TOKENS",
+  "authors": [
+    {
+      "first": "Ziteng",
+      "middle": [],
+      "last": "Gao",
+      "affiliation": {
+        "laboratory": "Show Lab",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Zhan",
+      "middle": [],
+      "last": "Tong",
+      "affiliation": {
+        "laboratory": "Show Lab",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Ant",
+      "middle": [],
+      "last": "Group",
+      "affiliation": {
+        "laboratory": "Show Lab",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Limin",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {
+        "laboratory": "Show Lab",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Mike",
+      "middle": [
+        "Zheng"
+      ],
+      "last": "Shou",
+      "affiliation": {
+        "laboratory": "Show Lab",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Human visual recognition is a sparse process, where only a few salient visual cues are attended to rather than every detail being traversed uniformly. However, most current vision networks follow a dense paradigm, processing every single visual unit (such as pixels or patches) in a uniform manner. In this paper, we challenge this dense convention and present a new vision transformer, coined SparseFormer, to explicitly imitate human's sparse visual recognition in an endto-end manner. SparseFormer learns to represent images using a highly limited number of tokens (e.g., down to 9) in the latent space with sparse feature sampling procedure instead of processing dense units in the original image space. Therefore, SparseFormer circumvents most of dense operations on the image space and has much lower computational costs. Experiments on the ImageNet-1K classification show that SparseFormer delivers performance on par with canonical or well-established models while offering more favorable accuracy-throughput tradeoff. Moreover, the design of our network can be easily extended to the video classification task with promising performance with lower compute. We hope our work can provide an alternative way for visual modeling and inspire further research on sparse vision architectures. Code and weights are available at https://github.com/showlab/sparseformer.",
+  "body": {
+    "1_INTRODUCTION": "Designing neural architectures for visual recognition has long been an appealing yet challenging topic in the computer vision community. In past few years, there has been an paradigm shift for vision architectures from convolutional neural networks (CNNs) (Krizhevsky et al., 2012; He et al., 2016; Huang et al., 2017; Radosavovic et al., 2020; Liu et al., 2022) to vision transformers (ViTs) (Dosovitskiy et al., 2021; Touvron et al., 2021; Liu et al., 2021a; Wang et al., 2021) . Though their underlying operations may vary, both architectures involve the traversal of every pixel or patch in an image to densely model visual patterns and image semantics. This traversal convention stems from the sliding window approaches (Ojala et al., 1996) , assuming that foreground objects may appear uniformly at any spatial location in an image, and continues to dominate the design of modern visual neural networks.\nHowever, as humans, we do not need to examine every detail in a scene for perception. Instead, our eyes can quickly identify regions of interest with just few glimpses, and then recognize edges and textures, as well as high-level semantics (Desimone & Duncan, 1995; Marr, 2010; Itti & Koch, 2001; Rensink, 2000) . This contrasts greatly with existing vision architectures, which need to exhaustively traverse tons of visual units in the image grid. Such dense convention incurs redundant computation for backgrounds, particularly when scaling up the input resolution. Also, this paradigm cannot directly provide interpretable insights about the specific regions of interest that vision model are focusing on within an image. In this paper, we propose a new vision network architecture, coined SparseFormer, to perform sparse visual recognition by explicitly imitating the human vision system. SparseFormer learns to represent an image using transformers with a limited number of tokens in the latent space right from the beginning. Each latent token is associated with a region of interest (RoI) descriptor, and the token RoI can be adjusted iteratively to focus on foreground regions. With this design, we can highly reduce the number of tokens needed in the transformer (e.g., down to 9) and the overall computational cost of SparseFormer is almost irrelevant to the input resolution when a fixed number of latent tokens adopted. Therefore, it is reasonable to refer to our method as a sparse approach for visual recognition. Moreover, the RoI adjusting mechanism can be supervised solely with classification signals in an end-to-end manner, without prior training with localizing signals.\nSparseFormer, as an initial step towards sparse visual recognition, aims to provide an alternative paradigm for vision modeling, rather than achieving state-of-the-art results with bells or whistles. Nonetheless, it still delivers promising results on the challenging ImageNet classification benchmark on par with dense counterparts, but at lower computational costs. Since all transformer operations are performed on a reduced number of tokens in the latent space, SparseFormer has a lower memory footprint and higher throughput compared to dense architectures, especially in the low-compute region. Also, SparseFormer can deliver promising results compatibly with versatile token number settings, e.g., 74.5% on IN-1K with only 9 tokens, and 81.9% with 81 tokens for a tiny variant.\nVisualizations show SparseFormer can distinguish foregrounds from backgrounds when trained in an end-to-end manner using only classification labels. We also explore several scaling-up strategies of SparseFormer. The simple design of SparseFormer can be further extended to video understanding with minor efforts, where video inputs are more compute-expensive for dense models but well-suited for SparseFormer. Experimental results also demonstrate that our video extension of SparseFormer yields promising performance on the Kinetics-400 with low compute.",
+    "2_RELATED_WORK": "Dense vision architectures. Since the pioneering AlexNet (Krizhevsky et al., 2012) , convolutional neural networks (CNNs) has dominated the field of the visual recognition with comprehensive advancements (He et al., 2016; Huang et al., 2017; Radosavovic et al., 2020; Tan & Le, 2019; Liu et al., 2022; Szegedy et al., 2016; 2015; Ioffe & Szegedy, 2015; Wu & He, 2020) . Recently, vision transformers Dosovitskiy et al. (2021) have delivered great modeling capabilities and remarkable performance with the transformer architecture, which originates from the machine translation community (Vaswani et al., 2017) . Several variants of vision transformers (ViTs) have been proposed to improve its efficiency and effectiveness with specific designs for vision domain (Liu et al., 2021a; Yuan et al., 2021; Wang et al., 2021; Yue et al., 2021; Fan et al., 2021; Gu et al., 2021; Xia et al., 2022; Tu et al., 2022; Ma et al., 2023; Chang et al., 2023b) . However, both of these two architectures require traversing every pixel or patch over an image to perform dense operations, either convolution or attention, in order to obtain the final representation, incurring unnecessary compute burden for backgrounds. This issue becomes more severe when handling data-intensive inputs like videos, as the computation cost increases due to the larger number of units that need to compute (Tran et al., 2015; Carreira & Zisserman, 2017; Tran et al., 2018; Qiu et al., 2017; Xie et al., 2018; Arnab et al., 2021) , even when sampling strategies adopted (Wang et al., 2019; Feichtenhofer et al., 2019) . To speed up vision transformers, researchers have proposed to gradually reduce vision tokens (Liang et al., 2022; Fayyaz et al., 2022; Bolya et al., 2022; Rao et al., 2021; Yin et al., 2022; Chang et al ., input image Focusing Transformer Standard Transformer Encoder Block classifier head initial embeddings + initial RoIs feature sampling (a) overall architecture (b) details of a focusing transformer block dense image space early convolution feature map latent space Multi Head Self-Attn RoIs embeddings sampling points for Sampling Points Generation Adaptive Feature Decoding Feedforward Network refined embeddings refined RoIs RoI Adjusting lightweight, repeat times sparse feature sampling 2023a) or exploit sparse attention patterns (Zhang et al., 2021) . Different from these methods, SparseFormer directly learns to represent an image via a limited number of tokens right from the beginning in the latent space.\nPerceiver architectures and detection transformers. Moving vision tokens into the latent space is not a new thing. Perceiver architectures (Jaegle et al., 2021; 2022) for vision learns a set of tokens in the latent space to represent an image via the standard latent transformer decoders with cross attentions. Our proposed SparseFormer is greatly inspired by this paradigm, where the \"cross attention\" between the image space and the latent space is replaced by the proposed sparse feature sampling.\nIt is worth noting that the standard cross attention also requires traversing every unit over the image feature, while our sparse feature sampling directly extracts features by bilinear interpolation, whose computational complexity is independent of the input resolution. Moreover, Perceiver architectures (Jaegle et al., 2021; 2022) utilize 512 latent tokens, whereas our SparseFormer achieves superior results by using about 0.1× latent tokens. Detection transformer (DETR) and its variants (Carion et al., 2020; Zhu et al., 2020; Sun et al., 2021) also use latent tokens (queries) to represent objects, which are decoded usually from features extracted by deep convolutional networks and multiple transformer encoder blocks. In contrast, SparseFormer, as a sparse architecture, do not require this heavy image feature design, and instead delievers promising results with a simple early convolution.\nGlimpse models, proposed in the early days of neural vision research (Mnih et al., 2014; Ranzato, 2014) , aimed to imitate explicitly the human visual perception process by capturing selective regions of an image for recognition. While these models are efficient as they just involve limited parts of an image, they often lack differentiability in terms of selecting such regions, and require workarounds like the expectation-maximization algorithm (Dempster et al., 1977) or reinforcement learning to optimize. Our presented SparseFormer architecture can be seen as an multi-glimpse extension model, similiar to (Tan et al., 2021) . The whole SparseFormer pipeline can be optimized in an end-to-end manner thanks to the bilinear interpolation. More importantly, SparseFormer proves to be effective on large benchmarks like ImageNet-1K (Deng et al., 2009) .",
+    "3_SPARSEFORMER": {
+      "3.1_BUILDING_LATENT_TOKENS": "SparseFormer uses two types of transformers in the latent space: the focusing transformer and the cortex transformer, as depicted in Figure 2 . The focusing transformer extracts regional image features into token embeddings and adjusts token RoIs iteratively. The subsequent cortex transformer, which is of the standard transformer encoder architecture, takes only latent tokens embeddings as inputs. We first introduce operations that makes a focusing transformer.\nSparse feature sampling. In the feature sampling procedure, a latent token first generates P sampling points in the image space based on its geometric property, i.e., its RoI. These sampling points are represented as image coordinates (i.e., x and y). Then, the focusing transformer uses bilinear interpolation on these sampling points to extract corresponding regional image features. We refer this procedure as sparse feature sampling since the bilinear interpolation takes only O(1) time for every sampling point. To obtain sampling points, a learnable linear layer is used to generate a set of relative sampling offsets for a token, conditioned on its embedding t:\nEQUATION\nwhere the i-th sampling offset (∆x i , ∆y i ) represents the relative position of sampling point i with respect to a token RoI, and there are a total of P sampling points for each token. The layer normalization (Ba et al., 2016) over t before the linear layer here, as well as linear layers below, is omitted for clarity. Then, these offsets are translated to absolute sampling locations (x, ỹ) in an image with the RoI b = (x, y, w, h):\nEQUATION\nfor every i. To ensure stable training, a standard normalization is applied to {(△x i , △y i )} P using three standard deviations, which keeps a majority of sampling points within the RoI.\nWith sparse feature sampling, SparseFormer extracts image features by direct bilinear interpolation based on these explicit sampling points, eliminating the need for dense grid traversal. Given an input image I ∈ R C×H×W with C channels, the shape of the sampled feature matrix x for a token is R P ×C . The computational complexity of this sparse feature sampling procedure is O(N P C) with the number of latent tokens N given, independent of the input image size H × W .\nAdaptive feature decoding. With image features x sampled for a token, how to effectively decode them to build a token representation is another key question. A linear layer of R P ×C → R d can be the simplest method to embed features into a token embedding, but we find it rather ineffective. We use the adaptive mixing method (Gao et al., 2022) to decode sampled features to leverage spatial and channel semantics in an adaptive way. Specifically, we use a lightweight network F : R d → R C×C+P ×P whose input is the token embedding t to produce conditional channel decoding weight and spatial decoding weights M c and M s and decode sampled features x with these weights:\nEQUATION\nEQUATION\nEQUATION\nwhere x (0) is the sampled feature x, x (2) is the output of adaptive feature decoding, and GELU serves as activation function (Hendrycks & Gimpel, 2016) . Our F choice is composed of two linear layers without activation functions, with the hidden dimension d/4 for efficiency. The final output is added back to the token embedding t by a linear layer. Adaptive feature decoding can be seen as a token-wise spatial-channel factorization of dynamic convolution (Jia et al., 2016) , and it adds moderate convolutional inductive bias to SparseFormer. The adaptive feature decoding design allows SparseFormer to reason about what a token expects to see based on what the token has seen in stages before. Therefore, a token can also reason about where to look with RoI adjusting mechanism, which is described below.",
+      "3.2_OVERALL_SPARSEFORMER_ARCHITECTURE": "The overall architecture in SparseFormer is depicted in Figure 2 . The image features are computed only once by lightweight convolution and shared across sampling stages. The final classification is done by averaging embeddings {t i } N over latent tokens and applying a linear classifier to it.\nEarly convolution. As discussed earlier, gradients with respect to sampling points by bilinear interpolation might be very noisy. The case can be particularly severe when handling raw RGB inputs, as the nearest four RGB values on grid are usually too noisy for accurate estimation of local gradients.\nTo improve training stability, we incorporate early convolution, similar to vision transformers (Xiao et al., 2021) , but make it as lightweight as possible.\nSparsity of the architecture. It is important to note that the number of latent tokens in Sparse-Former is fixed and does not necessarily depend on the input resolution. The sparse feature sampling procedure extracts features from image feature maps also in a sparse and non-traversing way. The computational complexity and memory footprints in the latent space is therefore irrelevant to the ). This also distinguishes SparseFormer from Perceivers (Jaegle et al., 2021; 2022) , whose typical latent capacity (512 • 1024) exceeds the input image size. Note that our presented approach differs a lot from post-training token reduction techniques (Rao et al., 2021; Liang et al., 2022; Fayyaz et al., 2022; Bolya et al., 2022; Yin et al., 2022) . SparseFormer learns to represent an image using sparse tokens right from the start. In contrast, token reduction techniques are typically applied to pre-trained vision transformers. It is appealing to further reduce latent tokens in SparseFormer with these methods, but this is beyond the scope of this paper.\nExtension to video classification. Video classification requires more intensive computing due to multiple frames. Fortunately, SparseFormer can be easily extended to video classification with minor extra efforts. Given a video feature V ∈ R C×T ×H×W , the only problem is to deal with the extra temporal axis compared to the image feature I ∈ R C×H×W . To address this, we associate the token RoI with an extension (t, l), the center temporal coordinate t and l represents the temporal length to make RoI a tube. In the sparse feature sampling procedure, an extra linear layer is introduced to produce temporal offsets, and we transform them to 3D sampling points {(x i , ỹi , zi )} P . Here, the bilinear interpolation is replaced by the trilinear one for 4D input data. Similarly, the RoI adjusting is extended to the temporal dimension. Other operators such as early convolution, adaptive feature decoding, self-attention, and FFN remain untouched. For larger latent capacities, we inflate tokens along the temporal axis by a factor of n t and initialize their (t, l) to cover all frames, where n t is typically smaller than the frame count T (e.g., 8 versus 32).",
+      "_text": "In this section, we describe the SparseFormer architecture in detail. Since SparseFormer performs transformer operations over tokens in the latent space, we start with the definition of latent tokens.\nLatent tokens. Different from dense models, which involve per-pixel or per-patch modeling in the original image space, SparseFormer learns to understand an image via sparse tokens in the latent space. Similar to queries or latents in transformer decoder architectures (Vaswani et al., 2017; Carion et al., 2020; Jaegle et al., 2021) , a latent token in SparseFormer has a corresponding embedding t ∈ R d in the latent space. To explicitly model spatial focal regions, we associate every latent token t in SparseFormer with an RoI descriptor b = (x, y, w, h), where x, y, w, h are center coordinates, width, and height, normalized in the range [0, 1]. Therefore, a latent token is made up of an embedding t representing its content, and an RoI descriptor b representing its geometric property. Then the whole latent token set of SparseFormer is then described as\nEQUATION\nwhere N is the number of latent tokens, both embedding t and b can be refined by latent transformers. The initial t and b are learnable parameters of SparseFormer, and their initialization will be described in the experiment section and the appendix."
+    },
+    "4_EXPERIMENTS": {
+      "4.1_MAIN_RESULTS": "ImageNet-1K classification. We first benchmark SparseFormer on the ImageNet-1K classification and compare them to other well-established methods in Table 2 . SparseFormer-T reaches 81.0 top-1 accuracy on par with the well-curated dense transformer Swin-T (Liu et al., 2021a) , with less than half FLOPs of it (2.0G versus 4.5G) and 74% higher throughput (1270 versus 726). The small and base variants of SparseFormer, SparseFormer-S, and -B also maintain a good tradeoff between the Table 5: Ablation study on SparseFormer: (a) the number of latent tokens N ; (b) the method to extract 49 tokens other than the focusing transformer; (c) the repeats of the focusing transformer, L f ; (d) the number of sampling points for a token, P ; (e) image features to sample and decode; (f) the decoding approch. The default choice for SparseFormer is colored gray .\nperformance and actual throughput over highly-optimized CNNs or transformers. We can find that Perceiver architectures (Jaegle et al., 2021; 2022) , which also adopt the latent transformer, incur extremely large FLOPs and have impractical inference speed due to a large number of tokens (i.e., 512) and dense traversing cross attention.",
+      "4.2_ABLATION_STUDY_We_ablate_key_designs_in_SparseFormer-T_on_ImageNet-1K_due_to_limited_computational_resources.": "The number of latent tokens, N , is a crucial hyper-parameter in SparseFormer that controls the capacity of the latent space. The impact of different numbers of latent tokens on the performance is shown in Table 5a . The performance of SparseFormer is heavily influenced by N , and increasing N to 81 enables SparseFormer-T to achieve similar performance as SparseFormer-S. Nevertheless, we are still in favor of fewer tokens for efficiency and sparsity.\nThe focusing transformer. We ablate the focusing transformer and the early convolution with direct token extraction methods, while keeping the cortex transformer unchanged, in Table 5b . The 'ViT/32' indicates using 32 × 32 patch as a token (Dosovitskiy et al., 2021) (49 in all) and the transformer configurations follow SparseFormer-T in Table 1 . The 'ViT/32 * ' adds two more transformer blocks. The 'conv×4' approach uses four strided convolution, each doubling the channel, to produce 7 × 7 feature map as 49 tokens. The 'swin' method exploits 4 successive local shifted attention and patch merge (Liu et al., 2021a) to obtain 49 tokens. Note that in contrast to SparseFormer, all methods in Table 5b extract 49 tokens in a dense manner from the original image space. We also investigate the impact of iterations of the focusing transformer in Table 5c .\nSparsity of sampling points. The other important factor for the sparsity of the proposed method is the number of sampling points in the feature sampling.\nTable 5d shows the ablation on this. Compared to increasing the number of latent tokens (e.g., 49 → 64, 30% up, 81.4 accuracy), more sampling points sampling density sampling points sampling density stage 1 stage 2 stage 3 stage 4 stage 5 stage 1 stage 2 stage 3 stage 4 stage 5 sampling points are not economical for better performance, and 81.3 accuracy needs 77% more (36 → 64) sampling points. We choose 36 sampling points as our default for efficiency.\nImage features and how to decode sampled features. Table 5e investigates input image features to be sampled into the latent space in SparseFormer. As discussed before, input image features can be in the raw RGB format, but we find it rather hard to trainfoot_0 . We ablate the early convolution with ViT-like embedding layer (Dosovitskiy et al., 2021) and ResNet C1+C2 blocks (He et al., 2016) (the early convolution and the first three bottleneck blocks before downsampling). Table 5f ablates how to decode sampled features for a token. The static mixing uses the static weights, which are not conditional on token embedding, and performs worser than adaptive mixing weights. Inflation of latent tokens on video classification. We also investigate the inflation rate of tokens on videos. Intuitively, video data with multiple frames need more latent tokens than a static image to model. Results in Table 6 show this. Note that the input video has 32 frames, but the token inflation rate 8 is already sufficient for the favorable performance of VideoSparseFormer. As a contrast, dense CNNs or Transformers usually require at least exactly #frames times the computational cost if no temporal reduction is adopted. This also validates the sparsity of the proposed SparseFormer method on videos.",
+      "4.3_VISUALIZATIONS": "As discussed in Section 3, we argue that SparseFormer with the RoI adjusting mechanism and sparse feature sampling, can reason about where to look and focus on foregrounds. To show this, we perform visualizations of token sampling points across different sampling stages in Figure 3 . We apply kernel density estimation (KDE (Rosenblatt, 1956 )) spatially about sampling points with tophat kernels to obtain the sampling density map. We can find that SparseFormer initially looks at the image in a relatively uniform way and gradually focuses on discriminative details of foregrounds. With minimal classification supervision (i.e., no localizing signals), SparseFormer can roughly learn where discriminative foregrounds are.",
+      "_text": "We benchmark our presented SparseFormers on the ImageNet-1K classification (Deng et al., 2009) and Kinetics-400 (Carreira & Zisserman, 2017) video classification. We also report our preliminary trials on down-streaming tasks, semantic segmentation and object detection, in the appendix."
+    },
+    "5_CONCLUSION": "In this paper, we have presented a new vision architecture, SparseFormer, to perform visual recognition with a limited number of tokens along with the transformer in the latent space. To imitate human perception behavior, we design SparseFormer to focus these sparse latent tokens on discriminative foregrounds and make a recognition sparsely. As a very initial step to the sparse visual archi tecture, SparseFormer consistently yields promising results on challenging image classification and video classification benchmarks with a good performance-throughput tradeoff. We hope our work can provide an alternative way and inspire further research about sparse visual understanding."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Vivit: A video vision transformer",
+      "authors": [
+        {
+          "first": "Anurag",
+          "middle": [],
+          "last": "Arnab",
+          "suffix": ""
+        },
+        {
+          "first": "Mostafa",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "Georg",
+          "middle": [],
+          "last": "Heigold",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Mario",
+          "middle": [],
+          "last": "Lučić",
+          "suffix": ""
+        },
+        {
+          "first": "Cordelia",
+          "middle": [],
+          "last": "Schmid",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Layer normalization",
+      "authors": [
+        {
+          "first": "Jimmy",
+          "middle": [],
+          "last": "Lei",
+          "suffix": ""
+        },
+        {
+          "first": "Jamie",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "E"
+          ],
+          "last": "Ryan Kiros",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Is space-time attention all you need for video understanding?",
+      "authors": [
+        {
+          "first": "Gedas",
+          "middle": [],
+          "last": "Bertasius",
+          "suffix": ""
+        },
+        {
+          "first": "Heng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Lorenzo",
+          "middle": [],
+          "last": "Torresani",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Token merging: Your vit but faster",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Bolya",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng-Yang",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoliang",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Peizhao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Feichtenhofer",
+          "suffix": ""
+        },
+        {
+          "first": "Judy",
+          "middle": [],
+          "last": "Hoffman",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "End-to-end object detection with transformers",
+      "authors": [
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Carion",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Synnaeve",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Usunier",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kirillov",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Zagoruyko",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "European Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Quo vadis, action recognition? A new model and the kinetics dataset",
+      "authors": [
+        {
+          "first": "João",
+          "middle": [],
+          "last": "Carreira",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Making vision transformers efficient from A token sparsification view",
+      "authors": [
+        {
+          "first": "Shuning",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Pichao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Ming",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "Junhao"
+          ],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Rong",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [
+            "Zheng"
+          ],
+          "last": "Shou",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Revisiting vision transformer from the view of path ensemble",
+      "authors": [
+        {
+          "first": "Shuning",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Pichao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [
+            "Zheng"
+          ],
+          "last": "Shou",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Maximum likelihood from incomplete data via the EM -algorithm plus discussions on the paper",
+      "authors": [
+        {
+          "first": "Arthur",
+          "middle": [
+            "P"
+          ],
+          "last": "Dempster",
+          "suffix": ""
+        },
+        {
+          "first": "Nan",
+          "middle": [
+            "M"
+          ],
+          "last": "Laird",
+          "suffix": ""
+        },
+        {
+          "first": "Donald",
+          "middle": [
+            "B"
+          ],
+          "last": "Rubin",
+          "suffix": ""
+        }
+      ],
+      "year": 1977,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Imagenet: A large-scale hierarchical image database",
+      "authors": [
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        },
+        {
+          "first": "Li-Jia",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Fei-Fei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Neural mechanisms of selective visual attention",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Desimone",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Duncan",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "Annual Review of Neuroscience"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "An image is worth 16x16 words: Transformers for image recognition at scale",
+      "authors": [
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "Dirk",
+          "middle": [],
+          "last": "Weissenborn",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "Mostafa",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Minderer",
+          "suffix": ""
+        },
+        {
+          "first": "Georg",
+          "middle": [],
+          "last": "Heigold",
+          "suffix": ""
+        },
+        {
+          "first": "Sylvain",
+          "middle": [],
+          "last": "Gelly",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Houlsby",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICLR. OpenReview.net"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Multiscale vision transformers",
+      "authors": [
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Haoqi Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Karttikeya",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Yanghao",
+          "middle": [],
+          "last": "Mangalam",
+          "suffix": ""
+        },
+        {
+          "first": "Zhicheng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jitendra",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Malik",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Feichtenhofer",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Adaptive token sampling for efficient vision transformers",
+      "authors": [
+        {
+          "first": "Mohsen",
+          "middle": [],
+          "last": "Fayyaz",
+          "suffix": ""
+        },
+        {
+          "first": "Abbasi",
+          "middle": [],
+          "last": "Soroush",
+          "suffix": ""
+        },
+        {
+          "first": "Farnoush",
+          "middle": [
+            "Rezaei"
+          ],
+          "last": "Koohpayegani",
+          "suffix": ""
+        },
+        {
+          "first": "Sunando",
+          "middle": [],
+          "last": "Jafari",
+          "suffix": ""
+        },
+        {
+          "first": "Hamid",
+          "middle": [],
+          "last": "Sengupta",
+          "suffix": ""
+        },
+        {
+          "first": "Vaezi",
+          "middle": [],
+          "last": "Reza",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Joze",
+          "suffix": ""
+        },
+        {
+          "first": "Hamed",
+          "middle": [],
+          "last": "Sommerlade",
+          "suffix": ""
+        },
+        {
+          "first": "Jürgen",
+          "middle": [],
+          "last": "Pirsiavash",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gall",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Slowfast networks for video recognition",
+      "authors": [
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Feichtenhofer",
+          "suffix": ""
+        },
+        {
+          "first": "Haoqi",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Jitendra",
+          "middle": [],
+          "last": "Malik",
+          "suffix": ""
+        },
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Adamixer: A fast-converging query-based object detector",
+      "authors": [
+        {
+          "first": "Ziteng",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Limin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Sheng",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Understanding the difficulty of training deep feedforward neural networks",
+      "authors": [
+        {
+          "first": "Xavier",
+          "middle": [],
+          "last": "Glorot",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "JMLR Proceedings"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Pit: Position-invariant transform for cross-fov domain adaptation",
+      "authors": [
+        {
+          "first": "Qiqi",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Qianyu",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Minghao",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengyang",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Guangliang",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Xuequan",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianping",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Lizhuang",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Deep residual learning for image recognition",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shaoqing",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Gaussian error linear units",
+      "authors": [
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Gimpel",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Deep networks with stochastic depth",
+      "authors": [
+        {
+          "first": "Gao",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Sedra",
+          "suffix": ""
+        },
+        {
+          "first": "Kilian",
+          "middle": [
+            "Q"
+          ],
+          "last": "Weinberger",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "ECCV (4)"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Densely connected convolutional networks",
+      "authors": [
+        {
+          "first": "Gao",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Kilian",
+          "middle": [
+            "Q"
+          ],
+          "last": "Weinberger",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Batch normalization: Accelerating deep network training by reducing internal covariate shift",
+      "authors": [
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Ioffe",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Szegedy",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Computational modelling of visual attention",
+      "authors": [
+        {
+          "first": "Laurent",
+          "middle": [],
+          "last": "Itti",
+          "suffix": ""
+        },
+        {
+          "first": "Christof",
+          "middle": [],
+          "last": "Koch",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "Nature Reviews Neuroscience"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Perceiver: General perception with iterative attention",
+      "authors": [
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Jaegle",
+          "suffix": ""
+        },
+        {
+          "first": "Felix",
+          "middle": [],
+          "last": "Gimeno",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Brock",
+          "suffix": ""
+        },
+        {
+          "first": "Oriol",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        },
+        {
+          "first": "João",
+          "middle": [],
+          "last": "Carreira",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Perceiver IO: A general architecture for structured inputs & outputs",
+      "authors": [
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Jaegle",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Borgeaud",
+          "suffix": ""
+        },
+        {
+          "first": "Jean-Baptiste",
+          "middle": [],
+          "last": "Alayrac",
+          "suffix": ""
+        },
+        {
+          "first": "Carl",
+          "middle": [],
+          "last": "Doersch",
+          "suffix": ""
+        },
+        {
+          "first": "Catalin",
+          "middle": [],
+          "last": "Ionescu",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Skanda",
+          "middle": [],
+          "last": "Koppula",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Zoran",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Brock",
+          "suffix": ""
+        },
+        {
+          "first": "Evan",
+          "middle": [],
+          "last": "Shelhamer",
+          "suffix": ""
+        },
+        {
+          "first": "Olivier",
+          "middle": [
+            "J"
+          ],
+          "last": "Hénaff",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [
+            "M"
+          ],
+          "last": "Botvinick",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        },
+        {
+          "first": "Oriol",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "João",
+          "middle": [],
+          "last": "Carreira",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ICLR. OpenReview.net"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Dynamic filter networks",
+      "authors": [
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Bert",
+          "middle": [],
+          "last": "De Brabandere",
+          "suffix": ""
+        },
+        {
+          "first": "Tinne",
+          "middle": [],
+          "last": "Tuytelaars",
+          "suffix": ""
+        },
+        {
+          "first": "Luc",
+          "middle": [],
+          "last": "Van Gool",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "NIPS"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Imagenet classification with deep convolutional neural networks",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Krizhevsky",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Not all patches are what you need: Expediting vision transformers via token reorganizations",
+      "authors": [
+        {
+          "first": "Youwei",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Chongjian",
+          "middle": [],
+          "last": "Ge",
+          "suffix": ""
+        },
+        {
+          "first": "Zhan",
+          "middle": [],
+          "last": "Tong",
+          "suffix": ""
+        },
+        {
+          "first": "Yibing",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Jue",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Pengtao",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Microsoft COCO: common objects in context",
+      "authors": [
+        {
+          "first": "Tsung-Yi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Maire",
+          "suffix": ""
+        },
+        {
+          "first": "Serge",
+          "middle": [
+            "J"
+          ],
+          "last": "Belongie",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Hays",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Perona",
+          "suffix": ""
+        },
+        {
+          "first": "Deva",
+          "middle": [],
+          "last": "Ramanan",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "Lawrence"
+          ],
+          "last": "Zitnick",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Swin transformer: Hierarchical vision transformer using shifted windows",
+      "authors": [
+        {
+          "first": "Ze",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yutong",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Yue",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Yixuan",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Baining",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Video swin transformer",
+      "authors": [
+        {
+          "first": "Ze",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Ning",
+          "suffix": ""
+        },
+        {
+          "first": "Yue",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Yixuan",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "A convnet for the 2020s",
+      "authors": [
+        {
+          "first": "Zhuang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Hanzi",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Chao-Yuan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Feichtenhofer",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Darrell",
+          "suffix": ""
+        },
+        {
+          "first": "Saining",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Sgdr: Stochastic gradient descent with warm restarts",
+      "authors": [
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Loshchilov",
+          "suffix": ""
+        },
+        {
+          "first": "Frank",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Decoupled weight decay regularization",
+      "authors": [
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Loshchilov",
+          "suffix": ""
+        },
+        {
+          "first": "Frank",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Image as set of points",
+      "authors": [
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Yuqian",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Huan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Can",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Chang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yun",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICLR. OpenReview.net"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Vision: A Computational Investigation into the Human Representation and Processing of Visual Information",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Marr",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Recurrent models of visual attention",
+      "authors": [
+        {
+          "first": "Volodymyr",
+          "middle": [],
+          "last": "Mnih",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Heess",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Graves",
+          "suffix": ""
+        },
+        {
+          "first": "Koray",
+          "middle": [],
+          "last": "Kavukcuoglu",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "NIPS"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "A comparative study of texture measures with classification based on featured distributions",
+      "authors": [
+        {
+          "first": "Timo",
+          "middle": [],
+          "last": "Ojala",
+          "suffix": ""
+        },
+        {
+          "first": "Matti",
+          "middle": [],
+          "last": "Pietikäinen",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Harwood",
+          "suffix": ""
+        }
+      ],
+      "year": 1996,
+      "venue": "Pattern Recognit"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Acceleration of stochastic approximation by averaging",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [
+            "T"
+          ],
+          "last": "Polyak",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "B"
+          ],
+          "last": "Juditsky",
+          "suffix": ""
+        }
+      ],
+      "year": 1992,
+      "venue": "SIAM Journal on Control and Optimization"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Learning spatio-temporal representation with pseudo-3d residual networks",
+      "authors": [
+        {
+          "first": "Zhaofan",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        },
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Mei",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Designing network design spaces",
+      "authors": [
+        {
+          "first": "Ilija",
+          "middle": [],
+          "last": "Radosavovic",
+          "suffix": ""
+        },
+        {
+          "first": "Raj",
+          "middle": [
+            "Prateek"
+          ],
+          "last": "Kosaraju",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [
+            "B"
+          ],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "On learning where to look",
+      "authors": [
+        {
+          "first": "Aurelio",
+          "middle": [],
+          "last": "Marc",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ranzato",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Dynamicvit: Efficient vision transformers with dynamic token sparsification",
+      "authors": [
+        {
+          "first": "Yongming",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "Wenliang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Benlin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiwen",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Cho-Jui",
+          "middle": [],
+          "last": "Hsieh",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Faster R-CNN: towards real-time object detection with region proposal networks",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "Shaoqing Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [
+            "B"
+          ],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "NIPS"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "The dynamic representation of scenes",
+      "authors": [
+        {
+          "first": "Ronald",
+          "middle": [
+            "A"
+          ],
+          "last": "Rensink",
+          "suffix": ""
+        }
+      ],
+      "year": 2000,
+      "venue": "Visual Cognition"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Imagenet-21k pretraining for the masses",
+      "authors": [
+        {
+          "first": "Tal",
+          "middle": [],
+          "last": "Ridnik",
+          "suffix": ""
+        },
+        {
+          "first": "Emanuel",
+          "middle": [],
+          "last": "Ben-Baruch",
+          "suffix": ""
+        },
+        {
+          "first": "Asaf",
+          "middle": [],
+          "last": "Noy",
+          "suffix": ""
+        },
+        {
+          "first": "Lihi",
+          "middle": [],
+          "last": "Zelnik-Manor",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Remarks on some nonparametric estimates of a density function",
+      "authors": [
+        {
+          "first": "Murray",
+          "middle": [],
+          "last": "Rosenblatt",
+          "suffix": ""
+        }
+      ],
+      "year": 1956,
+      "venue": "Annals of Mathematical Statistics"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Sparse r-cnn: End-to-end object detection with learnable proposals",
+      "authors": [
+        {
+          "first": "Peize",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Rufeng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Chenfeng",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Zhan",
+          "suffix": ""
+        },
+        {
+          "first": "Masayoshi",
+          "middle": [],
+          "last": "Tomizuka",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zehuan",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Changhu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Going deeper with convolutions",
+      "authors": [
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Szegedy",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yangqing",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Pierre",
+          "middle": [],
+          "last": "Sermanet",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [
+            "E"
+          ],
+          "last": "Reed",
+          "suffix": ""
+        },
+        {
+          "first": "Dragomir",
+          "middle": [],
+          "last": "Anguelov",
+          "suffix": ""
+        },
+        {
+          "first": "Dumitru",
+          "middle": [],
+          "last": "Erhan",
+          "suffix": ""
+        },
+        {
+          "first": "Vincent",
+          "middle": [],
+          "last": "Vanhoucke",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Rabinovich",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Rethinking the inception architecture for computer vision",
+      "authors": [
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Szegedy",
+          "suffix": ""
+        },
+        {
+          "first": "Vincent",
+          "middle": [],
+          "last": "Vanhoucke",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Ioffe",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathon",
+          "middle": [],
+          "last": "Shlens",
+          "suffix": ""
+        },
+        {
+          "first": "Zbigniew",
+          "middle": [],
+          "last": "Wojna",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Efficientnet: Rethinking model scaling for convolutional neural networks",
+      "authors": [
+        {
+          "first": "Mingxing",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Quoc",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Multi-glimpse network: A robust and efficient classification architecture based on recurrent downsampled attention",
+      "authors": [
+        {
+          "first": "Runpei",
+          "middle": [],
+          "last": "Sia Huat Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Kaisheng",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "BMVC"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Training data-efficient image transformers & distillation through attention",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Matthieu",
+          "middle": [],
+          "last": "Cord",
+          "suffix": ""
+        },
+        {
+          "first": "Matthijs",
+          "middle": [],
+          "last": "Douze",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Sablayrolles",
+          "suffix": ""
+        },
+        {
+          "first": "Hervé",
+          "middle": [],
+          "last": "Jégou",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Proceedings of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Learning spatiotemporal features with 3d convolutional networks",
+      "authors": [
+        {
+          "first": "Du",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "Lubomir",
+          "middle": [],
+          "last": "Bourdev",
+          "suffix": ""
+        },
+        {
+          "first": "Rob",
+          "middle": [],
+          "last": "Fergus",
+          "suffix": ""
+        },
+        {
+          "first": "Lorenzo",
+          "middle": [],
+          "last": "Torresani",
+          "suffix": ""
+        },
+        {
+          "first": "Manohar",
+          "middle": [],
+          "last": "Paluri",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "A closer look at spatiotemporal convolutions for action recognition",
+      "authors": [
+        {
+          "first": "Du",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "Heng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Lorenzo",
+          "middle": [],
+          "last": "Torresani",
+          "suffix": ""
+        },
+        {
+          "first": "Jamie",
+          "middle": [],
+          "last": "Ray",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        },
+        {
+          "first": "Manohar",
+          "middle": [],
+          "last": "Paluri",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Maxvit: Multi-axis vision transformer",
+      "authors": [
+        {
+          "first": "Zhengzhong",
+          "middle": [],
+          "last": "Tu",
+          "suffix": ""
+        },
+        {
+          "first": "Hossein",
+          "middle": [],
+          "last": "Talebi",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Peyman",
+          "middle": [],
+          "last": "Milanfar",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [
+            "C"
+          ],
+          "last": "Bovik",
+          "suffix": ""
+        },
+        {
+          "first": "Yinxiao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Niki",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Llion",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Lukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Illia",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "NIPS"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Temporal segment networks for action recognition in videos",
+      "authors": [
+        {
+          "first": "Limin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanjun",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Zhe",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        },
+        {
+          "first": "Dahua",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoou",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Luc",
+          "middle": [],
+          "last": "Van Gool",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Pyramid vision transformer: A versatile backbone for dense prediction without convolutions",
+      "authors": [
+        {
+          "first": "Wenhai",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Enze",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Deng-Ping",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Kaitao",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Ding",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Ping",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Ling",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Non-local neural networks",
+      "authors": [
+        {
+          "first": "Xiaolong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "Abhinav",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Resnet strikes back: An improved training procedure in timm",
+      "authors": [
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Wightman",
+          "suffix": ""
+        },
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Hervé",
+          "middle": [],
+          "last": "Jégou",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Group normalization",
+      "authors": [
+        {
+          "first": "Yuxin",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Int. J. Comput. Vis"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Vision transformer with deformable attention",
+      "authors": [
+        {
+          "first": "Zhuofan",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "Xuran",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "Shiji",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [
+            "Erran"
+          ],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Gao",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Unified perceptual parsing for scene understanding",
+      "authors": [
+        {
+          "first": "Tete",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Yingcheng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Bolei",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Yuning",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "ECCV (5)"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Early convolutions help transformers see better",
+      "authors": [
+        {
+          "first": "Tete",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Mannat",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Mintun",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Darrell",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [
+            "B"
+          ],
+          "last": "Girshick",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Rethinking spatiotemporal feature learning: Speed-accuracy trade-offs in video classification",
+      "authors": [
+        {
+          "first": "Saining",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuowen",
+          "middle": [],
+          "last": "Tu",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Murphy",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "A-vit: Adaptive tokens for efficient vision transformer",
+      "authors": [
+        {
+          "first": "Arash",
+          "middle": [],
+          "last": "Hongxu Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Jose",
+          "middle": [
+            "M"
+          ],
+          "last": "Vahdat",
+          "suffix": ""
+        },
+        {
+          "first": "Arun",
+          "middle": [],
+          "last": "Alvarez",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Mallya",
+          "suffix": ""
+        },
+        {
+          "first": "Pavlo",
+          "middle": [],
+          "last": "Kautz",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Molchanov",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Tokens-to-token vit: Training vision transformers from scratch on imagenet",
+      "authors": [
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Yunpeng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Weihao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Yujun",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Francis",
+          "middle": [
+            "E H"
+          ],
+          "last": "Tay",
+          "suffix": ""
+        },
+        {
+          "first": "Jiashi",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Shuicheng",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Vision transformer with progressive sampling",
+      "authors": [
+        {
+          "first": "Xiaoyu",
+          "middle": [],
+          "last": "Yue",
+          "suffix": ""
+        },
+        {
+          "first": "Shuyang",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Zhanghui",
+          "middle": [],
+          "last": "Kuang",
+          "suffix": ""
+        },
+        {
+          "first": "Meng",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "S"
+          ],
+          "last": "Philip",
+          "suffix": ""
+        },
+        {
+          "first": "Wayne",
+          "middle": [],
+          "last": "Torr",
+          "suffix": ""
+        },
+        {
+          "first": "Dahua",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "Multi-scale vision longformer: A new vision transformer for high-resolution image encoding",
+      "authors": [
+        {
+          "first": "Pengchuan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiyang",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Jianwei",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jianfeng",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF72",
+      "title": "Semantic understanding of scenes through the ade20k dataset",
+      "authors": [
+        {
+          "first": "Bolei",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Hang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Xavier",
+          "middle": [],
+          "last": "Puig",
+          "suffix": ""
+        },
+        {
+          "first": "Tete",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Sanja",
+          "middle": [],
+          "last": "Fidler",
+          "suffix": ""
+        },
+        {
+          "first": "Adela",
+          "middle": [],
+          "last": "Barriuso",
+          "suffix": ""
+        },
+        {
+          "first": "Antonio",
+          "middle": [],
+          "last": "Torralba",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Journal of Computer Vision"
+    },
+    {
+      "id": "BIBREF73",
+      "title": "Deformable detr: Deformable transformers for end-to-end object detection",
+      "authors": [
+        {
+          "first": "Xizhou",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Weijie",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Lewei",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaogang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jifeng",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    }
+  ]
+}

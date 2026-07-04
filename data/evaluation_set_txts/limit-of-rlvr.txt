@@ -1,0 +1,95 @@
+# 1 Introduction
+
+The development of reasoning-centric large language models (LLMs), such as OpenAI-o1 [1] , DeepSeek-R1 [2] , and Kimi-1.5 [3] , has significantly advanced the frontier of LLM capabilities, particularly in solving complex logical tasks involving mathematics and programming. In contrast to traditional instruction-tuned approaches that rely on human-curated annotations [4, 5] , the key driver
+More Efficient Sampling 0 0 0 0 0 +1 0 +1 Base Model 0 +1 0 +1 RLVR Model 0 0 0 0 Reduced Scope of Reasoning Capacity +1 0 0 0 Problem A Problem B +1 0 0 0 1 2 4 8 16 32 64 128256 Number of Samples k 0.1 0.2 0.3 0.4 0.5 0.6 0.7 Coverage (pass@k)
+Omni-MATH-Train Qwen2.5-7B GRPO-step150 GRPO-step300 GRPO-step450
+
+# 2 Preliminaries
+
+In this section, we first outline the fundamentals of RLVR, then introduce the pass@k metric to evaluate reasoning boundaries, and explain why it is preferred over alternatives like best-of-N .
+
+## 2. Set up the equations:
+
+-The sum of the two numbers formed by reading left to right is 999: 100𝑎 + 10𝑏 + 𝑐 + 100𝑑 + 10𝑒 + 𝑓 = 999 -The sum of the three numbers formed by reading top to bottom is 99:
+10𝑎 + 𝑑 + 10𝑏 + 𝑒 + 10𝑐 + 𝑓 = 99
+
+## 2.1 Reinforcement Learning with Verifiable Rewards
+
+Verifiable Rewards. Let π θ be an LLM with parameters θ that generates a token sequence y = (y 1 , . . . , y T ) conditioned on a natural-language prompt x. A deterministic verifier V returns a binary reward: r = V(x, y) ∈ {0, 1}, where r = 1 if and only if the model's final answer is exactly correct. A format reward may also be added to encourage the model to explicitly separate the reasoning process from the final answer. The goal of RL is to learn a policy to maximize the expected reward:
+J(θ) = E x∼D E y∼π θ (•|x) [ r ]
+, where D is the distribution of prompts.
+
+## 2.2 Metrics for LLM Reasoning Capacity Boundary
+
+Pass@k Metrics. Accurately measuring the reasoning ability boundary of base and RL models is challenging, as methods like greedy decoding or the average of nucleus samplings [9] only reflect average-case performance. To accurately measure the reasoning ability boundary, we extend the commonly used pass@k metric from code generation [14] to all tasks with verifiable rewards. Given a problem, we sample k outputs from the model. The pass@k value for this question is 1 if at least one of the k samples passes verification; otherwise, it is 0. The average pass@k value over the dataset reflects the proportion of problems in the dataset that the model can solve within k trials, providing a rigorous evaluation of the reasoning capacity coverage of LLMs. We adopt an unbiased, low-variance estimator for computing to calculate pass@k, as detailed in Section A.2.
+Comparison with Best-of-N and Majority Voting. Best-of-N [15] and majority voting are practical methods for selecting correct answers, but they may overlook a model's full reasoning potential. In contrast, we use pass@k not to assess practical utility but to investigate the boundaries of reasoning capacity. If a model produces a correct solution in any of the k samples, we treat the problem as within its potential scope. Thus, if RL enhances reasoning, the RL-trained model should succeed in more such problems than the base model. Methods like Best-of-N or majority voting may miss these successes if the correct answer is not selected by the verifier or voting.
+Random Guessing Issue. For coding tasks, where a compiler and predefined unit test cases are used as verifiers, the pass@k value can accurately reflect whether the model can solve the problem. In mathematics, the issue of "guessing" can become pronounced as k increases, where a model may generate an incorrect CoT but still accidentally arrive at the correct answer. To address this, we manually check the correctness of CoT for a subset of model outputs as detailed in Section 3.1. By combining reuslts on math with manually checking and coding, we rigorously evaluate the scope of LLM's reasoning capacity. Another caveat is that, with an astronomically large k, even uniform sampling over the token dictionary would stumble upon the correct reasoning path-though this is infeasible within today's time and compute budgets. Crucially, we find that the base model already produces correct outputs at realistic values (k = 128 or 1024), well within practical resource limits.
+
+# 3 RLVR's Effect on Reasoning Capacity Boundary
+
+With the evaluation metrics for reasoning boundaries established, we now conduct a comprehensive evaluation of the base and RLVR models through extensive experiments. Our analysis is organized by task category, covering three representative domains: mathematics, code generation, and visual reasoning. The overall experimental setup is summarized in Table 1 .
+Evaluation Protocol. For sampling procedures for both base and RLVR models, we use a temperature of 0.6 and a top-p value of 0.95, allowing a maximum generation of 16,384 tokens. We also show the effect of different temperature settings in Figure 17 . For evaluation of the base model, a common practice is to include few-shot examples in the prompt to guide the output [5, 16, 17] . However, to ensure a fair and unbiased comparison, we deliberately avoid using few-shot prompts for base models, eliminating any potential confounding effects on reasoning that might be introduced by in-context examples. For evaluating both the base and RLVR models, we use the same zero-shot prompt as in RLVR training, or the default prompt provided by the benchmark, ensuring a consistent setup across both models. Interestingly, although base models often produce unformatted or nonsensical responses without few-shot guidance, we observe that with sufficient sampling, they are still capable of generating correctly formatted outputs and successfully solving complex problems. Prompt templates for training and evaluation are provided in Section E.
+
+## 3. Simplify the equations:
+
+-From the first equation: 100𝑎 + 10𝑏 + 𝑐 + 100𝑑 + 10𝑒 + 𝑓 = 999 This implies: 𝑎 + 𝑑 = 9, 𝑏 + 𝑒 = 9, 𝑐 + 𝑓 = 9 -From the second equation:
+10𝑎 + 𝑑 + 10𝑏 + 𝑒 + 10𝑐 + 𝑓 = 99 This is consistent with the previous simplification since: 10(𝑎 + 𝑏 + 𝑐) + (𝑑 + 𝑒 + 𝑓) = 99 Given 𝑎 + 𝑑 = 9, 𝑏 + 𝑒 = 9, and 𝑐 + 𝑓 = 9, it follows that: 10(𝑎 + 𝑏 + 𝑐) + (9 -𝑎) + (9 -𝑏) + (9 -𝑐) = 99 Simplifying, we get: 10(𝑎 + 𝑏 + 𝑐) + 27 -(𝑎 + 𝑏 + 𝑐) = 99 9(𝑎 + 𝑏 + 𝑐) + 27 = 99 9(𝑎 + 𝑏 + 𝑐) = 72 𝑎 + 𝑏 + 𝑐 = 8 Since 𝑎 + 𝑑 = 9, 𝑏 + 𝑒 = 9, and 𝑐 + 𝑓 = 9, and 𝑎 + 𝑏 + 𝑐 = 8, it follows that: 𝑑 = 9 -𝑎, 𝑒 = 9 -𝑏, 𝑓 = 9 -𝑐
+
+## 3.1 RLVR for Mathematical Reasoning
+
+Models and Benchmarks. In math problems, models are required to generate a reasoning process (i.e., CoT) along with the final answer. To ensure the robustness of conclusions, we experiment with multiple LLM families, primarily Qwen2.5 (7B/14B/32B base variants) [16] and additionally LLaMA-3.1-8B [5] . We adopt RLVR models released by SimpleRLZoo [18] , which train zero-RL models using GRPO on GSM8K and the MATH training set, with correctness reward only, excluding any format-based reward. We compare the pass@k curves of base and zero-RL models on benchmarks of varying difficulty: GSM8K [15] , MATH500 [19] , Minerva [20] , Olympiad [21] , AIME24, and AMC23. Additionally, we include the RLVR model Oat-Zero-7B and DAPO-32B [22, 23] . These two models are characterized by strong performance on the challenging AIME24 benchmark.
+The Effect of RLVR: Increased Likelihood of Correct Samples, Decreased Coverage of Solvable Problems. As shown in Figure 2 , we consistently observe a contrasting trend between small and large k values. When k is small (e.g., k = 1, equivalent to average-case accuracy), RL-trained models outperform their base counterparts. This aligns with the common observation that RL improves performance, suggesting that RLVR makes models significantly more likely to sample correct responses. However, as k increases, with steeper curves, base models consistently catch up to and eventually surpass RL-trained models across all benchmarks, indicating their broader coverage of solvable problems. For example, on the Minerva benchmark with a 32B-sized model, the base model outperforms the RL-trained model by approximately 9% at k = 128, implying that it can solve around 9% more problems in the validation set.
+We further examine RL models trained with Oat-Zero and DAPO. As shown in Figure 11 , although the RL model initially demonstrates a strong performance, nearly 30% higher than the base model, it is eventually surpassed by the base model. Based on these results, we conclude that RLVR increases the likelihood of sampling correct responses at low k, but narrows the model's overall coverage. We further analyze the root cause of this phenomenon in Section 4.1.
+
+## 3.3 RLVR for Visual Reasoning
+
+Models and Benchmarks. In visual reasoning, models must jointly interpret visual and textual inputs to solve complex reasoning problems. This has gained significant attention in the multimodal community since the rise of LLM reasoning [29] [30] [31] . For our experiments, we select math within visual contexts as a representative task. We use the EasyR1 framework [31] to train Qwen2.5-VL-7B [32] on Geometry3K [33] , and evaluate its visual reasoning capabilities on filtered MathVista-TestMini [34] and MathVision-TestMini [35] , where multiple-choice questions are removed.
+The Effect of RLVR. As shown in Figure 4 (right), the effects of RLVR on visual reasoning are highly consistent with those observed in math and coding benchmarks. This suggests that the original model has broader coverage of solvable questions even in multimodal tasks.
+Validity of Chain-of-Thought. Similarly, we manually inspect a subset of the most challenging problems, i.e.those with an average accuracy below 5%. We find that for both the original and RL models, 7 out of 8 problems have at least one correct CoT. These results support the validity of CoTs.
+
+# 4 Deep Analysis
+
+In this section, we conduct a deeper analysis of the effects of current RLVR training. We also highlight the distinct characteristics of distillation in comparison to RLVR. In addition, we design controlled experiments to examine the impact of different RL algorithms and design choices.
+
+## 4. Determine the possible values:
+
+-𝑎, 𝑏, 𝑐 must be digits (0-9) such that 𝑎 + 𝑏 + 𝑐 = 8.
+-For each valid combination of 𝑎, 𝑏, 𝑐, 𝑑, 𝑒, 𝑓 are uniquely determined as 𝑑 = 9 -𝑎, 𝑒 = 9 -𝑏, 𝑓 = 9 -𝑐.
+
+## 4.1 Reasoning Paths Already Present in Base Models
+
+0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 0.0 0.2 0.4 0.6 0.8 0.0 0.2 0.4 0.6 0.8 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 0.0 0.2 0.4 0.6 0.8 1.0 0 .0 ( 0 .0 ,0 .1 ] ( 0 .1 ,0 .2 ] ( 0 .2 ,0 .3 ] ( 0 .3 ,0 .4 ] ( 0 .4 ,0 .5 ] ( 0 .5 ,0 .6 ] ( 0 .6 ,0 .7 ] ( 0 .7 ,0 .8 ] ( 0 .8 ,0 .9 ] ( 0 .9 ,1 .0 ) 1 .0 Accuracy Interval 0 20 40 60 80 100 120 Frequency Base RL 0.0 0.2 0.4 0.6 0.8 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 1.0 0.0 0.2 0.4 0.6 0.8 0.0 0.2 0.4 0.6 0.8 1.0
+
+## 4.3 Effects of Different RL Algorithms
+
+As discussed previously, the primary effect of RL is to enhance sampling efficiency rather than to expand a model's reasoning capacity. To quantify this, we propose the Sampling Efficiency Gap (∆ SE ), defined as the difference between the RL-trained model's pass@1 and the base model's pass@k (we use k = 256 in our evaluation). Lower ∆ SE is better. Here we conduct clean experiments to study the effect of different RL algorithms in enhancing sampling efficiency.
+Experiment Setup. We re-implement popular RL algorithms using the VeRL framework [36] for fair comparison, including PPO [11] , GRPO [37] , Reinforce++ [38] , RLOO [39] , ReMax [40] , and DAPO [23] . Following DAPO [23] and Oat-Zero [22] , we remove the KL term to avoid constraining model learning. During training, we use the AdamW optimizer [41] with a constant learning rate of 10 -6 . For rollout, we employ a prompt batch size of 256 and generate 8 responses per prompt. The maximum rollout length is set to 8,192 tokens, and the sampling temperature is set as 1.0. We use a PPO mini-batch size of 256.
+To assess in-domain and out-of-domain generalization under RLVR, we split Omni-MATH-Rule, a subset of Omni-MATH [42] containing verifiable problems, into a training set (2,000 samples) and an in-domain test set (821 samples), and use MATH500 as the out-of-domain benchmark. 3 and Table 4 .
+Results. As shown in Figure 8 (top), although different RL algorithms exhibit slight variations in both pass@1 and pass@256, these differences are not fundamental. Different RL algorithms yield slightly different ∆ SE values (i.e., ranging from GRPO's 43.9 to RLOO's best 42.6 on the in-domain test set). Furthermore, we observe that ∆ SE remains consistently above 40 points across different algorithms, highlighting that existing RL methods are still far from achieving optimal sampling efficiency. This suggests that novel RL algorithms or entirely new paradigms may be necessary to approach the upper bound. Additional observations can be found at Section D.5.
+
+## 4.4 Effects of RL Training
+
+Asymptotic Effects. Based on the setup in Section 4.3, we investigate the effect of the training steps on the asymptotic performance of the model. As shown in Figure 1 (right), as RL training progresses, pass@1 on the training set consistently improves from 26.1 to 42.5. However, as RLVR training progresses, pass@256 progressively decreases, indicating a reduced reasoning boundary.
+
+## 4.5 Effects of Entropy
+
+As RL training progresses, the model's output entropy typically decreases [23] , which may contribute to a reduced reasoning boundary due to less diverse output. To investigate this factor, we increase the generation temperature of the RLVR-trained model to match the output entropy of the base model at T = 0.6. As shown in Figure 18 , although the RLVR model performs slightly better pass@k at higher temperatures compared to its own performance at T = 0.6, it still underperforms the base model across pass@k. This suggests that while reduced entropy contributes to the narrowing of the reasoning boundary, it alone does not fully account for the reduction.
+
+## 4.6 Effects of Model Size Scaling
+
+Scaling plays a central role in the capabilities of contemporary LLMs. It remains an important question whether the conclusions drawn continue to hold as model size increases. For many large models, isolating the effect of RLVR is not feasible. For example, in the case of GPT-o1, the base model is not publicly accessible. Qwen3-235B [43] is trained through multiple stages, including RLVR and long-context CoT supervised fine-tuning, which makes it impossible to disentangle the impact of RLVR alone. For Deepseek-R1-Zero, the absence of a publicly hosted API forced us to selfhost the model, but throughput was limited to around 50 tokens per second at a maximum sequence length of 32k, rendering pass@k evaluation currently impractical. As a more tractable alternative, we selected the Magistral-Medium-2506 API to conduct a preliminary set of experiments. This model is trained using pure RL, with Mistral-Medium-3-2505 as the starting model [44] . Although the model size is not disclosed, Magistral-Medium performs comparably to Deepseek-R1 and is positioned near the frontier in terms of reasoning capability. We queried the models using a maximum context length of 40k as the original paper does. Once again, we observed that RLVR provides significant gains at low k, but little or no improvement at higher k. Specifically, at k = 1, the RLVRenhanced model solves approximately 7 more problems on AIME24 and 8 more on AIME25 compared to its base version. However, as k increases, the performance gap steadily narrows. These observations suggest that our conclusion continues to hold even for current, highly capable, nearfrontier reasoning models. Whether this trend persists as more compute, such as pre-training scale budgets, is dedicated to RL training remains a critical question for the future of LLM reasoning.
+
+# 5 Related Work
+
+We summarize key related works on the analysis of RLVR here and provide a more comprehensive discussion in Appendix B. While recent RLVR methods have achieved impressive empirical results [2, 6] , their fundamental impact on reasoning remains underexplored. Several studies [45] [46] [47] suggest that reflective behaviors in RLVR models originate from the base models rather than being learned through reinforcement learning. Dang et al. [48] observed a decline in pass@k performance post-RLVR training, but their analysis was limited in scope. More importantly, they did not explore the relationship between the base model and the RL model. Deepseek-Math [37] also observed similar trends, but their study was limited to a single instruction-tuned model and two math benchmarks. In contrast, our work systematically investigates a wide range of models, tasks, and RL algorithms to accurately assess the effects of current RLVR methods and models. We further provide in-depth analyses, including accuracy distributions, reasoning coverage, perplexity trends, and comparison against distilled models, offering a comprehensive understanding of RLVR's capabilities and limitations.
+
+## 5. Count the combinations:
+
+-We need to count the number of non-negative integer solutions to 𝑎 + 𝑏 + 𝑐 = 8 with 0 ≤ 𝑎, 𝑏, 𝑐 ≤ 9.
+-This is a classic "stars and bars" problem with an additional constraint. The number of solutions is given by the binomial coefficient:
+( 8 + 3 -1 3 -1 ) = ( 10 2 ) = 45
+Therefore, the number of ways to place the digits in the grid is 45 .
+
+# 6 Conclusion and Discussion
+
+RLVR is widely regarded as a promising approach to enable LLMs to continuously self-improve and acquire novel reasoning capabilities. In this paper, we systematically investigate the effect of current RLVR methods on the reasoning capacity boundaries of LLMs. Surprisingly, our findings reveal that current RLVR does not elicit fundamentally new reasoning patterns; instead, the reasoning capabilities of RLVR-trained models remain bounded by those of their base models. These results indicate that current RLVR methods have not fully realized the potential of reinforcement learning to elicit novel reasoning abilities in LLMs through exploration and exploitation. This limitation may stem from the lack of effective exploration strategies in the vast language space or the absence of multi-turn agent-environment interactions needed to generate novel experience. We provide a more detailed discussion of the possible causes of this gap and promising future directions in Section C.

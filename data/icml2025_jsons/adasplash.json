@@ -1,0 +1,2430 @@
+{
+  "paper_id": "adasplash",
+  "title": "ADASPLASH: Adaptive Sparse Flash Attention",
+  "authors": [
+    {
+      "first": "Nuno",
+      "middle": [],
+      "last": "Gonc ¸alves",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Universidade de Lisboa",
+        "location": {
+          "settlement": "Portu- gal"
+        }
+      }
+    },
+    {
+      "first": "Marcos",
+      "middle": [],
+      "last": "Treviso",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Instituto de Telecomunicac ¸ões",
+        "location": {
+          "settlement": "Lisbon",
+          "country": "Portugal"
+        }
+      }
+    },
+    {
+      "first": "André",
+      "middle": [
+        "F T"
+      ],
+      "last": "Martins",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Universidade de Lisboa",
+        "location": {
+          "settlement": "Portu- gal"
+        }
+      }
+    }
+  ],
+  "abstract": "The computational cost of softmax-based attention in transformers limits their applicability to long-context tasks. Adaptive sparsity, of which α-entmax attention is an example, offers a flexible data-dependent alternative, but existing implementations are inefficient and do not leverage the sparsity to obtain runtime and memory gains. In this work, we propose ADASPLASH, which combines the efficiency of GPU-optimized algorithms with the sparsity benefits of α-entmax. We first introduce a hybrid Halley-bisection algorithm, resulting in a 7-fold reduction in the number of iterations needed to compute the α-entmax transformation. Then, we implement custom Triton kernels to efficiently handle adaptive sparsity. Experiments with RoBERTa and ModernBERT for text classification and single-vector retrieval, along with GPT-2 for language modeling, show that our method achieves substantial improvements in runtime and memory efficiency compared to existing α-entmax implementations. It approachesand in some cases surpasses-the efficiency of highly optimized softmax implementations like FlashAttention-2, enabling long-context training while maintaining strong task performance.",
+  "body": {
+    "4.1._Efficiency_Benchmark": "We compare the efficiency of ADASPLASH against FlashAttention-2 and naive implementations of α-entmax.\nFor a fair comparison, we also include a variant of FlashAttention-2 implemented in Triton that follows closely our kernel implementation of ADASPLASH. We set the number of iterations of ADASPLASH to 3 and Bisection to 10. As input, we generate random tensors from a Gaussian distribution (µ = 0), simulating attention scores with a high level of sparsity by setting the Gaussian variance to σ 2 = 6 of query vectors. Sequence lengths range from 1k to 64k, with a fixed head size of d = 64.\nRuntime. We show the average training step time for each method in Figure 3 . ADASPLASH demonstrates superior scalability, efficiently handling sequences up to 64k, unlike the Bisection method implemented in Torch, which runs out of memory beyond 4k context length. We also note that, as context length increases, the amount of block sparsity naturally increases as well, leading to an advantage for our method over both implementations of FlashAttention-2.",
+    "4.2._Performance_on_Real_Tasks": "Encoder-only models, such as RoBERTa (Liu et al., 2019) and ModernBERT (Warner et al., 2024) , exhibit higher attention sparsity than decoder-only models, making them well-suited for adaptive sparse attention mechanisms like ADASPLASH. Following ModernBERT's evaluation setup, we opt to evaluate these models on standard NLP tasks, such as text classification, natural language inference, textual similarity, and information retrieval. Moreover, following FlashAttention's evaluation setup (Dao et al., 2022) , we also benchmark ADASPLASH with GPT-2, a decoder-only ",
+    "2.4._Sparse_Attention": "The original softmax-based attention is dense, i.e., it puts some probability mass on all tokens-not only a computational disadvantage, but also making interpretation and generalization harder (Voita et al., 2019; Treviso et al., 2022; Veličković et al., 2025 ). An alternative to softmax is the α-entmax transformation (Peters et al., 2019) , which is differentiable and leads to sparse outputs:\nEQUATION\nwhere [•] + is the ReLU function, and τ ∈ R is a normalizing constant to ensure the output is a valid probability distribution. Importantly, entries with score s i ≤ τ α-1 get exactly zero probability. In the limit α → 1, α-entmax recovers the softmax function, while for any value of α > 1 this transformation returns increasingly sparser probability vectors. When α = 2, we recover the sparsemax transformation (Martins & Astudillo, 2016) . However, in contrast to fixed sparse patterns, such as windowed sparse attention (Child et al., 2019; Beltagy et al., 2020) and block-sparse variants (Zaheer et al., 2020b; Dao et al., 2022) , α-entmax's sparsity patterns are dynamic and hence difficult to exploit in order to reduce the quadratic burden of self-attention because we still need to materialize S = QK ⊤ before applying the transformation.\nIn the next section ( §3), we outline ADASPLASH, our new method for computing α-entmax attention, along with a novel custom Triton kernel (Tillet et al., 2019) that enables efficient training of transformers for extremely long context lengths. As shown in §4, our implementation maintains competitiveness with state-of-the-art algorithms such as FlashAttention by leveraging the sparsity given by α-entmax, effectively exploiting the advantages of sparse attention at scale.",
+    "3.1._α-entmax_Computation": "In order to compute Equation 2 for a given s ∈ R n , we need to find the threshold τ ∈ R such that the resulting output sums to 1. Mathematically, this is equivalent to finding the root of the following equation:\nf (τ ) = i [(α -1)s i -τ ] 1/(α-1) + -1.\n(3)\nExact algorithms for α ∈ {1.5, 2}. In particular, for α = 2, the computation is reduced to an Euclidean projection onto the probability simplex, for which efficient algorithms have been extensively studied (Held et al., 1974; Duchi et al., 2008; Condat, 2016) . Similarly, for α = 1.5, Peters et al. (2019) introduced an exact sort-based algorithm. However, these methods either require complex data structures that are not efficiently handled in GPUs, or sorting-based algorithms, which require the materialization of the entire input.\nBisection algorithm for α > 1. For a general α, Blondel et al. (2019) introduced a bisection update rule to approximate τ by iteratively refining its lower (τ lo ) and higher (τ hi ) bounds:\nEQUATION\nobtaining τ = 1 2 (τ lo + τ hi ) after the last iteration. While the bisection algorithm is simple and effective, it converges at a linear rate (Kaufman & Lenker, 1986) , meaning the absolute error decreases by approximately half at each iter-Algorithm 1 Halley-bisection algorithm for α-entmax.\n1: Input: logits s ∈ R n , param. α ∈ R, iterations T 2: Define f (τ ) := i [s\nEQUATION\nHalley's Update) 12: else 13: τ ← 1 2 (τ lo + τ hi ) ▷ (Bisection Update) 14: end if 15: until T iterations are completed 16: Output: [s -τ 1] 1/(α-1) + ation. Achieving high precision often requires many iterations, resulting in frequent memory accesses. As a result, in memory-bound scenarios where the time taken is mostly determined by the number of memory accesses-such as in attention-the number of iterations can significantly impact the runtime cost.\nHalley-bisection algorithm. In order to obtain a faster runtime, we propose a hybrid algorithm for solving Equation 3 for any α > 1 that combines the convergence guarantee of bisection with the faster convergence of Halley's method (Scavo & Thoo, 1995) . As we show in §4.1, this approach achieves significant wall-clock speed-ups while requiring fewer iterations to attain the same precision.\nThe function defined in Equation 2 enjoys a cheap computation of its derivatives. Thus, methods that incorporate second-order information, such as Halley's method, can be leveraged to improve the approximation of τ at each iteration. Halley's method, which uses both the first and second derivatives, updates the solution using the following rule:\nEQUATION\nwhere the derivatives are given as follows:\nEQUATION\nf ′′ (τ ) = 2 -α (α -1) 2 i [(α -1)s i -τ ] 1/(α-1)-2 + . (7)\nWhile Halley's method offers faster convergence under ideal conditions, it does not always converge, particularly when the initial guess is far from the solution. To ensure convergence, we introduce a fail-safe mechanism that integrates the convergence guarantee of bisection: whenever Halley's method produces an update that moves the solution out of the bisection bounds, the algorithm reverts to a bisection update B f (τ ). This ensures that the algorithm converges, even in the worst cases, while leveraging the cubic convergence of Halley's method wherever possible. We outline our hybrid algorithm in Algorithm 1.",
+    "3._ADASPLASH": "We start by revisiting the computation of α-entmax for general values of α in §3.1, and proposing a new algorithm that has a fast empirical convergence. We design an efficient Triton kernel in §3.2, dubbed ADASPLASH, that effectively leverages adaptive sparsity patterns in both the forward and backward passes of α-entmax in order to minimize runtime.\n(2) i for all i, as defined in Equation 25, which takes O (d) extra memory.\n4. Compute dQ i for all i according to Equation 29, which takes O (d) extra memory.\n5. Compute dK j for all j according to Equation 30, which takes O (d) extra memory.\nWe note that the only extra memory requirement compared to FlashAttention is in having to additionally compute and storing O (2) ∈ R n×d . When using block masking, we also need O (T r × T c ) extra memory to store the binary mask M . However, we recall that this memory can be shared across attention layers, as it is merely a temporary matrix used to compute the pointer-increment tables.",
+    "2._Gradient_of_P_and_S": "The next step involves computing dP and dS. From O = P V , we have:\nEQUATION\nNext, let us recall the Jacobian of the α-entmax mapping (Peters et al., 2019) . Defining p = α-entmax(s), the Jacobian is:\nEQUATION\nEffectively, we can only iterate through the blocks that will result in P ij ̸ = 0. As in FlashAttention, the backward pass can also be computed with O (n) extra memory:\n1. Compute dV j for all j according to Equation 17, which takes O (d) extra memory.\n2. Compute δ i for all i according to Equation 23, which takes O (n) extra memory.",
+    "2.2._Standard_Attention": "Given a set of matrices Q, K, V ∈ R n×d containing ddimensional representations for n queries, keys and values, the dot-product self-attention at a single head is computed in the following way (Vaswani et al., 2017) :\nEQUATION\nThe π transformation usually maps rows to distributions, with π(S) ij = softmax (s i ) j being a common choice. For decoder-only models, S is masked in order to ignore the contribution from future tokens. Notably, a naive implementation of Equation 1 leads to a O n 2 time and memory complexity for training.",
+    "3.2.1._FORWARD_PASS": "We outline the forward pass in Algorithm 2 (without masking full-zero blocks, which we introduce later on this section). Concretely, given the inputs Q, K, V ∈ R n×d stored in HBM, the goal is to compute the attention output O ∈ R n×d efficiently and write it back to HBM. Akin to the approach taken in FlashAttention (Dao et al., 2022) , we employ two well-known techniques-tiling and recomputation-to address the challenge of materializing the matrices S ∈ R n×n and P ∈ R n×n .",
+    "6._Conclusion": "In this work, we introduced ADASPLASH, a hardware-aware and efficient implementation of α-entmax attention, bridging the gap between adaptive sparse activations and efficient long-context modeling. Our approach leverages a hybrid Halley-bisection algorithm for faster empirical convergence and custom Triton kernels to exploit the inherent sparsity of α-entmax. Our experiments show that ADASPLASH not only achieves substantial computational improvements over existing α-entmax implementations, but can often match or even surpass the efficiency of highly optimized softmaxbased attention algorithms like FlashAttention-2. Moreover, ADASPLASH enables long-context training while maintaining strong task performance across diverse benchmarks, such as language understanding, information retrieval, document classification, and language modeling. Overall, our work unlocks the viability of dynamically sparse attention mechanisms in large-scale training, which was previously hindered by computational inefficiencies.",
+    "3.2._Flash_α-entmax_Attention": "Given an algorithm to compute the entmax mapping that requires T iteration steps, a naive implementation of entmax attention proceeds as follows: (1) multiply S = QK ⊤ ∈ R n×n and write the result to slow HBM on the GPU; (2) load S from HBM T times to compute τ ; (3) load S from HBM again, and write the result P = α-entmax (S) to HBM; (4) perform a matrix multiplication to get the output Algorithm 2 ADASPLASH forward pass (w/o masking)\n1: Require: Matrices Q, K, V ∈ R n×d in HBM, block sizes B c , B r , param. α ∈ R 2: Divide Q into T r = ⌈n/B r ⌉ blocks Q 1 , . . . , Q Tr of size B r × d 3: Divide K, V into T c = ⌈n/B c ⌉ blocks K 1 , . . . , K Tc , V 1 , . . . , V Tc of size B c × d 4: Divide O ∈ R n×d into T r blocks O 1 , . . . , O Tr of size B r × d 5: Divide τ into T r blocks τ 1 , . . . , τ Tr of size B r 6: for i = 1 to T r do 7:\nLoad Q i from HBM to on-chip SRAM 8:\nOn chip, initialize O i 9:\nOn chip, compute τ i using Hybrid Halley's with predefined α, using a block version of Algorithm 1. 10:\nfor j = 1 to T c do 11: Load K j , V j from HBM to on-chip SRAM 12: Compute S (j) i = Q i K ⊤ j ∈ R Br×Bc 13: Compute P (j) i = (α -1)S (j) i -τ i 1 /α-1 + 14: Accumulate O i ← O i + P (j) i V j 15:\nend for 16:\nWrite O i and τ i to HBM 17: end for 18: Return: Output O and τ O = P V . However, since most of these operations are memory-bound, the excessive number of HBM accesses leads to slow wall-clock times. Moreover, having to materialize S and P in memory poses a major bottleneck, as their sizes quickly exceed GPU memory capacity when the sequence length n increases. To address these issues and speed up α-entmax attention on hardware accelerators like GPUs, we propose an algorithm that reduces HBM reads and writes while producing the same outputs as the naive implementation.",
+    "4._Experiments": "We evaluate ADASPLASH across various scenarios to show its computational efficiency and impact on downstream tasks. Our experiments address the following questions:\n• Performance efficiency: How does ADASPLASH compare with baseline methods in terms of runtime as sequence length and sparsity vary?\n• Generalization to architectures: How does ADAS-PLASH perform when integrated with encoder-only and decoder-only models?\n• Effectiveness in finetuning: Can ADASPLASHpretrained models outperform or match their dense counterparts in short and long-context tasks?",
+    "2.3._FlashAttention": "To address the costs of naive attention implementations, Dao et al. (2022) introduced FlashAttention, an algorithm that avoids the materialization of quadratic matrices via a GPU-aware implementation of online softmax (Milakov & Gimelshein, 2018) , bringing the overall memory complexity to O (n). Subsequent versions of FlashAttention further improved GPU usage by reordering the loops, reducing the number of non-GEMM (general matrix multiply) operations (Dao, 2024) , and exploiting the asynchronicity and support for FP8 low-precision on the new Hopper GPUs (Shah et al., 2024) . The key idea of FlashAttention is to split the inputs Q, K, V into blocks, load them from slow GPU high bandwidth memory (HBM) to the fast GPU on-chip SRAM, then compute the attention output regarding those blocks and, at the end, scale the output by the right normalization factor.",
+    "5._Related_Works_Sparse_Probability_Transformations.": "The sparsity inherent to the α-entmax transformation, as demonstrated by Blondel et al. (2019) , is directly controlled by the α pa- rameter. For α = 2, the problem simplifies to a projection onto the probability simplex, a well-established optimization problem. Its solution forms the base of sparsemax (Martins & Astudillo, 2016) , which can be efficiently computed using sorting and root-finding methods (Held et al., 1974; Condat, 2016; Liu & Ye, 2009) . Moreover, for intermediate values such as α = 1.5, Peters et al. (2019) proposed an exact sorting-based algorithm along with an implementation of a bisection algorithm applicable to any α. However, these approaches remain suboptimal for long contexts due to slow convergence or reliance on complex data structures and sorting operations, which are difficult to optimize for hardware.",
+    "1._Introduction": "Central to the success of transformers (Vaswani et al., 2017) lies the attention mechanism, where each token in a sequence attends directly to every other token. Attention probabilities are computed through the softmax transformation, which always assigns a nonzero probability to every token. However, for long context inputs, the accumulation of small probabilities can lead to dispersion (Veličković et al., 2025) .\nProceedings of the 42 nd International Conference on Machine Learning, Vancouver, Canada. PMLR 267, 2025. Copyright 2025 by the author(s). Figure 1 . Runtime (Fwd+Bwd) as a function of input sparsity for non-causal attention. While the highly-optimized FlashAttention-2 maintains a constant runtime across varying levels of sparsity, ADASPLASH effectively leverages sparsity to obtain speed-ups, eventually outperforming FlashAttention-2 as sparsity grows.\nIn fact, previous research shows that attention probabilities tend to peak around a small number of tokens (Voita et al., 2019; Treviso et al., 2022) , which suggests that model performance and computational efficiency can be increased by leveraging attention sparsity. This has motivated methods that predefine sparse masks (Beltagy et al., 2020; Zaheer et al., 2020b) , rely on clustering-based strategies (Kitaev et al., 2020) , or low-rank approximate attention (Choromanski et al., 2021; Peng et al., 2021; Xiong et al., 2021; Chen et al., 2021) . Some of these techniques show the potential of sparsity to mitigate memory and computation bottlenecks, but they often require architectural modifications or crude approximations, limiting their flexibility and generality.\nA related line of research explores adaptive and differentiable sparse activations as surrogates of softmax, such as sparsemax (Martins & Astudillo, 2016) and, more broadly, the α-entmax family (Peters et al., 2019; Correia et al., 2019) . By assigning zero probability to irrelevant tokens, these activations eliminate their residual influence, reducing the dilution of attention scores and potentially improving both performance and interpretability. Unfortunately, existing algorithms and implementations for these adaptive sparse activations do not exploit the sparsity, being slower than softmax-based attention and struggling to scale effectively with context length, primarily due to the lack of hardware-optimized implementations like FlashAttention-2 (Dao, 2024) or support from programming models like FlexAttention (Dong et al., 2024) . This paper addresses this problem by providing new algorithms and implementations to improve the computational efficiency of the family of α-entmax activations. Our main contributions include a faster and GPU-friendly algorithm for calculating α-entmax, alongside a Triton kernel (Tillet et al., 2019) for computing entmax-based attention, which we call ADASPLASH. In particular, ADASPLASH advances the goal of supporting training of adaptively sparse models with longer context lengths, as shown in Figure 1 . We demonstrate the potential and scalability of our approach through experiments with synthetic data and with several natural language processing benchmarks for encoder-only and decoder-only models, achieving substantial improvements over previous α-entmax implementations and approaching (sometimes surpassing) the efficiency of softmaxbased attention with FlashAttention-2, with strong performance on downstream tasks.\nUsing reverse-mode autodifferentiation, we first compute dV :\nEQUATION\nwhere P = α-entmax(S) is the output of the α-entmax transformation applied row-wise to the score matrix S = QK ⊤ . Expressed element-wise, we obtain:\nEQUATION\nwhich is analogous to the softmax case. Since P ij is sparse due to the nature of α-entmax, we can skip Q i blocks that leads to blocks of P full of zeros using the pointer increment tables, as shown in Equation 14.",
+    "2.1._Hardware_Performance": "Modern GPUs, such as the Nvidia H100, are designed for efficient parallel computation using a hierarchical memory architecture, with high-bandwidth memory (HBM) providing large capacity but slower access compared to the smaller, faster on-chip SRAM. Efficient use of SRAM is critical to minimize the memory bottlenecks caused by frequent HBM accesses. GPUs execute operations (kernels) via thousands of threads organized into thread blocks, where data is loaded from HBM into SRAM for computation before being written back. Kernel fusion is a key optimization strategy that combines multiple operations into a single kernel, reducing intermediate HBM accesses by directly computing and storing final results. While compilers like torch.compile can automate fusion for simple operations (Ansel et al., 2024) , complex tasks such as attention mechanisms require custom strategies to reorder operations and optimize memory usage effectively. Our method leverages this GPU memory organization by implementing block-wise computations, recomputation strategies, and kernel fusion specifically tailored for sparse attention, as detailed in §3.2.1 and §3.2.2.",
+    "3.2.2._BACKWARD_PASS": "In FlashAttention (Dao et al., 2022) , the backward pass is executed using a single kernel that parallelizes computation across batch, head, and sequence dimensions. However, following Triton's official implementation of FlashAttention,foot_0 we separate the backward pass into two kernels: one for dQ (the gradient w.r.t. Q) and another for dK and dV (the gradients w.r.t. K and V ).\nSparse Jacobian of α-entmax. The sparsity in the Jacobian of α-entmax plays a crucial role in the backward pass.\nFor p = α-entmax(s), the Jacobian is (Peters et al., 2019 )\nEQUATION\nwhere u j = (p j ) 2-α . Importantly, this Jacobian is sparse and only depends on p, which, in turn, is a function of τ computed during the forward pass. We denote by U ∈ R n×n the matrix defined element-wise as U lk = P 2-α lk , and by U the gradient w.r.t. the score matrix S (j) i ∈ R Br×Bc can be efficiently computed as:\nEQUATION\nwhere\ndP (j) i = dO i V ⊤ j ∈ R Br×Bc\n, with dO i ∈ R Br×n and V j ∈ R Bc×n , and δ i ∈ R Br denotes the i th block of the vector δ ∈ R n defined element-wise as\nδ l = ( k U lk dP lk )/( k U lk ).\nEfficient gradient computation. In ADASPLASH, instead of storing P , we store the lookup tables K and Q computed during the forward pass, allowing us to to efficiently skip the computations of null blocks during backpropagation. Given dS i , the gradients for Q i , K i , V i ∈ R Br×d are computed as follows using the pointer-increment lookup tables:\nEQUATION\nEQUATION\nEQUATION\nHence, by splitting the backward pass into separate kernels and exploiting the sparsity of α-entmax through the Jacobian structure, we can achieve efficient gradient computation. Overall, ADASPLASH allows users to choose between memory efficiency (without block masking) and computational speed (with block masking) depending on the task requirements and hardware constraints. We provide a detailed derivation of α-entmax attention's backward pass and its implementation in Appendix A.2."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Pytorch 2: Faster machine learning through dynamic python bytecode transformation and graph compilation",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ansel",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Gimelshein",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Voznesensky",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bell",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Berard",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Burovski",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Chauhan",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Chourdia",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Constable",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Desmaison",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Devito",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Ellison",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Gschwind",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Hirsh",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Kalambarkar",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Kirsch",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lazos",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lezcano",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "K"
+          ],
+          "last": "Luk",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Maher",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Puhrsch",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Reso",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Saroufim",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "Y"
+          ],
+          "last": "Siraichi",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Suk",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Suo",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Tillet",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mathews",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Chanan",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Chintala",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the 29th ACM International Conference on Architectural Support for Programming Languages and Operating Systems"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Ms marco: A human generated machine reading comprehension dataset",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bajaj",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Campos",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Craswell",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Majumder",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mcnamara",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Mitra",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Longformer: The Long-Document Transformer",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Beltagy",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "E"
+          ],
+          "last": "Peters",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Cohan",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Learning classifiers with fenchel-young losses: Generalized entropies, margins, and algorithms",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Blondel",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Martins",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Niculae",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the Twenty-Second International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Neural legal judgment prediction in English",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Chalkidis",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Androutsopoulos",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Aletras",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Paragraph-level rationale extraction through regularization: A case study on European court of human rights cases",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Chalkidis",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Fergadiotis",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Tsarapatsanis",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Aletras",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Androutsopoulos",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Malakasiotis",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Scatterbrain: Unifying sparse and low-rank attention",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Winsor",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rudra",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Ré",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Generating Long Sequences with Sparse Transformers",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Child",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gray",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Rethinking attention with performers",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [
+            "M"
+          ],
+          "last": "Choromanski",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Likhosherstov",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Dohan",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gane",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Sarlos",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Hawkins",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "Q"
+          ],
+          "last": "Davis",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mohiuddin",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "B"
+          ],
+          "last": "Belanger",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "J"
+          ],
+          "last": "Colwell",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Weller",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Fast projection onto the simplex and the ℓ 1 ball",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Condat",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Math. Program"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Adaptively sparse transformers",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [
+            "M"
+          ],
+          "last": "Correia",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Niculae",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "F T"
+          ],
+          "last": "Martins",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Revisiting transformer-based models for long document classification",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Chalkidis",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Darkner",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Elliott",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Findings of the Association for Computational Linguistics: EMNLP 2022"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "FlashAttention-2: Faster attention with better parallelism and work partitioning",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "FlashAttention: Fast and memory-efficient exact attention with IO-awareness",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "Y"
+          ],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rudra",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Ré",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "A simple and effective l 2 norm-based strategy for KV cache compression",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Devoto",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Scardapane",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Minervini",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Flex attention: A programming model for generating optimized attention kernels",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Guessous",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Efficient projections onto the l1-ball for learning in high dimensions",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Duchi",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Shalev-Shwartz",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Singer",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Chandra",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Proceedings of the 25th International Conference on Machine Learning, ICML '08"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Memory-efficient transformers via top-k attention",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Dar",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Goodman",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Ciprut",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Berant",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the Second Workshop on Simple and Efficient Natural Language Processing"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Validation of subgradient optimization",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Held",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Wolfe",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "P"
+          ],
+          "last": "Crowder",
+          "suffix": ""
+        }
+      ],
+      "year": 1974,
+      "venue": "Mathematical Programming"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Minference 1.0: Accelerating pre-filling for longcontext llms via dynamic sparse attention",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ahn",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "H"
+          ],
+          "last": "Abdi",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "C.-Y",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Linear convergence and the bisection algorithm",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [
+            "H"
+          ],
+          "last": "Kaufman",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "D"
+          ],
+          "last": "Lenker",
+          "suffix": ""
+        }
+      ],
+      "year": 1986,
+      "venue": "The American Mathematical Monthly"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Reformer: The efficient transformer",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Kitaev",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Levskaya",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Efficient memory management for large language model serving with pagedattention",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Kwon",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "H"
+          ],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Stoica",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 29th Symposium on Operating Systems Principles"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Efficient euclidean projections in linear time",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "Proceedings of the 26th annual international conference on machine learning"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "A robustly optimized bert pretraining approach",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ott",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Joshi",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Stoyanov",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Roberta",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Fineweb-edu: the finest collection of educational content",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lozhkov",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Ben Allal",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Von Werra",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Wolf",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Keep the cost down: A review on methods to optimize LLM's KV-cache consumption",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Luohe",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "First Conference on Language Modeling"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "From softmax to sparsemax: A sparse model of attention and multi-label classification",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Martins",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Astudillo",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Online normalizer calculation for softmax",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Milakov",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Gimelshein",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Fast attention over long sequences with dynamic sparse flash attention",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Pagliardini",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Paliotta",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jaggi",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Fleuret",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Thirty-seventh Conference on Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "The fineweb datasets: Decanting the web for the finest text data at scale",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Penedo",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Kydlíček",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "B"
+          ],
+          "last": "Lozhkov",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mitchell",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Raffel",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Werra",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "V"
+          ],
+          "last": "Wolf",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "The Thirty-eight Conference on Neural Information Processing Systems Datasets and Benchmarks Track"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Random feature attention",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Pappas",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Yogatama",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Schwartz",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Sparse sequence-to-sequence models",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Peters",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Niculae",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "F T"
+          ],
+          "last": "Martins",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Language models are unsupervised multitask learners",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Child",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Luan",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Efficient content-based sparse attention with routing transformers",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Saffar",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Grangier",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Transactions of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "On the geometry of halley's method",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [
+            "R"
+          ],
+          "last": "Scavo",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "B"
+          ],
+          "last": "Thoo",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "The American Mathematical Monthly"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Flashattention-3: Fast and accurate attention with asynchrony and low-precision",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Shah",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Bikshandi",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Thakkar",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Ramani",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "A heterogeneous benchmark for zero-shot evaluation of information retrieval models",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Thakur",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Reimers",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rücklé",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Srivastava",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Gurevych",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Beir",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the Neural Information Processing Systems Track on Datasets and Benchmarks"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Triton: an intermediate language and compiler for tiled neural network computations",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Tillet",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "T"
+          ],
+          "last": "Kung",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Cox",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 3rd ACM SIGPLAN International Workshop on Machine Learning and Programming Languages, MAPL 2019"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Predicting attention sparsity in transformers",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Treviso",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Góis",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Fernandes",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Fonseca",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Martins",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the Sixth Workshop on Structured Prediction for NLP"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Ł",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "softmax is not enough (for sharp out-ofdistribution",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Veličković",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Perivolaropoulos",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Barbero",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Pascanu",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Analyzing multi-head self-attention: Specialized heads do the heavy lifting, the rest can be pruned",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Voita",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Talbot",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Moiseev",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Sennrich",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Titov",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "GLUE: A multi-task benchmark and analysis platform for natural language understanding",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Michael",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Hill",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bowman",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 2018 EMNLP Workshop BlackboxNLP: Analyzing and Interpreting Neural Networks for NLP"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Smarter, better, faster, longer: A modern bidirectional encoder for fast, memory efficient, and long context finetuning and inference",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Warner",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Chaffin",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Clavié",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Weller",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Hallström",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Taghadouini",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gallagher",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Biswas",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Ladhak",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Aarsen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Efficient streaming language models with attention sinks",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Nyströmformer: A nyström-based algorithm for approximating self-attention",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Chakraborty",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Fung",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Native sparse attention: Hardware-aligned and natively trainable sparse attention",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Big Bird: Transformers for Longer Sequences",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zaheer",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Guruganesh",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "A"
+          ],
+          "last": "Dubey",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ainslie",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Alberti",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ontanon",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Pham",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ravula",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Big bird: Transformers for longer sequences",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zaheer",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Guruganesh",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "A"
+          ],
+          "last": "Dubey",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ainslie",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Alberti",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ontanon",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Pham",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ravula",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Can a machine really finish your sentence?",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Zellers",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Holtzman",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bisk",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hellaswag",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics"
+    }
+  ]
+}

@@ -1,0 +1,2499 @@
+{
+  "paper_id": "G-Retriever",
+  "title": "G-Retriever: Retrieval-Augmented Generation for Textual Graph Understanding and Question Answering",
+  "authors": [
+    {
+      "first": "Xiaoxin",
+      "middle": [],
+      "last": "He",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yijun",
+      "middle": [],
+      "last": "Tian",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Notre Dame",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yifei",
+      "middle": [],
+      "last": "Sun",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Nitesh",
+      "middle": [
+        "V"
+      ],
+      "last": "Chawla",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Notre Dame",
+        "location": {}
+      }
+    },
+    {
+      "first": "Thomas",
+      "middle": [],
+      "last": "Laurent",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Loyola Marymount University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yann",
+      "middle": [],
+      "last": "Lecun",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "New York University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Xavier",
+      "middle": [],
+      "last": "Bresson",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Bryan",
+      "middle": [],
+      "last": "Hooi",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Given a graph with textual attributes, we enable users to 'chat with their graph': that is, to ask questions about the graph using a conversational interface. In response to a user's questions, our method provides textual replies and highlights the relevant parts of the graph. While existing works integrate large language models (LLMs) and graph neural networks (GNNs) in various ways, they mostly focus on either conventional graph tasks (such as node, edge, and graph classification), or on answering simple graph queries on small or synthetic graphs. In contrast, we develop a flexible question-answering framework targeting real-world textual graphs, applicable to multiple applications including scene graph understanding, common sense reasoning, and knowledge graph reasoning. Toward this goal, we first develop a Graph Question Answering (GraphQA) benchmark with data collected from different tasks. Then, we propose our G-Retriever method, introducing the first retrievalaugmented generation (RAG) approach for general textual graphs, which can be fine-tuned to enhance graph understanding via soft prompting. To resist hallucination and to allow for textual graphs that greatly exceed the LLM's context window size, G-Retriever performs RAG over a graph by formulating this task as a Prize-Collecting Steiner Tree optimization problem. Empirical evaluations show that our method outperforms baselines on textual graph tasks from multiple domains, scales well with larger graph sizes, and mitigates hallucination. Our codes and datasets are available at: https://github.com/XiaoxinHe/G-Retriever.",
+  "body": {
+    "1_Introduction": "Graphs and Large Language Models (LLMs). The advent of LLMs has significantly shaped the artificial intelligence landscape. As these models are applied to increasingly diverse tasks, their ability to process complex structured data will be increasingly vital. In particular, in our interconnected world, a significant portion of real-world data inherently possesses a graph structure, such as the Web, e-commerce, recommendation systems, knowledge graphs, and many others. Moreover, many of these involve graphs with textual attributes (i.e., textual graphs), making them well-suited for LLM-centric methods. This has spurred interest in combining graph-based technologies, particularly graph neural networks (GNNs), with LLMs to enhance their reasoning on graphs [44, 15, 24] .\nThe Present Work: Enabling 'Chat With Your Graph'. While existing works integrate LLMs and GNNs in various ways, they mostly focus on conventional graph tasks such as node, edge and graph 38th Conference on Neural Information Processing Systems (NeurIPS 2024).",
+    "2_Related_Work": "Graphs and Large Language Models. A significant body of research has emerged at the intersection of graph-based techniques and LLMs [30, 24, 15, 44, 54] . This exploration spans diverse aspects, ranging from the design of general graph models [47, 25, 51, 19, 40, 31] , and multi-modal architectures [23, 49] to practical applications. Noteworthy applications include fundamental graph reasoning [52, 3, 56] , node classification [8, 11, 39, 5, 50, 4, 33] , graph classification/regression [32, 55] , and leveraging LLMs for knowledge graph-related tasks [41, 14, 29] .",
+    "3_Formalization": "This section establishes the notation and formalizes key concepts related to textual graphs, language models for text encoding, and large language models and prompt tuning.",
+    "4_Proposed_GraphQA_Benchmark": {
+      "4.1_Data_Format": "Each entry in the GraphQA benchmark consists of a textual graph, a question related to the graph, and one or more corresponding answers, as illustrated in Figure 2 . Textual Graphs. The textual graph is converted into a natural language format, resulting in a list of nodes and edges, akin to a CSV file format. It is important to note that while multiple methods exist for textualizing a graph, our focus is not on identifying the optimal solution. Instead, we prioritize a straightforward yet empirically effective approach for representing graphs in natural language, facilitating the benchmark's use in diverse GraphQA scenarios.",
+      "4.2_Description_of_Datasets": "The GraphQA benchmark integrates three existing datasets: ExplaGraphs, SceneGraphs, and WebQSP. Table 2 presents the summary statistics of these datasets. It is important to note that these datasets were not originally developed for this work. However, a significant contribution of our research is the standardization and processing of these diverse datasets into a uniform data format suitable for the GraphQA benchmark. These datasets, previously utilized in different contexts, are reintroduced with a new focus tailored for GraphQA. For a detailed comparison with the original datasets, see the Appendix C.\nExplaGraphs is a dataset for generative commonsense reasoning, focusing on creating explanation graphs for stance prediction in debates. It offers detailed, unambiguous commonsense-augmented graphs to evaluate arguments supporting or refuting a belief. The primary task is to assess whether arguments are supportive or contradictory, using accuracy as the metric. We have converted the triplet-form provided in Saha et al. [35] into a standard graph format.\nSceneGraphs, a visual question answering dataset, includes 100,000 scene graphs. Each graph details objects, attributes, and relations within an image. This dataset challenges users with tasks requiring spatial understanding and multi-step inference. The task is to answer open-ended questions based on a textual description of a scene graph, evaluated on accuracy. We have sampled from the GQA dataset [13] and constructed standard graphs from the provided JSON files.\nWebQSP is a large-scale multi-hop knowledge graph QA dataset consisting of 4,737 questions. It was proposed by Yih et al. [48] and, following Luo et al. [28] , utilizes a subset of Freebase, encompassing facts within 2-hops of entities mentioned in the questions. The task involves answering questions that",
+      "_text": "Our GraphQA represents a comprehensive and diverse benchmark for graph question-answering. It is tailored to assess the capabilities of models in answering a wide range of questions about graphs across diverse domains."
+    },
+    "5_G-Retriever": {
+      "5.1_Indexing": "We initiate the RAG approach by generating node and graph embeddings using a pre-trained LM. These embeddings are then stored in a nearest neighbor data structure.\nTo elaborate, consider x n ∈ D Ln as the text attributes of node n. Utilizing a pre-trained LM, such as SentenceBert [34] , we apply the LM to x n , yielding the representation z n :\nEQUATION\nwhere d denotes the dimension of the output vector. Similar preprocessing steps are applied to edges. Refer to Figure 3 , Step 1 for an illustrative representation.",
+      "5.2_Retrieval": "For retrieval, we employ the same encoding strategy to the query x q , to ensure consistent treatment of textual information:\nEQUATION\nNext, to identify the most relevant nodes and edges for the current query, we use a k-nearest neighbors retrieval approach. This method yields a set of 'relevant nodes/edges' based on the similarity between the query and each node or edge. The retrieval operation is defined as:\nEQUATION\nwhere z n and z e are the embeddings of node n and edge e, respectively. We use the cosine similarity function, cos(•, •), to measure the similarity between the query representation and the node/edge embeddings. The argtopk operation retrieves the top-k elements based on this similarity, providing a set of nodes V k and edges E k considered most relevant to the query. See Step 2 of Figure 3 .",
+      "5.3_Subgraph_Construction": "This step aims to construct a subgraph that encompasses as many relevant nodes and edges as possible, while keeping the graph size manageable. This approach offers two key benefits: Firstly, it helps to filter out nodes and edges that are not pertinent to the query. This is crucial because irrelevant information can overshadow the useful data, potentially diverting the focus of the subsequent LLM from the information of interest. Secondly, it enhances efficiency; by keeping the graph size manageable, it becomes feasible to translate the graph into natural language and then input it into the LLM for processing. The Prize-Collecting Steiner Tree algorithm [2] serves as our primary method for identifying such optimally sized and relevant subgraphs. See Step 3 in Figure 3 .",
+      "5.4_Answer_Generation": "Graph Encoder. Let S * = (V * , E * ) represent the retrieved subgraph. We use a graph encoder to model the structure of this graph, specifically using a standard Graph Attention Network (GAT) [43] . Our approach for encoding the retrieved subgraph is defined as follows:\nEQUATION\nHere, POOL denotes the mean pooling operation, and d g is the dimension of the graph encoder.\nProjection Layer. We incorporate a multilayer perceptron (MLP) to align the graph token with the vector space of the LLM:\nEQUATION\nwhere d l is the dimension of the LLM's hidden embedding.",
+      "_text": "In this section, we introduce G-Retriever, a new architecture tailored for GraphQA, which integrates the strengths of GNNs, LLMs, and RAG. To allow efficient fine-tuning while preserving the LLM's pretrained language capabilities, we freeze the LLM and use a soft prompting approach on the output of the GNN. Our RAG-based design mitigates hallucinations through direct retrieval of the graph, while allowing our approach to scale to graphs exceeding the LLM's context window size. To adapt RAG to graphs, we formulate subgraph retrieval as a PCST optimization problem. This approach also allows us to enhance explainability by returning the retrieved subgraph.\nG-Retriever comprises four main steps: indexing, retrieval, subgraph construction and generation, as depicted in Figure 3 . The implementation details of each step are elaborated in the following sections."
+    },
+    "6.1_Experiment_Setup": "In the indexing step, we use SentenceBert [34] as the LM to encode all node and edge attributes. In the generation step, we use the open-source Llama2-7b [42] as the LLM and Graph Transformer [37] as the graph encoder. Additional details are provided in Appendix B.1.",
+    "6.2_Main_Results": "In our experiments, we consider three model configurations: 1) Inference-only: Using a frozen LLM for direct question answering; 2) Frozen LLM w/ prompt tuning (PT): Keeping the parameters of the LLM frozen and adapting only the prompt; 3) Tuned LLM: Fine-tuning the LLM with LoRA [10] . We provide more details in Appendix B.2. Table 3 demonstrates the effectiveness of our method across three datasets in various configurations.\nIn the inference-only setting, G-Retriever surpasses all baselines. Notably, LLM can perform even better when no graph knowledge is provided (i.e., question only), which might be attributed to the complexity and potential noise in the knowledge. For frozen LLM with prompt tuning, G-Retriever outperforms traditional prompt tuning and GraphToken [31] , a graph prompt tuning-based method, with average performance increases of 40.6% and 30.8% respectively. Furthermore, when tuned with LoRA, G-Retriever achieves the best performance. ",
+    "6.3_Efficiency_Evaluation": "The efficiency of our approach is highlighted by the data in Table 4 . Implementing our graph-based retrieval significantly decreases the number of tokens required to describe the graphs in text, reduces the number of nodes in graphs, and speeds up the training process. Specifically, for the SceneGraphs dataset, tokens decreased by 83%, nodes by 74%, and training time by 29%. For the WebQSP dataset, tokens decreased by 99%, nodes by 99%, and training time by 67%. These substantial reductions demonstrate the method's efficiency and potential in managing large-scale graph data.",
+    "6.4_Mitigation_of_Hallucination": "To evaluate hallucination, we instructed the models to answer graph-related questions, specifically by identifying supporting nodes or edges from the graph. We assessed the model's faithfulness using three metrics: the fraction of valid nodes (denoted as Valid Nodes), the fraction of valid edges (denoted as Valid Edges), and the fraction of times the entire set of cited nodes and edges was valid (denoted as Fully Valid Graphs). We manually reviewed 100 responses from both our method and the baseline (i.e.,, LLM with graph prompt tuning). Table 5 shows that G-Retriever significantly reduces hallucinations by 54% compared to the baseline, as our graph retrieval ensures that the data is sourced directly from the actual graph, leading to fewer hallucinations. See Appendix G for details.",
+    "6.5_Ablation_Study": "In this ablation study, we assess the individual impact of key components within our pipeline. As shown in Table 6 , there are performance drops when any of these components are removed, with the graph encoder and textualized graph showing declines of 22.51% and 19.19%, respectively. This demonstrates their complementary effects in representing the graph in both textual and embedded formats. Additionally, the retrieval on graphs is also important to the overall performance. Further details are available in Appendix B.3. We also present additional studies on our framework: it is robust to the choice of graph encoders (see Appendix B.4) and benefits from the increased scale of LLMs (see Appendix B.5). ",
+    "7_Conclusion": "In this work, we introduce a new GraphQA benchmark for real-world graph question answering and present G-Retriever, an architecture adept at complex and creative queries. Experimental results show that G-Retriever surpasses baselines in textual graph tasks across multiple domains, scales effectively with larger graph sizes, and demonstrates resistance to hallucination.\nLimitations and Future Work: Currently, G-Retriever employs a static retrieval component. Future developments could investigate more sophisticated RAG where the retrieval is trainable."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Knowledge-augmented language model prompting for zero-shot knowledge graph question answering",
+      "authors": [
+        {
+          "first": "Jinheon",
+          "middle": [],
+          "last": "Baek",
+          "suffix": ""
+        },
+        {
+          "first": "Alham",
+          "middle": [],
+          "last": "Fikri Aji",
+          "suffix": ""
+        },
+        {
+          "first": "Amir",
+          "middle": [],
+          "last": "Saffari",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 1st Workshop on Natural Language Reasoning and Structured Explanations (NLRSE)"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "A note on the prize collecting traveling salesman problem",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Bienstock",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Michel X Goemans",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Simchi-Levi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Williamson",
+          "suffix": ""
+        }
+      ],
+      "year": 1993,
+      "venue": "Mathematical programming"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Graphllm: Boosting graph reasoning ability of large language model",
+      "authors": [
+        {
+          "first": "Ziwei",
+          "middle": [],
+          "last": "Chai",
+          "suffix": ""
+        },
+        {
+          "first": "Tianjie",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Kaiqiao",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohai",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Xuanwen",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Exploring the potential of large language models (llms) in learning on graphs",
+      "authors": [
+        {
+          "first": "Zhikai",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Haitao",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Hang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Hongzhi",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaochi",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Shuaiqiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Dawei",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Wenqi",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Hui",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Label-free node classification on graphs with large language models",
+      "authors": [
+        {
+          "first": "Zhikai",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Haitao",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Hongzhi",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "Haoyu",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Haiyang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Hui",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiliang",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Talk like a graph: Encoding graphs for large language models",
+      "authors": [
+        {
+          "first": "Bahare",
+          "middle": [],
+          "last": "Fatemi",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Halcrow",
+          "suffix": ""
+        },
+        {
+          "first": "Bryan",
+          "middle": [],
+          "last": "Perozzi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Retrieval-augmented generation for large language models: A survey",
+      "authors": [
+        {
+          "first": "Yunfan",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Yun",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyu",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Kangxiang",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Jinliu",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxi",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Jiawei",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Haofen",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Harnessing explanations: Llm-to-lm interpreter for enhanced text-attributed graph representation learning",
+      "authors": [
+        {
+          "first": "Xiaoxin",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xavier",
+          "middle": [],
+          "last": "Bresson",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Laurent",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Perold",
+          "suffix": ""
+        },
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        },
+        {
+          "first": "Bryan",
+          "middle": [],
+          "last": "Hooi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "A nearly-linear time framework for graphstructured sparsity",
+      "authors": [
+        {
+          "first": "Chinmay",
+          "middle": [],
+          "last": "Hegde",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Indyk",
+          "suffix": ""
+        },
+        {
+          "first": "Ludwig",
+          "middle": [],
+          "last": "Schmidt",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Lora: Low-rank adaptation of large language models",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Edward",
+          "suffix": ""
+        },
+        {
+          "first": "Yelong",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Zeyuan",
+          "middle": [],
+          "last": "Wallis",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhi",
+          "middle": [],
+          "last": "Allen-Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Shean",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Weizhu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Can llms effectively leverage graph structural information: when and why",
+      "authors": [
+        {
+          "first": "Jin",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Xingjian",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Qiaozhu",
+          "middle": [],
+          "last": "Mei",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaqi",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "A survey on hallucination in large language models: Principles, taxonomy, challenges, and open questions",
+      "authors": [
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Weijiang",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Weitao",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Weihong",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Zhangyin",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Haotian",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Qianglong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Weihua",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaocheng",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Gqa: A new dataset for real-world visual reasoning and compositional question answering",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Drew",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [
+            "D"
+          ],
+          "last": "Hudson",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Manning",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Structgpt: A general framework for large language model to reason over structured data",
+      "authors": [
+        {
+          "first": "Jinhao",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Kun",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Zican",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Keming",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Wayne",
+          "middle": [
+            "Xin"
+          ],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Ji-Rong",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Large language models on graphs: A comprehensive survey",
+      "authors": [
+        {
+          "first": "Jin",
+          "middle": [],
+          "last": "Bowen",
+          "suffix": ""
+        },
+        {
+          "first": "Gang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chi",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Meng",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Ji",
+          "middle": [],
+          "last": "Heng",
+          "suffix": ""
+        },
+        {
+          "first": "Jiawei",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Knowledge graphaugmented language models for knowledge-grounded dialogue generation",
+      "authors": [
+        {
+          "first": "Minki",
+          "middle": [],
+          "last": "Kang",
+          "suffix": ""
+        },
+        {
+          "first": "Jin",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Myung",
+          "middle": [],
+          "last": "Kwak",
+          "suffix": ""
+        },
+        {
+          "first": "Jinheon",
+          "middle": [],
+          "last": "Baek",
+          "suffix": ""
+        },
+        {
+          "first": "Sung",
+          "middle": [
+            "Ju"
+          ],
+          "last": "Hwang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Semi-supervised classification with graph convolutional networks",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Thomas",
+          "suffix": ""
+        },
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Kipf",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Large language models are zero-shot reasoners",
+      "authors": [
+        {
+          "first": "Takeshi",
+          "middle": [],
+          "last": "Kojima",
+          "suffix": ""
+        },
+        {
+          "first": "Shane",
+          "middle": [],
+          "last": "Shixiang",
+          "suffix": ""
+        },
+        {
+          "first": "Machel",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Yutaka",
+          "middle": [],
+          "last": "Reid",
+          "suffix": ""
+        },
+        {
+          "first": "Yusuke",
+          "middle": [],
+          "last": "Matsuo",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Iwasawa",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Boosting logical reasoning in large language models through a new framework: The graph of thought",
+      "authors": [
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Lei",
+          "suffix": ""
+        },
+        {
+          "first": "Chunhua",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "Caiwen",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "The power of scale for parameter-efficient prompt tuning",
+      "authors": [
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Lester",
+          "suffix": ""
+        },
+        {
+          "first": "Rami",
+          "middle": [],
+          "last": "Al-Rfou",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [],
+          "last": "Constant",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Retrieval-augmented generation for knowledge-intensive nlp tasks",
+      "authors": [
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        },
+        {
+          "first": "Ethan",
+          "middle": [],
+          "last": "Perez",
+          "suffix": ""
+        },
+        {
+          "first": "Aleksandra",
+          "middle": [],
+          "last": "Piktus",
+          "suffix": ""
+        },
+        {
+          "first": "Fabio",
+          "middle": [],
+          "last": "Petroni",
+          "suffix": ""
+        },
+        {
+          "first": "Vladimir",
+          "middle": [],
+          "last": "Karpukhin",
+          "suffix": ""
+        },
+        {
+          "first": "Naman",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Heinrich",
+          "middle": [],
+          "last": "Küttler",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        },
+        {
+          "first": "Wen-Tau",
+          "middle": [],
+          "last": "Yih",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Rocktäschel",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Prefix-tuning: Optimizing continuous prompts for generation",
+      "authors": [
+        {
+          "first": "Lisa",
+          "middle": [],
+          "last": "Xiang",
+          "suffix": ""
+        },
+        {
+          "first": "Percy",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Graphadapter: Tuning vision-language models with dual knowledge graph",
+      "authors": [
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Dongze",
+          "middle": [],
+          "last": "Lian",
+          "suffix": ""
+        },
+        {
+          "first": "Zhihe",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiawang",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Zhibo",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xinchao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "A survey of graph meets large language model: Progress and future directions",
+      "authors": [
+        {
+          "first": "Yuhan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zhixun",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Peisong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangguo",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Hong",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "One for all: Towards training one graph model for all classification tasks",
+      "authors": [
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiarui",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Lecheng",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Ningyue",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Dacheng",
+          "middle": [],
+          "last": "Tao",
+          "suffix": ""
+        },
+        {
+          "first": "Yixin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Muhan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Visual instruction tuning",
+      "authors": [
+        {
+          "first": "Haotian",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chunyuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Qingyang",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yong Jae",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Decoupled weight decay regularization",
+      "authors": [
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Loshchilov",
+          "suffix": ""
+        },
+        {
+          "first": "Frank",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Reasoning on graphs: Faithful and interpretable large language model reasoning",
+      "authors": [
+        {
+          "first": "Linhao",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan-Fang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Gholamreza",
+          "middle": [],
+          "last": "Haffari",
+          "suffix": ""
+        },
+        {
+          "first": "Shirui",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Reasoning on graphs: Faithful and interpretable large language model reasoning",
+      "authors": [
+        {
+          "first": "Linhao",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan-Fang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Gholamreza",
+          "middle": [],
+          "last": "Haffari",
+          "suffix": ""
+        },
+        {
+          "first": "Shirui",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Integrating graphs with large language models: Methods and prospects",
+      "authors": [
+        {
+          "first": "Yizhen",
+          "middle": [],
+          "last": "Shirui Pan",
+          "suffix": ""
+        },
+        {
+          "first": "Yixin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Let your graph do the talking: Encoding structured data for llms",
+      "authors": [
+        {
+          "first": "Bryan",
+          "middle": [],
+          "last": "Perozzi",
+          "suffix": ""
+        },
+        {
+          "first": "Bahare",
+          "middle": [],
+          "last": "Fatemi",
+          "suffix": ""
+        },
+        {
+          "first": "Dustin",
+          "middle": [],
+          "last": "Zelle",
+          "suffix": ""
+        },
+        {
+          "first": "Anton",
+          "middle": [],
+          "last": "Tsitsulin",
+          "suffix": ""
+        },
+        {
+          "first": "Mehran",
+          "middle": [],
+          "last": "Kazemi",
+          "suffix": ""
+        },
+        {
+          "first": "Rami",
+          "middle": [],
+          "last": "Al-Rfou",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Halcrow",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Can large language models empower molecular property prediction",
+      "authors": [
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Qian",
+          "suffix": ""
+        },
+        {
+          "first": "Huayi",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhirui",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Hong",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Yong",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Disentangled representation learning with large language models for text-attributed graphs",
+      "authors": [
+        {
+          "first": "Yijian",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Ziwei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenwu",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Sentence-bert: Sentence embeddings using siamese bertnetworks",
+      "authors": [
+        {
+          "first": "Nils",
+          "middle": [],
+          "last": "Reimers",
+          "suffix": ""
+        },
+        {
+          "first": "Iryna",
+          "middle": [],
+          "last": "Gurevych",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Explagraphs: An explanation graph generation task for structured commonsense reasoning",
+      "authors": [
+        {
+          "first": "Swarnadeep",
+          "middle": [],
+          "last": "Saha",
+          "suffix": ""
+        },
+        {
+          "first": "Prateek",
+          "middle": [],
+          "last": "Yadav",
+          "suffix": ""
+        },
+        {
+          "first": "Lisa",
+          "middle": [],
+          "last": "Bauer",
+          "suffix": ""
+        },
+        {
+          "first": "Mohit",
+          "middle": [],
+          "last": "Bansal",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Knowledge graph-augmented language models for complex question answering",
+      "authors": [
+        {
+          "first": "Priyanka",
+          "middle": [],
+          "last": "Sen",
+          "suffix": ""
+        },
+        {
+          "first": "Sandeep",
+          "middle": [],
+          "last": "Mavadia",
+          "suffix": ""
+        },
+        {
+          "first": "Amir",
+          "middle": [],
+          "last": "Saffari",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the 1st Workshop on Natural Language Reasoning and Structured Explanations (NLRSE)"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Masked label prediction: Unified message passing model for semi-supervised classification",
+      "authors": [
+        {
+          "first": "Yunsheng",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengjie",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Shikun",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Hui",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Wenjin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Think-on-graph: Deep and responsible reasoning of large language model on knowledge graph",
+      "authors": [
+        {
+          "first": "Jiashuo",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Chengjin",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Lumingyuan",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Saizhuo",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Yeyun",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Lionel",
+          "middle": [],
+          "last": "Ni",
+          "suffix": ""
+        },
+        {
+          "first": "Heung-Yeung",
+          "middle": [],
+          "last": "Shum",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Large language models as topological structure enhancers for text-attributed graphs",
+      "authors": [
+        {
+          "first": "Shengyin",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxiang",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Xuecang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Graphgpt: Graph instruction tuning for large language models",
+      "authors": [
+        {
+          "first": "Jiabin",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Lixin",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Suqi",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Dawei",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Graph neural prompting with large language models",
+      "authors": [
+        {
+          "first": "Yijun",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "Huan",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Zichen",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Haozhu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Ziqing",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Fang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Nitesh",
+          "middle": [
+            "V"
+          ],
+          "last": "Chawla",
+          "suffix": ""
+        },
+        {
+          "first": "Panpan",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Llama 2: Open foundation and fine-tuned chat models",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Louis",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Albert",
+          "suffix": ""
+        },
+        {
+          "first": "Amjad",
+          "middle": [],
+          "last": "Almahairi",
+          "suffix": ""
+        },
+        {
+          "first": "Yasmine",
+          "middle": [],
+          "last": "Babaei",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolay",
+          "middle": [],
+          "last": "Bashlykov",
+          "suffix": ""
+        },
+        {
+          "first": "Soumya",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "Prajjwal",
+          "middle": [],
+          "last": "Bhargava",
+          "suffix": ""
+        },
+        {
+          "first": "Shruti",
+          "middle": [],
+          "last": "Bhosale",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Graph attention networks",
+      "authors": [
+        {
+          "first": "Petar",
+          "middle": [],
+          "last": "Veličković",
+          "suffix": ""
+        },
+        {
+          "first": "Guillem",
+          "middle": [],
+          "last": "Cucurull",
+          "suffix": ""
+        },
+        {
+          "first": "Arantxa",
+          "middle": [],
+          "last": "Casanova",
+          "suffix": ""
+        },
+        {
+          "first": "Adriana",
+          "middle": [],
+          "last": "Romero",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Lio",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Can language models solve graph problems in natural language",
+      "authors": [
+        {
+          "first": "Heng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Shangbin",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Tianxing",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaoxuan",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaochuang",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Yulia",
+          "middle": [],
+          "last": "Tsvetkov",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Chain-of-thought prompting elicits reasoning in large language models",
+      "authors": [
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Xuezhi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Dale",
+          "middle": [],
+          "last": "Schuurmans",
+          "suffix": ""
+        },
+        {
+          "first": "Maarten",
+          "middle": [],
+          "last": "Bosma",
+          "suffix": ""
+        },
+        {
+          "first": "Fei",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "Ed",
+          "middle": [],
+          "last": "Chi",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Quoc",
+          "suffix": ""
+        },
+        {
+          "first": "Denny",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Next-gpt: Any-to-any multimodal llm",
+      "authors": [
+        {
+          "first": "Shengqiong",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Fei",
+          "suffix": ""
+        },
+        {
+          "first": "Leigang",
+          "middle": [],
+          "last": "Qu",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Tat-Seng",
+          "middle": [],
+          "last": "Chua",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Natural language is all a graph needs",
+      "authors": [
+        {
+          "first": "Ruosong",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Caiqi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Runhui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuyuan",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Yongfeng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "The value of semantic parse labeling for knowledge base question answering",
+      "authors": [
+        {
+          "first": "Wen-Tau",
+          "middle": [],
+          "last": "Yih",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Richardson",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Meek",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Wei",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Jina",
+          "middle": [],
+          "last": "Suh",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Multimodal graph learning for generative tasks",
+      "authors": [
+        {
+          "first": "Minji",
+          "middle": [],
+          "last": "Yoon",
+          "suffix": ""
+        },
+        {
+          "first": "Jing",
+          "middle": [],
+          "last": "Yu Koh",
+          "suffix": ""
+        },
+        {
+          "first": "Bryan",
+          "middle": [],
+          "last": "Hooi",
+          "suffix": ""
+        },
+        {
+          "first": "Ruslan",
+          "middle": [],
+          "last": "Salakhutdinov",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Empower text-attributed graphs learning with large language models",
+      "authors": [
+        {
+          "first": "Jianxiang",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxiang",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Chenghua",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaqi",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xuecang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Thought propagation: An analogical approach to complex reasoning with large language models",
+      "authors": [
+        {
+          "first": "Junchi",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Ran",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Rex",
+          "middle": [],
+          "last": "Ying",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Graph-toolformer: To empower llms with graph reasoning ability via prompt augmented by chatgpt",
+      "authors": [
+        {
+          "first": "Jiawei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Llama-adapter: Efficient fine-tuning of language models with zero-init attention",
+      "authors": [
+        {
+          "first": "Renrui",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Aojun",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangfei",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Shilin",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Pan",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Hongsheng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Graph meets llms: Towards large graph models",
+      "authors": [
+        {
+          "first": "Ziwei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Haoyang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zeyang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yijian",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenwu",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Gimlet: A unified graph-text model for instruction-based molecule zero-shot learning",
+      "authors": [
+        {
+          "first": "Haiteng",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Shengchao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chang",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Hannan",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhi-Hong",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Lingpeng",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "bioRxiv"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Graphtext: Graph reasoning in text space",
+      "authors": [
+        {
+          "first": "Jianan",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Le",
+          "middle": [],
+          "last": "Zhuo",
+          "suffix": ""
+        },
+        {
+          "first": "Yikang",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Meng",
+          "middle": [],
+          "last": "Qu",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Bronstein",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaocheng",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Minigpt-4: Enhancing vision-language understanding with advanced large language models",
+      "authors": [
+        {
+          "first": "Deyao",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoqian",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Mohamed",
+          "middle": [],
+          "last": "Elhoseiny",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "bananas"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "H Demonstrations We demonstrate the interaction capabilities of G-Retriever with creative questions on different datasets: ExplaGraphs, SceneGraphs, and WebQSP",
+      "authors": [],
+      "year": null,
+      "venue": "These examples are showcased in Tables"
+    }
+  ]
+}

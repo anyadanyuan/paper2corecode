@@ -1,0 +1,3079 @@
+{
+  "paper_id": "Dynam3D",
+  "title": "Dynam3D: Dynamic Layered 3D Tokens Empower VLM for Vision-and-Language Navigation",
+  "authors": [
+    {
+      "first": "Zihan",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Seungjun",
+      "middle": [],
+      "last": "Lee",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Gim",
+      "middle": [
+        "Hee"
+      ],
+      "last": "Lee",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Vision-and-Language Navigation (VLN) is a core task where embodied agents leverage their spatial mobility to navigate in 3D environments toward designated destinations based on natural language instructions. Recently, video-language large models (Video-VLMs) with strong generalization capabilities and rich commonsense knowledge have shown remarkable performance when applied to VLN tasks. However, these models still encounter the following challenges when applied to real-world 3D navigation: 1) Insufficient understanding of 3D geometry and spatial semantics; 2) Limited capacity for large-scale exploration and long-term environmental memory; 3) Poor adaptability to dynamic and changing environments. To address these limitations, we propose Dynam3D, a dynamic layered 3D representation model that leverages language-aligned, generalizable, and hierarchical 3D representations as visual input to train 3D-VLM in navigation action prediction. Given posed RGB-D images, our Dynam3D projects 2D CLIP features into 3D space and constructs multi-level 3D patch-instance-zone representations for 3D geometric and semantic understanding with a dynamic and layer-wise update strategy. Our Dynam3D is capable of online encoding and localization of 3D instances, and dynamically updates them in changing environments to provide large-scale exploration and long-term memory capabilities for navigation. By leveraging large-scale 3D-language pretraining and task-specific adaptation, our Dynam3D sets new state-of-the-art performance on VLN benchmarks including R2R-CE, REVERIE-CE and NavRAG-CE under monocular settings. Furthermore, experiments for pre-exploration, lifelong memory, and real-world robot validate the effectiveness of practical deployment. The code is available at https://github.com/MrZihan/Dynam3D.",
+  "body": {
+    "1_Introduction": "Vision-and-language navigation (VLN) tasks [1] [2] [3] [4] require agents to integrate three core capabilities: 1) understanding natural language instructions, 2) exploring environments and localizing targets or destinations, and 3) planning and executing navigation actions. As illustrated in Figure 1(a) , recent works [5] [6] [7] have predominantly focused on using video-based large models [8] [9] [10] to develop monocular VLN systems. This is due to the practical constraint that most robots are equipped with monocular cameras instead of panoramic cameras. These models pre-trained on large-scale internet data demonstrate strong language understanding and multimodal reasoning abilities, which enable effective instruction following and continuous prediction of navigation actions toward the destination.\nDespite these recent advances, several limitations still remain: 1) Video-based models struggle to capture spatial geometry and semantics in large-scale 3D environments. Our experiments reveal that this significantly hinders the ability of these models to explore extensively and correct errors effectively. 2) These models lack mechanisms for structured scene memory. This prevents the use of … Action 3D-Language Large Model Action • Large-scale scene exploration and memory • 3D geometry and semantic understanding • Dynamic multi-level representation updates (a) Video-based VLM for Navigation. (b) Our 3D Patch-Instance-Zone VLM for Navigation. pre-exploration knowledge and limits the potential for lifelong learning. 3) Representations derived from historical frames are inadequate for dynamically changing 3D scenes, where frequent object and human movements lead to performance drop.\nWe propose Dynam3D to alleviate the limitations mentioned above. As illustrated in Figure 1 (b), our Dynam3D is a 3D-language model with dynamic layered 3D representations for vision-and-language navigation. To encode 3D environments, we extract patch-level 2D features using CLIP [11] and project them into 3D space via depth maps and camera poses. Our Dynam3D employs FastSAM [12] to generate 2D instance masks, and aggregates patch features within each mask into instance-level representations. A 3D instance merging discriminator aligns 2D instances with existing 3D instances based on geometry and semantics to enable dynamic updates of 3D instance representations. Unlike previous online [13] or language-guided [14] 3D segmentation methods that focus on mask accuracy, our Dynam3D mainly aligns instance representations with the semantic space of CLIP through large-scale 3D-language pretraining to improve 3D representation quality and scene understanding.\nFurthermore, our Dynam3D aggregates 3D instance features within spatial zones to facilitate understanding of large-scale environments. As a result, this enables high-level comprehension of layouts, e.g. bedrooms, kitchens, etc that instance-level features alone cannot capture. our Dynam3D updates the scene dynamically with this hierarchical patch-instance-zone representation: outdated patch features are removed when a new RGB-D observation arrives, and new features are projected and propagated across the representation layers (patch-instance-zone) for change adaptation. These features enable our Dynam3D to maintain a lifelong and dynamic environmental memory that can significantly improve navigation performance in real-world deployments.\nWe further introduce a generalizable feature field model [15] to render 3D patch features over an agent-centric panoramic scope for the enrichment of local geometric and semantic perception. These rendered 3D patch features combined with instance and zone representations serve as visual input to the 3D Vision-Language Model (VLM). Given language instructions and action history, the 3D-VLM directly predicts navigation actions, e.g., turn θ degrees, move forward d cm, or stop.\nIn summary, our main contributions include:\n• We propose Dynam3D, a multi-level patch-instance-zone 3D representation model that performs online 3D instance and zone-level encoding and real-time hierarchical updates in dynamic environments.\n• We introduce a 3D Vision-Language Model that integrates 3D patch features from generalizable feature fields and 3D instance-zone features from our Dynam3D. This balances fine-grained geometry and global spatial layout for navigation planning.\n• Our monocular VLN system achieves state-of-the-art performance on benchmarks including R2R-CE, REVERIE-CE, and NavRAG-CE. The results also demonstrate our strong capabilities in pre-exploration, lifelong memory and real-world experiments.",
+    "2_Related_Work": "Vision-and-Language Navigation. Vision-and-Language Navigation (VLN) [1, 3, 2, [16] [17] [18] [19] requires the agent to understand complex natural language instructions and navigate to the described destination. In contrast to early works [16-18, 20, 21] which primarily concentrate on training and evaluating models within discrete environment simulators [22, 1, 2] (i.e., move on the pre-defined navigation connectivity graph, equipped with panoramic RGB-D camera), recent researches have increasingly emphasized navigation in continuous environment simulators [23] [24] [25] [26] [27] and the real-world deployment of monocular VLN systems [5, 28, 15, 6, 7, 29, 30] . For monocular VLN on continuous environment simulators, the agent equips only a forward-facing monocular RGB-D camera, and uses low-level actions to navigate. To leverage the language understanding and commonsense reasoning capabilities of large models, some recent works [31] [32] [33] [34] [35] 29] have adapted 2D-VLMs to VLN tasks, leading to notable performance improvements. Extensions such as NaVid [5] , Uni-NaVid [6] , and NaVILA [7] further exploit video-based large models to build high-performance monocular VLN systems with strong real-world applicability. However, video-based representations still have inherent limitations. For example, they struggle to capture fine-grained geometry semantics and comprehend large-scale spatial layouts, which in turn limits their capabilities in object localization and path planning. To the best of our knowledge, our Dynam3D is the first approach that effectively addresses the limitations inherent in previous video-based models by using a 3D-VLM to perform monocular VLN tasks in unseen and dynamic environments.",
+    "3_Our_Method": {
+      "3.1_Dynamic_Layered_3D_Representation_Model": "We first design and pre-train a multi-level 3D representation model to acquire language-aligned 3D representations encompassing both fine-grained details and global layouts.",
+      "3.2_3D_Vision-Language_Model_for_Navigation": "As illustrated in Figure 2 , Dynam3D constructs hierarchical 3D representations, spanning from fine-grained object instances to large-scale environmental zones. Leveraging these multi-level 3D representations as perceptual inputs, we introduce a dedicated 3D Vision-Language Model (3D-VLM) tailored for VLN tasks.",
+      "_text": "Overview. Figure 2 shows the framework of our Dynam3D for vision-and-language navigation. The framework takes the posed monocular RGB and depth images as input, and outputs atomic navigation actions such as turning, moving forward, stopping etc. Our Dynam3D maintains a set of patch feature points to encode the generalizable feature field [15] used to render the panoramic 3D patch tokens of the agent. Furthermore, our Dynam3D layer-by-layer encodes and updates 3D instance representations and large-scale cube zone representations for multi-level scene understanding and target localization (cf. Section 3.1). These multi-level 3D tokens, navigation instructions and history actions are then fed into a 3D-VLM for next action prediction (cf. Section 3.2)."
+    },
+    "4.1_Comparison_with_SOTA_Methods": "As shown in Tables 1 and 2 , we evaluate the navigation performance of our Dynam3D across three distinct continuous-environment VLN benchmarks. Specifically, the R2R-CE dataset (Tables 1) provides step-by-step and following instructions. Compared to prior state-of-the-art methods, e.g., g3D-LF and Uni-NaVid, our Dynam3D achieves an improvement of nearly 5% in navigation success rate (SR). Furthermore, despite the utilization of a large model, our Dynam3D maintains a smaller parameter footprint (3.8B vs. 7B) relative to the video-based Uni-NaVid. This highlights the superior efficiency of our model.\nTo ensure a fair comparison on the more challenging and realistic benchmarks such as REVERIE-CE which use coarse-grained and high-level destination description, and NavRAG-CE which requires understanding complex user demands, we retrain NaVid and g3D-LF on our training dataset and evaluate on these two benchmarks (Table 2 ). Our Dynam3D still demonstrates substantial improvements, outperforming NaVid by over 13% in Success Rate (SR) on REVERIE-CE and by over 5% on NavRAG-CE. The detailed experimental setup can be found in the supplementary materials. ✓ Video Frames 5.47 49.1 37.4 35.9 ----VLN-3DFF [28] × Feature Fields 5.95 55.8 44.9 30.4 6.24 54.4 43.7 28.9 g3D-LF [15] × Feature Fields 5.70 59.5 47.2 34.6 6.00 57.5 46.3 32.2 Uni-NaVid [6] ✓ Multi-Granularity Video Frames 5.58 53.3 47.0 42.7 ----Dynam3D (Ours) ✓ 3D Patch-Instance-Zone Tokens 5.34 62.1 52.9 45.7 5.53 60.4 51.4 44.8",
+    "4.2_Experiments_on_Pre-exploration_and_Lifelong_Memory": "As shown in Table 3 , we additionally evaluate the performance under the Pre-exploration and Lifelong Memory settings to further demonstrate the advantages of our Dynam3D. The pre-explored panoramic images from the Pre-exploration setting are collected at the navigable viewpoints annotated in the Matterport3D [22] dataset, which are then used to construct the Patch-Instance-Zone representations of the entire scene. For the Lifelong Memory setting, we group the evaluation episodes by scene with navigation samples from the same scene evaluated consecutively within a group. For each scene, previously stored 3D representations can be leveraged in subsequent episodes to simulate gradual familiarization of the agent with the environment during task execution.\nTable 3 shows that the Pre-exploration strategy enables our Dynam3D to achieve over a 5% improvement in Success Rate (SR) on R2R-CE and an 8% improvement on REVERIE-CE. Under the Lifelong Memory setting, our Dynam3D also achieves performance gains, with a 2.7% SR improvement on R2R-CE and a 4.9% SR improvement on REVERIE-CE. Compared to NaVid [5] which uses a video-based large model, our Dynam3D employing both the Pre-exploration and Lifelong Memory achieves over a 20% increase in navigation success rate (SR). ",
+    "4.3_Experiments_on_Real_World_and_Dynamic_Environment": "As shown in Tables 4, 5 and Figure 4 , we evaluate our Dynam3D on both real-world static and dynamic environments using the Hello Robot Stretch 3. Each setting includes 20 test cases, and navigation is deemed successful if the robot stops within 1 meter of the target. In the static environment (Table 4 ) Dynam3D achieves a 20% higher success rate than baselines, reaching 70% after pre-exploration. In the dynamic setting (Figure 4 and Table 5 ), the target is manually moved to another location once the robot reach within two meters of the original target. our Dynam3D consistently outperforms all baselines, demonstrating strong robustness to environmental changes. The detailed experimental setup can be found in the supplementary materials. ",
+    "4.4_Analysis_for_Dynamic_Representation_and_Lifelong_Memory": "In our Dynam3D, the agent discards outdated representations within its current field-of-view and adds or updates new ones to ensure real-time understanding of dynamic environments with each new observation. However, this does not conflict with its advantage of maintaining lifelong memory.\nInstruction: \"Please bring me the white fruit bowl filled with apples from the chair.\" Dynamic environment: During the robot's navigation process, the white fruit bowl is manually moved to another table.",
+    "4.5_Computational_Cost_and_Real-Time_Analysis": "We evaluate computational cost on the R2R-CE dataset using a single NVIDIA RTX 4090 GPU. During training, each navigation step takes 455ms (∼0.46 seconds) on average: 83ms for 3D representation updates, 315ms for large language model, and 57ms for other operations. During inference, the average step time increases to 649ms (∼0.65 seconds) with 83ms for 3D representation updates, 540ms for large language model inference, and 26ms for the remaining components. Most navigation episodes can be completed within 20 to 40 navigation steps, our navigation system supports real-time 3D representation updates and navigation action prediction for efficient training and inference. Contribution of 3D Representations. From the full model (last row), removing the rendered panoramic patch tokens (row 1), instance tokens (row 4), zone tokens (row 5), or both instance and zone tokens (row 3) leads to performance drops of varying degrees. The results show that the impact on performance follows the order: Patch > Instance > Zone tokens.",
+    "4.6_Ablation_Study": "Specifically, when both 3D instance and zone representations are removed and only 3D patch tokens from the feature fields [15] are used (row 3), there is a substantial performance drop, particularly on REVERIE-CE, where SR decreases by nearly 15%. This highlights the critical role of the hierarchical instance-zone representation in supporting effective navigation and large-scale exploration, as local patch-level features alone provide limited spatial coverage.\nImportance of Subspace Alignment. Without Subspace Alignment supervision (row 6), the navigation performance significantly decreases. This highlights the limitations of naive CLIP feature distillation for 3D instance supervision. Subspace Contrastive Learning effectively mitigates the instance feature bias from different views.\nValue of Rendered Panoramic Views. As analyzed in VLN-3DFF [28] , rendered panoramic patch tokens substantially mitigate the limited field of view caused by monocular cameras on most robots. Comparing row 2 and last row in Table 6 , replacing the rendered panoramic tokens with CLIP patch features extracted from the current monocular view results in about a 10% drop in navigation success rates on both R2R-CE and REVERIE-CE. Robustness to Noise. To further validate the model's navigation performance in noisy environments, we introduce different types of noise into the simulator and evaluate Dynam3D's performance. We simulate the potential noise from a SLAM system in localization and pose estimation, as well as the measurement errors inherent in depth cameras.\nTo simulate SLAM noise, we introduce localization noise, uniformly sampled from -5 cm to +5 cm, and orientation noise, uniformly sampled from -3 degrees to +3 degrees, to the agent's position at each simulation step. To simulate depth camera noise, we add random noise to the depth maps acquired from the simulator. For depths within 2 meters, noise is sampled between -4 cm and +4 cm; for depths from 2 to 3 meters, noise is sampled between -6 cm and +6 cm; for depths over 3 meters, noise is sampled between -10 cm and +10 cm.\nAs shown in Table 7 , even with the simultaneous addition of simulated SLAM and depth noise, the navigation success rate (SR) only decreased by approximately 2% (comparing the last row to the first row), demonstrating Dynam3D's robustness to noise. A significant reason is that our Dynam3D leverages 2D foundation models (e.g., CLIP [11] , FastSAM [12] ) to extract visual semantic features, which are unaffected by SLAM and depth noise. Even with minor spatial position deviations due to noise, the 3D-aware representations obtained by our model through the hierarchical encoding of Patch-Instance-Zone remain sufficient for perceiving spatial geometry and scene layout at the object and zone levels.",
+    "5_Conclusion": {
+      "5._Open_access_to_data_and_code": "Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results, as described in supplemental material? Answer: [NA] Justification: [NA] Guidelines:\n• The answer NA means that paper does not include experiments requiring code.\n• Please see the NeurIPS code and data submission guidelines (https://nips.cc/ public/guides/CodeSubmissionPolicy) for more details.\n• While we encourage the release of code and data, we understand that this might not be possible, so \"No\" is an acceptable answer. Papers cannot be rejected simply for not including code, unless this is central to the contribution (e.g., for a new open-source benchmark).\n• The instructions should contain the exact command and environment needed to run to reproduce the results. See the NeurIPS code and data submission guidelines (https: //nips.cc/public/guides/CodeSubmissionPolicy) for more details.\n• The authors should provide instructions on data access and preparation, including how to access the raw data, preprocessed data, intermediate data, and generated data, etc.\n• The authors should provide scripts to reproduce all experimental results for the new proposed method and baselines. If only a subset of experiments are reproducible, they should state which ones are omitted from the script and why.\n• At submission time, to preserve anonymity, the authors should release anonymized versions (if applicable).",
+      "_text": "We introduce Dynam3D, a dynamic hierarchical 3D representation framework for monocular visionand-language navigation. By aligning patch-instance-zone features with language semantics and enabling real-time scene updates, our Dynam3D enhances spatial understanding, long-term memory, and adaptability in dynamic environments. Our model achieves state-of-the-art results on multiple VLN benchmarks and demonstrates strong generalization in real-world deployment. These results highlight the value of structured and dynamically updated 3D representations for embodied navigation.\nLimitations. Our Dynam3D predicts navigation actions without explicitly outputting the coordinate of target instance, limiting its applicability to some tasks such as mobile manipulation. Moreover, it lacks capabilities for question answering, dialogue, and task updates, showing potential directions for better navigation agents.\n• If the paper includes experiments, a No answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not.\n• If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable.\n• Depending on the contribution, reproducibility can be accomplished in various ways.\nFor example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed.\n• While NeurIPS does not require releasing code, the conference does require all submissions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm. (b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset). (d) We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility.\nIn the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results."
+    }
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Vision-and-language navigation: Interpreting visually-grounded navigation instructions in real environments",
+      "authors": [
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Anderson",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Damien",
+          "middle": [],
+          "last": "Teney",
+          "suffix": ""
+        },
+        {
+          "first": "Jake",
+          "middle": [],
+          "last": "Bruce",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "Niko",
+          "middle": [],
+          "last": "Sünderhauf",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Reid",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Gould",
+          "suffix": ""
+        },
+        {
+          "first": "Anton",
+          "middle": [],
+          "last": "Van Den",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hengel",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Reverie: Remote embodied visual referring expression in real indoor environments",
+      "authors": [
+        {
+          "first": "Yuankai",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Anderson",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [
+            "Yang"
+          ],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Chunhua",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Anton",
+          "middle": [],
+          "last": "Van Den",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hengel",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Beyond the navgraph: Vision-and-language navigation in continuous environments",
+      "authors": [
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Krantz",
+          "suffix": ""
+        },
+        {
+          "first": "Erik",
+          "middle": [],
+          "last": "Wijmans",
+          "suffix": ""
+        },
+        {
+          "first": "Arjun",
+          "middle": [],
+          "last": "Majumdar",
+          "suffix": ""
+        },
+        {
+          "first": "Dhruv",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "Stefan",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Computer Vision-ECCV 2020: 16th European Conference"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Navrag: Generating user demand instructions for embodied navigation through retrieval-augmented llm",
+      "authors": [
+        {
+          "first": "Zihan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yaohui",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Gim",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Hee",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Yachun",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Navid: Video-based vlm plans the next step for vision-and-language navigation",
+      "authors": [
+        {
+          "first": "Jiazhao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Kunyu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Rongtao",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Gengze",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Yicong",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaomeng",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhizheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "He",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of Robotics: Science and Systems (RSS)"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Uni-navid: A video-based vision-language-action model for unifying embodied navigation tasks",
+      "authors": [
+        {
+          "first": "Jiazhao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Kunyu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Shaoan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Minghan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Haoran",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Songlin",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Zhongyuan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhizheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "He",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Navila: Legged robot vision-language-action model for navigation",
+      "authors": [
+        {
+          "first": "An-Chieh",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Yandong",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaojing",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Xueyan",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Kautz",
+          "suffix": ""
+        },
+        {
+          "first": "Erdem",
+          "middle": [],
+          "last": "Biyik",
+          "suffix": ""
+        },
+        {
+          "first": "Hongxu",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Sifei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaolong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "RSS"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Video-llava: Learning united visual representation by alignment before projection",
+      "authors": [
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaxi",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        },
+        {
+          "first": "Munan",
+          "middle": [],
+          "last": "Ning",
+          "suffix": ""
+        },
+        {
+          "first": "Jin",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Vila: On pre-training for visual language models",
+      "authors": [
+        {
+          "first": "Ji",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Hongxu",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Ping",
+          "suffix": ""
+        },
+        {
+          "first": "Pavlo",
+          "middle": [],
+          "last": "Molchanov",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Shoeybi",
+          "suffix": ""
+        },
+        {
+          "first": "Song",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Vicuna: An open-source chatbot impressing gpt-4 with 90%* chatgpt quality",
+      "authors": [
+        {
+          "first": "Wei-Lin",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuohan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Ziqing",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "Zhanghao",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Lianmin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Siyuan",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghao",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [
+            "E"
+          ],
+          "last": "Gonzalez",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Learning transferable visual models from natural language supervision",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Jong",
+          "middle": [
+            "Wook"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Hallacy",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Goh",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Fast segment anything",
+      "authors": [
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Wenchao",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Yongqi",
+          "middle": [],
+          "last": "An",
+          "suffix": ""
+        },
+        {
+          "first": "Yinglong",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Min",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Ming",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Jinqiao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Embodiedsam: Online segment any 3d thing in real time",
+      "authors": [
+        {
+          "first": "Xiuwei",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Huangxing",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Linqing",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Ziwei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Jiwen",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "The Thirteenth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Segment any 3d object with language",
+      "authors": [
+        {
+          "first": "Seungjun",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Yuyang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Gim",
+          "middle": [],
+          "last": "Hee",
+          "suffix": ""
+        },
+        {
+          "first": "Lee",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "The Thirteenth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "g3d-lf: Generalizable 3d-language feature fields for embodied tasks",
+      "authors": [
+        {
+          "first": "Zihan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Gim",
+          "middle": [],
+          "last": "Hee",
+          "suffix": ""
+        },
+        {
+          "first": "Lee",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Vln bert: A recurrent vision-and-language bert for navigation",
+      "authors": [
+        {
+          "first": "Yicong",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuankai",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Cristian",
+          "middle": [],
+          "last": "Rodriguez-Opazo",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Gould",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "History aware multimodal transformer for vision-and-language navigation",
+      "authors": [
+        {
+          "first": "Shizhe",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Pierre-Louis",
+          "middle": [],
+          "last": "Guhur",
+          "suffix": ""
+        },
+        {
+          "first": "Cordelia",
+          "middle": [],
+          "last": "Schmid",
+          "suffix": ""
+        },
+        {
+          "first": "Ivan",
+          "middle": [],
+          "last": "Laptev",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Think global, act local: Dual-scale graph transformer for vision-and-language navigation",
+      "authors": [
+        {
+          "first": "Shizhe",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Pierre-Louis",
+          "middle": [],
+          "last": "Guhur",
+          "suffix": ""
+        },
+        {
+          "first": "Makarand",
+          "middle": [],
+          "last": "Tapaswi",
+          "suffix": ""
+        },
+        {
+          "first": "Cordelia",
+          "middle": [],
+          "last": "Schmid",
+          "suffix": ""
+        },
+        {
+          "first": "Ivan",
+          "middle": [],
+          "last": "Laptev",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Visionand-language navigation via causal learning",
+      "authors": [
+        {
+          "first": "Liuyi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zongtao",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Ronghao",
+          "middle": [],
+          "last": "Dang",
+          "suffix": ""
+        },
+        {
+          "first": "Mengjiao",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Chengju",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Qijun",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Hop+: Historyenhanced and order-aware pre-training for vision-and-language navigation",
+      "authors": [
+        {
+          "first": "Yanyuan",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        },
+        {
+          "first": "Yuankai",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Yicong",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Bird's-eye-view scene graph for visionlanguage navigation",
+      "authors": [
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenguan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Matterport3d: Learning from rgb-d data in indoor environments",
+      "authors": [
+        {
+          "first": "Angel",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Angela",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Funkhouser",
+          "suffix": ""
+        },
+        {
+          "first": "Maciej",
+          "middle": [],
+          "last": "Halber",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Niebner",
+          "suffix": ""
+        },
+        {
+          "first": "Manolis",
+          "middle": [],
+          "last": "Savva",
+          "suffix": ""
+        },
+        {
+          "first": "Shuran",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Yinda",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International Conference on 3D Vision (3DV)"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Habitat: A platform for embodied ai research",
+      "authors": [
+        {
+          "first": "Manolis",
+          "middle": [],
+          "last": "Savva",
+          "suffix": ""
+        },
+        {
+          "first": "Abhishek",
+          "middle": [],
+          "last": "Kadian",
+          "suffix": ""
+        },
+        {
+          "first": "Oleksandr",
+          "middle": [],
+          "last": "Maksymets",
+          "suffix": ""
+        },
+        {
+          "first": "Yili",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Erik",
+          "middle": [],
+          "last": "Wijmans",
+          "suffix": ""
+        },
+        {
+          "first": "Bhavana",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Julian",
+          "middle": [],
+          "last": "Straub",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Vladlen",
+          "middle": [],
+          "last": "Koltun",
+          "suffix": ""
+        },
+        {
+          "first": "Jitendra",
+          "middle": [],
+          "last": "Malik",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the IEEE/CVF international conference on computer vision"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Bridging the gap between learning in discrete and continuous environments for vision-and-language navigation",
+      "authors": [
+        {
+          "first": "Yicong",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Zun",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Gould",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Gridmm: Grid memory map for vision-and-language navigation",
+      "authors": [
+        {
+          "first": "Zihan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jiahao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yeqi",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Shuqiang",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Etpnav: Evolving topological planning for vision-language navigation in continuous environments",
+      "authors": [
+        {
+          "first": "Dong",
+          "middle": [],
+          "last": "An",
+          "suffix": ""
+        },
+        {
+          "first": "Hanqing",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenguan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zun",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Keji",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Bevbert: Multimodal map pre-training for language-guided navigation",
+      "authors": [
+        {
+          "first": "Dong",
+          "middle": [],
+          "last": "An",
+          "suffix": ""
+        },
+        {
+          "first": "Yuankai",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Yangguang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Tieniu",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Jing",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Sim-to-real transfer via 3d feature fields for vision-and-language navigation",
+      "authors": [
+        {
+          "first": "Zihan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jiahao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yeqi",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Shuqiang",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "8th Annual Conference on Robot Learning"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Open-nav: Exploring zero-shot vision-and-language navigation in continuous environment with open-source llms",
+      "authors": [
+        {
+          "first": "Yanyuan",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        },
+        {
+          "first": "Wenqi",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        },
+        {
+          "first": "Hui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zixu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zerui",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Mingkui",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Proceedings of the IEEE International Conference on Robotics and Automation (ICRA)"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Hoz++: Versatile hierarchical object-to-zone graph for object navigation",
+      "authors": [
+        {
+          "first": "Sixian",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinhang",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Yubing",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Xinlong",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Weijie",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Shuqiang",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Towards learning a generalist model for embodied navigation",
+      "authors": [
+        {
+          "first": "Duo",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Shijia",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Lin",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Yiwu",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Liwei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Navgpt-2: Unleashing navigational reasoning capability for large vision-language models",
+      "authors": [
+        {
+          "first": "Gengze",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Yicong",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Zun",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Mapgpt: Map-guided prompting with adaptive path planning for vision-and-language navigation",
+      "authors": [
+        {
+          "first": "Jiaqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Bingqian",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Ran",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenhua",
+          "middle": [],
+          "last": "Chai",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaodan",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Kwan-Yee",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Imagine before go: Self-supervised generative map for object goal navigation",
+      "authors": [
+        {
+          "first": "Sixian",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Xinhang",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuqiang",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Affordances-oriented planning using foundation models for continuous vision-language navigation",
+      "authors": [
+        {
+          "first": "Jiaqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Bingqian",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Xinmin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Lin",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaodan",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Kwan-Yee",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Visual instruction tuning",
+      "authors": [
+        {
+          "first": "Haotian",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chunyuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Qingyang",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yong Jae",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Improved baselines with visual instruction tuning",
+      "authors": [
+        {
+          "first": "Haotian",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chunyuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yuheng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yong Jae",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Ll3da: Visual interactive instruction tuning for omni-3d understanding reasoning and planning",
+      "authors": [
+        {
+          "first": "Sijin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Chi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Mingsheng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Gang",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Fei",
+          "suffix": ""
+        },
+        {
+          "first": "Hongyuan",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiayuan",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Chat-scene: Bridging 3d scene and large language models with object identifiers",
+      "authors": [
+        {
+          "first": "Haifeng",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Yilun",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Zehan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Rongjie",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Runsen",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Tai",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Luping",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xize",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Jiangmiao",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "An embodied generalist agent in 3d world",
+      "authors": [
+        {
+          "first": "Jiangyong",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Silong",
+          "middle": [],
+          "last": "Yong",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaojian",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Xiongkun",
+          "middle": [],
+          "last": "Linghu",
+          "suffix": ""
+        },
+        {
+          "first": "Puhao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Qing",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Song-Chun",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Baoxiong",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Siyuan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Scene-llm: Extending language model for 3d visual understanding and reasoning",
+      "authors": [
+        {
+          "first": "Rao",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Jingyu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xilun",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yixin",
+          "middle": [],
+          "last": "Nie",
+          "suffix": ""
+        },
+        {
+          "first": "Wenhan",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "3d-llm: Injecting the 3d world into large language models",
+      "authors": [
+        {
+          "first": "Yining",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Haoyu",
+          "middle": [],
+          "last": "Zhen",
+          "suffix": ""
+        },
+        {
+          "first": "Peihao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Shuhong",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Yilun",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenfang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Chuang",
+          "middle": [],
+          "last": "Gan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Video-3d llm: Learning position-aware video representation for 3d scene understanding",
+      "authors": [
+        {
+          "first": "Duo",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Shijia",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Liwei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Llava-3d: A simple yet effective pathway to empowering lmms with 3d-awareness",
+      "authors": [
+        {
+          "first": "Chenming",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Tai",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenwei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiangmiao",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "Xihui",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Lookahead exploration with neural radiance representation for continuous vision-language navigation",
+      "authors": [
+        {
+          "first": "Zihan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jiahao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yeqi",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Junjie",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Ming",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuqiang",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Learning generalizable feature fields for mobile manipulation",
+      "authors": [
+        {
+          "first": "Ri-Zhao",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        },
+        {
+          "first": "Yafei",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Ge",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuchen",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianglong",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Jiteng",
+          "middle": [],
+          "last": "Mu",
+          "suffix": ""
+        },
+        {
+          "first": "Ruihan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolay",
+          "middle": [],
+          "last": "Atanasov",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Scherer",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Scannet: Richly-annotated 3d reconstructions of indoor scenes",
+      "authors": [
+        {
+          "first": "Angela",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Angel",
+          "suffix": ""
+        },
+        {
+          "first": "Manolis",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Maciej",
+          "middle": [],
+          "last": "Savva",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Halber",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Funkhouser",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nießner",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Habitatmatterport 3d semantics dataset",
+      "authors": [
+        {
+          "first": "Karmesh",
+          "middle": [],
+          "last": "Yadav",
+          "suffix": ""
+        },
+        {
+          "first": "Ram",
+          "middle": [],
+          "last": "Ramrakhya",
+          "suffix": ""
+        },
+        {
+          "first": "Santhosh",
+          "middle": [],
+          "last": "Kumar Ramakrishnan",
+          "suffix": ""
+        },
+        {
+          "first": "Theo",
+          "middle": [],
+          "last": "Gervet",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Turner",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Gokaslan",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [],
+          "last": "Maestre",
+          "suffix": ""
+        },
+        {
+          "first": "Xuan",
+          "middle": [],
+          "last": "Angel",
+          "suffix": ""
+        },
+        {
+          "first": "Dhruv",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Manolis",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Savva",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Rio: 3d object instance re-localization in changing indoor environments",
+      "authors": [
+        {
+          "first": "Johanna",
+          "middle": [],
+          "last": "Wald",
+          "suffix": ""
+        },
+        {
+          "first": "Armen",
+          "middle": [],
+          "last": "Avetisyan",
+          "suffix": ""
+        },
+        {
+          "first": "Nassir",
+          "middle": [],
+          "last": "Navab",
+          "suffix": ""
+        },
+        {
+          "first": "Federico",
+          "middle": [],
+          "last": "Tombari",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Nießner",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Sceneverse: Scaling 3d vision-language learning for grounded scene understanding",
+      "authors": [
+        {
+          "first": "Baoxiong",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Yixin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Huangyue",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Yan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xuesong",
+          "middle": [],
+          "last": "Niu",
+          "suffix": ""
+        },
+        {
+          "first": "Tengyu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Qing",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Siyuan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "European Conference on Computer Vision (ECCV)"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Feature splatting: Language-driven physics-based scene synthesis and editing",
+      "authors": [
+        {
+          "first": "Ri-Zhao",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        },
+        {
+          "first": "Ge",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Weijia",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaolong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Xtuner: A toolkit for efficiently fine-tuning llm",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Phi-3 technical report: A highly capable language model locally on your phone",
+      "authors": [
+        {
+          "first": "Jyoti",
+          "middle": [],
+          "last": "Marah Abdin",
+          "suffix": ""
+        },
+        {
+          "first": "Hany",
+          "middle": [],
+          "last": "Aneja",
+          "suffix": ""
+        },
+        {
+          "first": "Ahmed",
+          "middle": [],
+          "last": "Awadalla",
+          "suffix": ""
+        },
+        {
+          "first": "Ammar",
+          "middle": [],
+          "last": "Awadallah",
+          "suffix": ""
+        },
+        {
+          "first": "Nguyen",
+          "middle": [],
+          "last": "Ahmad Awan",
+          "suffix": ""
+        },
+        {
+          "first": "Amit",
+          "middle": [],
+          "last": "Bach",
+          "suffix": ""
+        },
+        {
+          "first": "Arash",
+          "middle": [],
+          "last": "Bahree",
+          "suffix": ""
+        },
+        {
+          "first": "Jianmin",
+          "middle": [],
+          "last": "Bakhtiari",
+          "suffix": ""
+        },
+        {
+          "first": "Harkirat",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Behl",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Cross-modal map learning for vision and language navigation",
+      "authors": [
+        {
+          "first": "Georgios",
+          "middle": [],
+          "last": "Georgakis",
+          "suffix": ""
+        },
+        {
+          "first": "Karl",
+          "middle": [],
+          "last": "Schmeckpeper",
+          "suffix": ""
+        },
+        {
+          "first": "Karan",
+          "middle": [],
+          "last": "Wanchoo",
+          "suffix": ""
+        },
+        {
+          "first": "Soham",
+          "middle": [],
+          "last": "Dan",
+          "suffix": ""
+        },
+        {
+          "first": "Eleni",
+          "middle": [],
+          "last": "Miltsakaki",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Roth",
+          "suffix": ""
+        },
+        {
+          "first": "Kostas",
+          "middle": [],
+          "last": "Daniilidis",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Weakly-supervised multi-granularity map learning for vision-and-language navigation",
+      "authors": [
+        {
+          "first": "Peihao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Dongyu",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Kunyang",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Runhao",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Mingkui",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Chuang",
+          "middle": [],
+          "last": "Gan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Instructnav: Zero-shot system for generic instruction navigation in unexplored environment",
+      "authors": [
+        {
+          "first": "Yuxing",
+          "middle": [],
+          "last": "Long",
+          "suffix": ""
+        },
+        {
+          "first": "Wenzhe",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Hongcheng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Guanqi",
+          "middle": [],
+          "last": "Zhan",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "8th Annual Conference on Robot Learning"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Affordances-oriented planning using foundation models for continuous vision-language navigation",
+      "authors": [
+        {
+          "first": "Jiaqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Bingqian",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Xinmin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Lin",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaodan",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Kwan-Yee K",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Arkitscenes: A diverse real-world dataset for 3d indoor scene understanding using mobile rgb-d data",
+      "authors": [
+        {
+          "first": "Gilad",
+          "middle": [],
+          "last": "Baruch",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuoyuan",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Afshin",
+          "middle": [],
+          "last": "Dehghan",
+          "suffix": ""
+        },
+        {
+          "first": "Yuri",
+          "middle": [],
+          "last": "Feigin",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Gebauer",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Kurz",
+          "suffix": ""
+        },
+        {
+          "first": "Tal",
+          "middle": [],
+          "last": "Dimry",
+          "suffix": ""
+        },
+        {
+          "first": "Brandon",
+          "middle": [],
+          "last": "Joffe",
+          "suffix": ""
+        },
+        {
+          "first": "Arik",
+          "middle": [],
+          "last": "Schwartz",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round 1)"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Structured3d: A large photo-realistic dataset for structured 3d modeling",
+      "authors": [
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Junfei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jing",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Shenghua",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Zihan",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of The European Conference on Computer Vision (ECCV)"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Scaling data generation in vision-and-language navigation",
+      "authors": [
+        {
+          "first": "Zun",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jialu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yicong",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Mohit",
+          "middle": [],
+          "last": "Bansal",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Gould",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "A reduction of imitation learning and structured prediction to no-regret online learning",
+      "authors": [
+        {
+          "first": "Stéphane",
+          "middle": [],
+          "last": "Ross",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Gordon",
+          "suffix": ""
+        },
+        {
+          "first": "Drew",
+          "middle": [],
+          "last": "Bagnell",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Proceedings of the fourteenth international conference on artificial intelligence and statistics"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Adafactor: Adaptive learning rates with sublinear memory cost",
+      "authors": [
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Mitchell",
+          "middle": [],
+          "last": "Stern",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Training deep nets with sublinear memory cost",
+      "authors": [
+        {
+          "first": "Tianqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Chiyuan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Carlos",
+          "middle": [],
+          "last": "Guestrin",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Dynamem: Online dynamic spatio-semantic memory for open world mobile manipulation",
+      "authors": [
+        {
+          "first": "Peiqi",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhanqiu",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Mohit",
+          "middle": [],
+          "last": "Warke",
+          "suffix": ""
+        },
+        {
+          "first": "Soumith",
+          "middle": [],
+          "last": "Chintala",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Paxton",
+          "suffix": ""
+        },
+        {
+          "first": "Nur",
+          "middle": [],
+          "last": "Muhammad Mahi",
+          "suffix": ""
+        },
+        {
+          "first": "Lerrel",
+          "middle": [],
+          "last": "Shafiullah",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Pinto",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "CoRL 2024 Workshop on Mastering Robot Manipulation in a World of Abundant Data"
+    }
+  ]
+}

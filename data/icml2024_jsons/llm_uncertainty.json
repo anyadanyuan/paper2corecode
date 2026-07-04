@@ -1,0 +1,2245 @@
+{
+  "paper_id": "llm_uncertainty",
+  "title": "Decomposing Uncertainty for Large Language Models through Input Clarification Ensembling",
+  "authors": [
+    {
+      "first": "Bairu",
+      "middle": [],
+      "last": "Hou",
+      "affiliation": {}
+    },
+    {
+      "first": "Yujian",
+      "middle": [],
+      "last": "Liu",
+      "affiliation": {}
+    },
+    {
+      "first": "Kaizhi",
+      "middle": [],
+      "last": "Qian",
+      "affiliation": {}
+    },
+    {
+      "first": "Jacob",
+      "middle": [],
+      "last": "Andreas",
+      "affiliation": {}
+    },
+    {
+      "first": "Shiyu",
+      "middle": [],
+      "last": "Chang",
+      "affiliation": {}
+    },
+    {
+      "first": "Yang",
+      "middle": [],
+      "last": "Zhang",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "Uncertainty decomposition refers to the task of decomposing the total uncertainty of a predictive model into aleatoric (data) uncertainty, resulting from inherent randomness in the data-generating process, and epistemic (model) uncertainty, resulting from missing information in the model's training data. In large language models (LLMs) specifically, identifying sources of uncertainty is an important step toward improving reliability, trustworthiness, and interpretability, but remains an important open research question. In this paper, we introduce an uncertainty decomposition framework for LLMs, called input clarification ensembling, which can be applied to any pre-trained LLM. Our approach generates a set of clarifications for the input, feeds them into an LLM, and ensembles the corresponding predictions. We show that, when aleatoric uncertainty arises from ambiguity or under-specification in LLM inputs, this approach makes it possible to factor an (un-clarified) LLM's predictions into separate aleatoric and epistemic terms, using a decomposition similar to the one employed by Bayesian neural networks. Empirical evaluations demonstrate that input clarification ensembling provides accurate and reliable uncertainty quantification on several language processing tasks. Code and data are available at https://github.com/",
+  "body": {
+    "4._Experiments": "In this section, we conduct empirical evaluations to demonstrate the validity and effectiveness of the proposed method. Specifically, we aims to answer the following two questions:\n1. Can the proposed UQ framework quantify total uncertainty effectively and correctly?\n2. Can the proposed UQ framework decompose the uncertainty effectively and correctly?\nTo answer the first question, we conduct the mistake detection experiment, which will be introduced in Section 4.2. To answer the second question, we conduct three experiments: ambiguity detection, monotonicity check, and recall of correct answers, which will be presented in Sections 4.3-4.5, respectively.",
+    "3.2._Background:_Bayesian_Neural_Networks_and_DEEP_ENSEMBLES": "The possible solutions to our task is to apply the canonical Bayesian Neural Network (BNN) approach (Blundell et al., 2015; Graves, 2011) or DEEP ENSEMBLES (Lakshminarayanan et al., 2017) , which are standard approaches to uncertainty decomposition. Instead of having one set of parameters, BNNs model the parameter distribution of a neural network. With the Bayesian formalism, the posterior distribution can be approximated give the training data via techniques such as variational inference (Blundell et al., 2015; Graves, 2011) . Due to the prohibitive computational cost of BNNs, non-Bayesian methods such as DEEP ENSEMBLES are proposed with better scalability. DEEP ENSEMBLES maintain K models, each parameterized as θ (k) . Each of the k models seeks to minimize the training loss, usually the cross entropy loss for classification tasks, which is equivalent to solving the following optimization problem\nEQUATION\nIn DEEP ENSEMBLES, different models have slightly different initialization values and thus the optimized values, {θ (k) }, are different. Denote the resulting distribution of the model parameters θ as p(θ|D) (either approximated by BNNs or DEEP ENSEMBLES) where D is the training dataset. Then the ensembled distribution of BNN can be represented as\nq(Y |X) = E q(θ|D) [q(Y |X, θ)].\nThen we can decompose the predictive uncertainty as\nEQUATION\nwhere I denotes the mutual information under the q distribution. ① measures the disagreement among the different models; ② measures the average uncertainty of each individual model. The above equation can be straightforwardly derived from the definition of conditional mutual information. Under certain assumptions, ① and ② can approximate the epistemic and aleatoric uncertainties, respectively (Gal et al., 2016) . An illustration of the DEEP ENSEMBLES framework is shown in the upper panel of Figure 1 .\nHere is an intuitive explanation of why this is the case. According to Eq. 1, the goal of each model is to approach the ground-truth distribution, and thus can be viewed as the process of reducing the epistemic uncertainty. Therefore, if the optimization is successful, all the models will learn the true distribution, i.e., q(Y |X, θ (k) ) = p(Y |X), ∀k, which, by definition, results in zero epistemic uncertainty. Meanwhile, ① will also be zero because all the models produce the same prediction. Thus ① equals epistemic uncertainty in this case. ② would also equal the aleatoric uncertainty because the predicted distribution is equal to the true distribution.\nOn the other hand, if the models fail to learn the true distribution, in which case the epistemic uncertainty will be large, ① will also be large since different models have different hyperparameter settings and will be stuck in very different local optima.",
+    "3.5._Input_Clarification": "Unlike the conventional neural networks, the input to LLMs usually contains multiple components, including instructions, in-context examples, questions etc. Therefore, we can separately measure the aleatoric uncertainties caused by different input components by clarifying only the corresponding components. For example, to measure the aleatoric uncertainty resulting from ambiguous instructions, we can clarify only the instruction. For the aleatoric uncertainty studied in this work, we will focus on the uncertainty caused by instruction ambiguity and question ambiguity, but the framework is readily generalizable to other input components.\nTo derive clarifications that approximately minimize the ambiguity in step 1 above, we introduce a clarification LLM, where we provide an instruction and in-context example to guide the LLM to perform adequate clarification. Therefore, the above input clarification distribution q(C|X) in Equation 3 is the output distribution of the clarification LLM.\nNote that the clarification LLM can be different from the LLM for prediction. In this work, we propose the following design choices for the clarification LLM to to ensure the quality of clarification:\n• Prompting an LLM with task instructions and in-context examples. We design instructions for the clarification generation task and provide the model (gpt-3.5-turbo and gpt-4) with several in-context examples.\n• Supervised fine-tuning. We can also fine-tune a opensourced language model on datasets that contains the ambiguous inputs and their corresponding clarifications. We fine-tune the Llama-3-8b-instruct model on the training set of the AmbigQA (Min et al., 2020) dataset.\nFurther implementation details are provided in Section 4 and Appendix A.2. For both design choices, we show that we can easily adapt the LLMs for clarification generation and quantify the uncertainty using our proposed framework.",
+    "3.1._Notations_and_Problem_Formulation": "Denote by X and Y the input and output target of a given task and θ as the parameters of an LLM. Denote by p(Y |X) and q(Y |X, θ) the ground-truth and predicted distribution of Y given X.\nWe first introduce three uncertainty concepts. First, the total uncertainty is defined as the entropy of the predicted distribution, i.e., U total = H(q(Y |X; θ)). If the overall uncertainty is high, then it means the LLM has low confidence in its output. The total uncertainty can be further decomposed into two different types of uncertainties.\nThe first type of uncertainty is referred to as the epistemic uncertainty, which characterizes how well the LLM approaches the ground truth distribution, and thus learns the knowledge therein. For example, to answer 'What is 2+3?', if the LLM were able to learn the true knowledge of the algebraic operation, it would be able to answer with certainty; otherwise, the uncertainty would be high.\nThe second type of uncertainty is referred to as the aleatoric uncertainty, which characterizes the fundamental uncertainty residing in the ground-truth distribution, and is irreducible no matter how well the LLM learns. For example, to answer 'Who is the president of this country?', even if the LLM were well acquainted with politics, it still could not answer it confidently, because this question is inherently ambiguous. The data aleatoric is often quantified by the entropy in the ground-truth distribution, i.e., H(p(Y |X)).\nThe goal of this paper is to estimate both the epistemic and aleatoric uncertainties in LLMs.",
+    "5._Conclusion": "In this paper, we focus on the uncertainty quantification of LLMs and propose a new framework for decomposing the uncertainty. With a symmetric structure of the BNN methods, our framework leverages input clarifications for uncertainty quantification, which is more suitable for blackbox LLMs. experimental results affirm that our proposed method not only yields reliable uncertainty quantification but also effectively decompose the total uncertainty into aleatoric and epistemic uncertainty. In the future, we will further explore how to build a more effective clarification module to boost the effectiveness of our method.",
+    "2._Related_Work": "Uncertainty quantification. Uncertainty quantification for machine learning models has been widely studied to quantify the reliability of model predictions (Gal et al., 2016; Gal & Ghahramani, 2016; Malinin & Gales, 2018; Ovadia et al., 2019; Malinin et al., 2020; Lin et al., 2022; Kuhn et al., 2022; Lin et al., 2023; Shen et al., 2023) . Uncertainty in model predictions can have numerous causes. Given the total uncertainty in model predictions, one can further decompose it into epistemic uncertainty (due to lack of knowledge in the model) and aleatoric uncertainty (due to the inherent randomness and noise in data).\nDepending on how the uncertainty is obtained, existing uncertainty quantification methods can be categorized into intrinsic and extrinsic methods. Intrinsic methods adopt machine learning models to provide an inherent uncertainty estimate, such as Bayesian approaches and ensemblebased approaches (Malinin & Gales, 2018) . Bayesian approaches (Blundell et al., 2015; Gal & Ghahramani, 2016; Teye et al., 2018; Mobiny et al., 2021; Lakshminarayanan et al., 2017; Malinin et al., 2020; He et al., 2020) and ensemble-based approaches (Lakshminarayanan et al., 2017; Fort et al., 2019) can quantify both aleatoric and epistemic uncertainty. In comparison, extrinsic methods quantify the uncertainty in a post-hoc manner using auxiliary models (Kristiadi et al., 2021; Lahlou et al., 2022) . Our method belongs to the intrinsic family of methods and is directly motivated by Bayesian neural network approaches.",
+    "3.4._Input_Clarification_Ensembling": "Although modifying or adapting LLMs is challenging, it is relatively straightforward to modify the input to LLMs. By analogy to the way BNNs and DEEP ENSEMBLES ensemble 0.2 0.0 0.2 0.4 0.6 0.8 1.0 1.2 Aleatoric Uncertainty 0.0 0.5 1.0 1.5 2.0 2.5 3.0 Density Aleatoric Uncertainty Density Ambiguous Input Unambiguous Input Figure 2. Aleatoric uncertainty distribution on the AmbigQA (Min et al., 2020) dataset using the DEEP ENSEMBLES method. We use kernel density estimation to smooth the frequency distribution histogram. DEEP ENSEMBLES is achieved by ensembling different in-context examples.\ndifferent models that minimize epistemic uncertainty (Eq. 1), can we design a framework that ensembles different inputs to minimize aleatoric uncertainty?\nThis is the motivation behind our framework, which consists of the following two steps.",
+    "4.5._Recall_of_Correct_Answers": "As discussed in Section 3.6, our framework can be used to improve the performance in the presence of ambiguous input by asking users to choose from a set of clarified versions of the input. To make this happen, our methods must be able to cover a good proportion of the possible answers resulting from different clarifications of a given ambiguous input. Also, the number of required clarifications should be smaller, as the users might not want to select the responses from a large set of choices.\nTo test this, we use the ambiguous questions and instructions from AmbigQA and AmbigInst respectively. For each input, we collect all the possible labeled answers from the ground-truth annotations. Then we select one answer as the target answer that the user is asking for. In our pipeline, the LLM will generate multiple answers given the generated clarifications. Therefore, we inspect how well these generated answers cover the target answer given different numbers of clarifications. We separately compute the recall of the target answer with the different numbers of clarifications. As a baseline, we introduce a vanilla version, where we directly query the LLM with ambiguous input without any clarification.\nThe results are illustrated in Figure 4(b) . We can consistently observe an increase of recall given more clarifications. Similar to the ambiguity detection performance, the recall improvement on the AmbigInst dataset is more significant compared to the AmbigQA dataset, which is due to the subtlety of the AmbigQA dataset as discussed. Nevertheless, the proposed clarification framework is able to significantly improve the answer recall over the vanilla version without the clarification.",
+    "3.6._Improving_Performance_via_Soliciting_Clarifications": "Our framework not only provides a way of decomposing the uncertainties, but can also enable an interpretable and effective human-LLM interaction experience. Currently, one of the major ways for humans to interact with LLMs is designing appropriate input. However, the input designed by humans may not be clear enough to LLMs, often resulting in undesirable answers given by LLMs. With the proposed input clarification framework, we can design an interaction paradigm that alleviates this problem.\nGiven an input query, we can first gauge the uncertainties of different input components. If one of the components, say the instruction, contributes to high uncertainty (exceeding a threshold), we can provide feedback to the user that the LLM is not sure about the answer because the instruction is ambiguous, along with several clarification options produced by the clarification LLM for the user to choose from. This would help the user to perform directed improvement of the input query and obtain the desirable answer.",
+    "3.3._Do_BNN_and_DEEP_ENSEMBLES_work_for_LLMs?": "Our goal of decomposing uncertainty for LLMs would be easily achieved if these methods were readily applicable to LLMs. Unfortunately, this is not the case. For BNNs, we need to significantly modify the training method of LLMs.\nFor DEEP ENSEMBLES, the learning process in Eq. 1 is also very challenging for LLMs. Specifically, there are two types of methods for adapting LLMs to a particular task, supervised fine-tuning and prompting/in-context learning. Directly fine-tuning the model according to Eq. 1 is usually infeasible due to the limited access to model parameters and its huge requirement for computation. Even if it is feasible, it would be very time-consuming because it requires finetuning multiple LLMs.\nOn the other hand, the in-context learning method, though feasible, does not fit into the DEEP ENSEMBLES framework because it does not directly aim to optimize Eq. 1, so the decomposition will be very inaccurate. To demonstrate this, we perform a simple experiment on the AmbigQA (Min et al., 2020) dataset, which contains both ambiguous questions with multiple answers and unambiguous questions. We use the BNN method to decompose the uncertainty of ChatGPT, where the different individual model is derived by providing different in-context examples. If the decomposition method is accurate, we would expect to see that the aleatoric uncertainty for the ambiguous questions is significantly larger than that of the unambiguous ones. However, as shown in Figure 2 , the gap between the uncertainties of the two groups of questions is very small. More experiment details can be found in Section 4.\nWhile the BNN and DEEP ENSEMBLE framework do not work for LLMs, it inspires us to design an alternative framework that is almost completely symmetrical to the BNN approach, as discussed in the next subsection.",
+    "4.3._Uncertainty_Decomposition": "Now we can proceed to evaluate whether the decomposed uncertainty is reliable. As discussed, one of the main causes of aleatoric uncertainty is the ambiguity of the input. Therefore, we will test how well the measured aleatoric uncertainty is predictive of whether an input is ambiguous. In particular, we focus on two input components, the instruction and the question, and separately predict the ambiguity within each component using the respective aleatoric uncertainty (see Section 3.5).\nDatasets For ambiguity detection of the question, we select the AmbigQA dataset (Min et al., 2020) , which has annotations on the ambiguity of questions. The questions in AmbigQA are extracted from the NQ dataset (Kwiatkowski et al., 2019) . For ambiguity detection of the instruction, since there is no existing dataset, we create a dataset, AmbigInst, where we generate ambiguous instructions, their disambiguation, and the input-output pairs using Chat-GPT. Each instruction is paired with around 15 questions. Since the focus of AmbigInst is to detect ambiguous instructions, we do not introduce ambiguity to the paired questions. More details about AmbigInst can be found in Appendix B. We use the full AmbigInst dataset and randomly sample 200 examples from the validation set of AmbigQA for evaluation.\nEvaluation Settings We use 5-shot in-context examples on the AmbigQA dataset similar to the experiment on the NQ dataset. Since the questions in AmbigInst are relatively easy and straightforward, we directly prompt LLMs in a zero-shot setting. For ambiguous question detection, we perform clarifications on the input question only. We evaluate two clarification LLMs on the AmbigQA dataset, including the Llama-3-8B-Instruct fine-tuned on the training set of AmbigQA and gpt-4. we retrieve the most similar 16 questions as in-context examples when prompting the gpt-4 to generate clarifications for a particular input question. The similarity between two questions is measured by the cosine similarity of their sentence embeddings from SENTENCE-BERTfoot_0 (Reimers & Gurevych, 2019) . For the AmbigInst dataset, we directly prompt gpt-3.5-turbo-0613 to generate instruction clarifications (See Appendix A.4 for more details). We also include the performance of our method when using ground-truth disambiguation from the two datasets for reference (denoted as OURS * ).\nThe baselines are similar to the methods in the mistake detection task. The main difference is we use the quantified uncertainty to predict whether the input contains ambiguity. The total uncertainty for SE is used for ambiguity prediction in this task. Also, we test both the aleatoric uncertainty and total uncertainty quantified by the DEEP ENSEMBLES method, denoted by ENSEMBLES * (aleatoric) and ENSEM-BLES * (total) respectively. For our method, we use the aleatoric uncertainty for ambiguity prediction. DEEP EN-SEMBLES is not included on the AmbigInst dataset since we do not include in-context examples on that dataset. We also incorporate results with additional methods from previous work (Si et al., 2022; Cole et al., 2023) in Appendix A.1. ",
+    "4.1._Experiment_Configurations": "We use gpt-3.5-turbo-0613 as the default LLM for all experiments. We sample 10 model predictions with tem-perature 0.5 and use the answer frequency to estimate the output distribution. Since all the datasets we use are openended generation tasks, different generated answers could have the exactly same meaning. For example, to answer the question 'When did the world's population reach 7 billion?', the LLM may generate several different answers such as 'December 2017' and 'The world's population reached 7 billion in December 2017', which are essentially the same meaning. Regarding these two answers as distinct answers can lead to an overestimation of the entropy of output distribution. Previous work (Kuhn et al., 2022; Lin et al., 2023) uses a natural language inference model to cluster different generated sequences with the same semantic meanings into one group for better output distribution estimation. We empirically find that LLMs can achieve better clustering performance. Therefore, we prompt the LLM to cluster output answers into different groups for output distribution estimation on question-answering datasets. More details about this process can be found in Appendix A.6.\nFor all the experiments, we introduce the following baselines: Semantic Uncertainty (Kuhn et al., 2022) (denoted as SE) directly computes the entropy of the output distribution as the estimated (total) uncertainty (named semantic entropy in their paper). Tian et al. (2023) first queries the LLM for the answer and then queries the LLM again for the confidence of the correctness of the answer. We denote this method as ASK4CONF. We also slightly modify the prompt for the ambiguity detection task to query LLM for the confidence of the ambiguity of the input (denoted as ASK4CONF-D). The DEEP ENSEMBLES method (denoted as ENSEMBLES * for brevity) is implemented by ensembling the output distributions of multiple different in-context example sets (we use 5 different sets). We add * here since this method is different from standard DEEP ENSEMBLES and does not directly optimize Eq. 1. We provide more details of the prompts used in the experiments in Appendix A.4.",
+    "4.2._Quantifying_Total_Uncertainty": "Correctly quantifying the total uncertainty is the premise of correctly decomposing the uncertainty. If the estimated total uncertainty is inaccurate, so will the estimated aleatoric and epistemic uncertainty. A reliable total uncertainty measure should have a close correspondence to the model's prediction accuracy. For model predictions whose total uncertainty is high, the chances that the predictions are incorrect should also be high. Therefore, we will evaluate the total uncertainty quantification using the mistake detection task, following the previous work (Kuhn et al., 2022; Lin et al., 2023) .",
+    "4.4._Monotonicity_Check": "To further evaluate the reliability of our aleatoric uncertainty measure, particularly the clarification module, we perform a monotonicity check experiment. Ideally, the clarified input should contribute to a much lower aleatoric uncertainty than the original ambiguous input. To test this, we perform two rounds of aleatoric uncertainty measuring. In the first round, we measure the aleatoric uncertainty by clarifying the original input segments (question or instruction). In the second round, we measure the aleatoric uncertainty of the clarified inputs obtained in the first round. Our goal is to check whether the aleatoric uncertainty measured in the second round is much smaller than that in the first round. This experiment is performed on the AmbigQA and AmbigInst datasets. In both rounds, we use the same clarification prompt to generate the clarifications.\nFigure 4 (a) visualizes the change in uncertainty on both datasets. As can be observed, the aleatoric uncertainty drops significantly after the input is clarified, which verifies the effectiveness of the clarification network.",
+    "1._Introduction": "With the widespread application of large language models (LLMs), it is becoming crucial to ensure predictions from LLMs are trustworthy. One critical dimension of trustworthiness is the ability to indicate when generated text is reliable and correct, which may be formalized as the problem of uncertainty quantification (UQ). Uncertainty quantification aims to measure the confidence level of neural networks in their predictions (Gal et al., 2016; Bhatt et al., 2021; Hüllermeier & Waegeman, 2021) . A higher uncertainty implies the output of LLMs should be clarified, manually evaluated, or rejected.\nQuantifying LLMs' total uncertainty has been the focus of increasing research attention. Existing work observes that LLMs are relatively well-calibrated, especially when predictions are obtained by ensembling multiple reasoning chains (Wang et al., 2022; Huang et al., 2022; Si et al., 2023) or prompts (Jiang et al., 2023) , or when LLMs are prompted to directly output their confidence levels (Kadavath et al., 2022; Lin et al., 2022; Tian et al., 2023) . Many other methods have been proposed to quantify the uncertainty of LLMs (Lin et al., 2022; Xiao et al., 2022; Kuhn et al., 2022; Lin et al., 2023; Duan et al., 2023; Huang et al., 2023; Park & Kim, 2023; Ren et al., 2023) . Accurate quantification of the uncertainty can be used for various applications, such as out-of-distribution detection and misclassified data detection.\nHowever, measuring uncertainty is just the first step towards understanding uncertainty in LLM predictions. For many applications, it is necessary to distinguish between different types of uncertainty and decompose the source into these types, a problem we refer to as uncertainty decomposition. As discussed more formally below, it is always possible to decompose a predictive model's uncertainty into two components: aleatoric (data) uncertainty and epistemic (model) uncertainty. Epistemic uncertainty arises when correct outputs are predictable in principle, but models lack the knowledge required for prediction. For example, the question What is 2+3? requires the knowledge of algebraic operations. Without such knowledge, the uncertainty will be high. On the other hand, aleatoric uncertainty arises from ambiguity or inherent randomness in the data-generating process itself: in language processing applications, it may result from ambiguous questions (Min et al., 2020; Guo et al., 2021; Kuhn et al., 2023) and unclear task instructions (Tamkin et al., 2022) . In particular, an important source of aleatoric uncertainty is the input ambiguity. For example, the answer to the input question Who is the president of this country will have a high aleatoric uncertainty because it is ambiguous what country and time the question intends to query about. This paper aims to obtain a finer-grained uncertainty measurement by determining how much of the total uncertainty can be attributed to aleatoric uncertainty due to input ambiguity. Aleatoric uncertainty due to input ambiguity is irreducible no matter how well a model learns. For example, to answer the question Who is the president of this country?, without any context, the uncertainty would be high regardless of how well the LLM learns, because the question itself is ambiguous. Uncertainty decomposition provides important insights for users to improve the performance of LLM. If epistemic uncertainty is high, users could supply the model with adequate knowledge through model adaptation, in-context learning, etc.; if the aleatoric uncertainty is high, then users should modify the query to make it more concrete.\nDespite existing work aimed at quantifying total uncertainty in LLMs, decomposing this uncertainty for LLMs remains understudied. Existing methods for uncertainty decomposition in other models cannot be directly applied, due to the black-box nature of LLMs and the prohibitive cost of inference. For example, Bayesian Neural Networks (BNNs) (Neal, 2012; Blundell et al., 2015; Graves, 2011; Louizos & Welling, 2016; Hernández-Lobato & Adams, 2015; Hasenclever et al., 2017; Li et al., 2015) specify a prior distribution over the model parameters and approximate the posterior distribution given the training data. DEEP ENSEMBLES (Lakshminarayanan et al., 2017; Fort et al., 2019) decompose the uncertainty by training different variants of models, e.g., with different random seeds, to with the proper scoring rules (e.g., negative log-likelihood loss for the classification task) in the target task and then ensembling them.\nDespite their effectiveness, Bayesian Neural Networks require substantial modifications to the training procedure, while DEEP ENSEMBLES necessitate training multiple variants of LLMs. Both approaches are generally impractical or prohibitively expensive. Given these challenges, we aim to address the following question: How can we effectively quantify and decompose uncertainty in LLMs?\nIn this paper, we propose a framework for uncertainty decomposition that we call input clarification ensembling. Our approach shares many intuitions and structural similarities with BNN-based approaches, but avoid the need to modify LLM parameters or inference procedures. Our approach is motivated by the observation that, although it is very challenging to modify LLM's parameters, it is relatively easy to manipulate the input to LLMs. Inspired by this, rather than ensembling different model variants that minimize the epistemic uncertainty, we introduce a set of input\n𝐶 ! 𝑪 \" Input LLM Input Clarify 𝜽 ! . . . . . . . . . 𝜽 \" Input min 𝜽 KL[𝑝||𝑞] ℋ(𝑝(𝒀|𝑿 ⊕ 𝑪)) min 𝑪"
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Uncertainty as a form of transparency: Measuring, communicating, and using uncertainty",
+      "authors": [
+        {
+          "first": "U",
+          "middle": [],
+          "last": "Bhatt",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Antorán",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [
+            "V"
+          ],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sattigeri",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Fogliato",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Melanc ¸on",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Krishnan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Stanley",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Tickoo",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 2021 AAAI/ACM Conference on AI, Ethics, and Society"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Weight uncertainty in neural network",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Blundell",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Cornebise",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Kavukcuoglu",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Wierstra",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Quantifying uncertainty in answers from any language model via intrinsic and extrinsic confidence assessment",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Mueller",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Training verifiers to solve math word problems",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Cobbe",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Kosaraju",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Bavarian",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Jun",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Plappert",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tworek",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hilton",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Nakano",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Selectively answering ambiguous questions",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "R"
+          ],
+          "last": "Cole",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "J"
+          ],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Gillick",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "M"
+          ],
+          "last": "Eisenschlos",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Dhingra",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Eisenstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The 2023 Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Calibration of pre-trained transformers",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Desai",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Durrett",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Shifting attention to relevance: Towards the uncertainty estimation of large language models",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zavalny",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Kailkhura",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Deep ensembles: A loss landscape perspective",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Fort",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Lakshminarayanan",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Dropout as a bayesian approximation: Representing model uncertainty in deep learning",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Gal",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Ghahramani",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "international conference on machine learning"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Uncertainty in deep learning",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Gal",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Practical variational inference for neural networks",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Graves",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "On calibration of modern neural networks",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Pleiss",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "Q"
+          ],
+          "last": "Weinberger",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Abgcoqa: Clarifying ambiguity in conversational question answering",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Reddy",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Alikhani",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "3rd Conference on Automated Knowledge Base Construction"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Distributed bayesian learning with stochastic natural gradient expectation propagation and the posterior server",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Hasenclever",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Webb",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Lienart",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Vollmer",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Lakshminarayanan",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Blundell",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "W"
+          ],
+          "last": "Teh",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Bayesian deep ensembles via the neural tangent kernel",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Lakshminarayanan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "W"
+          ],
+          "last": "Teh",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "A baseline for detecting misclassified and out-of-distribution examples in neural networks",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Gimpel",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Probabilistic backpropagation for scalable learning of bayesian neural networks",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "M"
+          ],
+          "last": "Hernández-Lobato",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Instruction induction: From few examples to natural language task descriptions",
+      "authors": [
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Honovich",
+          "suffix": ""
+        },
+        {
+          "first": "U",
+          "middle": [],
+          "last": "Shaham",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "R"
+          ],
+          "last": "Bowman",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Large language models can self-improve",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "S"
+          ],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Look before you leap: An exploratory study of uncertainty measurement for large language models",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Aleatoric and epistemic uncertainty in machine learning: An introduction to concepts and methods",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hüllermeier",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Waegeman",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Machine Learning"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Calibrating language models via augmented prompt ensembles",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ruan",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Pitis",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "B"
+          ],
+          "last": "Grosse",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "How can we know when language models know? on the calibration of language models for question answering",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Araki",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Neubig",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Transactions of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Language models (mostly) know what they know",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kadavath",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Conerly",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Drain",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Perez",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Schiefer",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Hatfield-Dodds",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Dassarma",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Tran-Johnson",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Regular tree grammars as a formalism for scope underspecification",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Koller",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Regneri",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Thater",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Proceedings of ACL-08: HLT"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Learnable uncertainty under laplace approximations",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kristiadi",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Hein",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Hennig",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Uncertainty in Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Semantic uncertainty: Linguistic invariances for uncertainty estimation in natural language generation",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Kuhn",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Gal",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Farquhar",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Selective clarification for ambiguous questions with generative language models",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Kuhn",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Gal",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Farquhar",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Clam",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Natural questions: a benchmark for question answering research",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Kwiatkowski",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Palomaki",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Redfield",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Collins",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Parikh",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Alberti",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Epstein",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Devlin",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Transactions of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Direct epistemic uncertainty prediction",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lahlou",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Nekoei",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [
+            "I"
+          ],
+          "last": "Butoi",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bertin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Rector-Brooks",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Korablyov",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Deup",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Transactions on Machine Learning Research"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Simple and scalable predictive uncertainty estimation using deep ensembles",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Lakshminarayanan",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Pritzel",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Blundell",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Stochastic expectation propagation",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "M"
+          ],
+          "last": "Hernández-Lobato",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "E"
+          ],
+          "last": "Turner",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Teaching models to express their uncertainty in words",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hilton",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Evans",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Transactions on Machine Learning Research"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Generating with confidence: Uncertainty quantification for black-box large language models",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Trivedi",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "We're afraid language models aren't modeling ambiguity",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Michael",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Suhr",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "West",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Koller",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Swayamdipta",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The 2023 Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Structured and efficient variational deep learning with matrix gaussian posteriors",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Louizos",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Predictive uncertainty estimation via prior networks",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Malinin",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Gales",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Uncertainty estimation in autoregressive structured prediction",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Malinin",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Gales",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Uncertainty in gradient boosting via ensembles",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Malinin",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Prokhorenkova",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ustimenko",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Reducing conversational agents' overconfidence through linguistic calibration",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [
+            "J"
+          ],
+          "last": "Mielke",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Szlam",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Dinan",
+          "suffix": ""
+        },
+        {
+          "first": "Y.-L",
+          "middle": [],
+          "last": "Boureau",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Transactions of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Ambigqa: Answering ambiguous open-domain questions",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Min",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Michael",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Hajishirzi",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Dropconnect is effective in modeling uncertainty of bayesian deep networks",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mobiny",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "K"
+          ],
+          "last": "Moulik",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Garg",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "C"
+          ],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Van Nguyen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Scientific reports"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Bayesian learning for neural networks",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [
+            "M"
+          ],
+          "last": "Neal",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Analyzing uncertainty in neural machine translation",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ott",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Auli",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Grangier",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Ranzato",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Can you trust your model's uncertainty? evaluating predictive uncertainty under dataset shift",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ovadia",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Fertig",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Nado",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Sculley",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Nowozin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Dillon",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Lakshminarayanan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Snoek",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Pac neural prediction set learning to quantify the uncertainty of generative language models",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Sentence-bert: Sentence embeddings using siamese bert-networks",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Reimers",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Gurevych",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Robots that ask for help: Uncertainty alignment for large language model planners",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Dixit",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bodrova",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Tu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Takayama",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Varley",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "2nd Workshop on Language and Robot Learning: Language as Grounding"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Deep bayesian bandits showdown: An empirical comparison of bayesian deep networks for thompson sampling",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Riquelme",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Tucker",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Snoek",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Post-hoc uncertainty learning using a dirichlet meta-model",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bu",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sattigeri",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ghosh",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Wornell",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Prompting gpt-3 to be reliable",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Si",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Gan",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "L"
+          ],
+          "last": "Boyd-Graber",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Prompting GPT-3 to be reliable",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Si",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Gan",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "L"
+          ],
+          "last": "Boyd-Graber",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Task ambiguity in humans and language models",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Tamkin",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Handa",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Shrestha",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Goodman",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Bayesian uncertainty estimation for batch normalized deep networks",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Teye",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Azizpour",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Just ask for calibration: Strategies for eliciting calibrated confidence scores from language models fine-tuned with human feedback",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Mitchell",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Rafailov",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Selfconsistency improves chain of thought reasoning in language models",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Schuurmans",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [
+            "V"
+          ],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "H"
+          ],
+          "last": "Chi",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Narang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Chowdhery",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Uncertainty quantification with pre-trained language models: A large-scale empirical analysis",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "P"
+          ],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "U",
+          "middle": [],
+          "last": "Bhatt",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Neiswanger",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Salakhutdinov",
+          "suffix": ""
+        },
+        {
+          "first": "L.-P",
+          "middle": [],
+          "last": "Morency",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Findings of the Association for Computational Linguistics: EMNLP 2022"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Can explanations be useful for calibrating black box models?",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Durrett",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Navigating the grey area: Expressions of overconfidence and uncertainty in language models",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Jurafsky",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Hashimoto",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF60",
+      "title": "If the task description is clear and unambiguous",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Sort the data in alphabetical order",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "The following table lists the cities in the set: Name Population Land Area Paris 2.1 million 105.4 km Berlin",
+      "authors": [],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Find the middle value in a list of numbers",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF64",
+      "title": "mind to suffer the slings and arrows of outrageous fortune. 3. Or to take arms against a sea of troubles and by opposing end them",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    }
+  ]
+}

@@ -1,0 +1,3128 @@
+{
+  "paper_id": "gfn-diffusion",
+  "title": "Improved off-policy training of diffusion samplers",
+  "authors": [
+    {
+      "first": "Marcin",
+      "middle": [],
+      "last": "Sendera",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Université de Montréal University of Edinburgh",
+        "location": {}
+      }
+    },
+    {
+      "first": "Minsu",
+      "middle": [],
+      "last": "Kim",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Université de Montréal University of Edinburgh",
+        "location": {}
+      }
+    },
+    {
+      "first": "Sarthak",
+      "middle": [],
+      "last": "Mittal",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Université de Montréal University of Edinburgh",
+        "location": {}
+      }
+    },
+    {
+      "first": "Pablo",
+      "middle": [],
+      "last": "Lemos",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Université de Montréal University of Edinburgh",
+        "location": {}
+      }
+    },
+    {
+      "first": "Scimeca",
+      "middle": [],
+      "last": "Luca",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Université de Montréal University of Edinburgh",
+        "location": {}
+      }
+    },
+    {
+      "first": "",
+      "middle": [],
+      "last": "Mila",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Université de Montréal University of Edinburgh",
+        "location": {}
+      }
+    },
+    {
+      "first": "Jarrid Rector-Brooks",
+      "middle": [],
+      "last": "Mila",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Université de Montréal University of Edinburgh",
+        "location": {}
+      }
+    },
+    {
+      "first": "Alexandre",
+      "middle": [
+        "Adam"
+      ],
+      "last": "Mila",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Université de Montréal University of Edinburgh",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yoshua",
+      "middle": [],
+      "last": "Bengio",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Université de Montréal University of Edinburgh",
+        "location": {}
+      }
+    },
+    {
+      "first": "Nikolay",
+      "middle": [],
+      "last": "Malkin",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Université de Montréal University of Edinburgh",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "We study the problem of training diffusion models to sample from a distribution with a given unnormalized density or energy function. We benchmark several diffusion-structured inference methods, including simulation-based variational approaches and off-policy methods (continuous generative flow networks). Our results shed light on the relative advantages of existing algorithms while bringing into question some claims from past work. We also propose a novel exploration strategy for off-policy methods, based on local search in the target space with the use of a replay buffer, and show that it improves the quality of samples on a variety of target distributions. Our code for the sampling methods and benchmarks studied is made public at (link) as a base for future work on diffusion models for amortized inference.",
+  "body": {
+    "1_Introduction": "Approximating and sampling from complex multivariate distributions is a fundamental problem in probabilistic deep learning [e.g., 27, 35, 26, 48, 57] and in scientific applications [3, 52, 38, 1, 32] . The problem of drawing samples from a distribution given only an unnormalized probability density or energy is particularly challenging in high-dimensional spaces and when the distribution of interest has many separated modes [5] . Sampling methods based on Markov chain Monte Carlo (MCMC)such as Metropolis-adjusted Langevin [MALA; 24, 65, 64] and Hamiltonian MC [HMC; 20, 31] may be slow to mix between modes and have a high cost per sample. While variants such as sequential MC [SMC; 25, 13, 16] and nested sampling [69, 10, 43] have better mode coverage, their cost may grow prohibitively with the dimensionality of the problem. This motivates the use of amortized variational inference, i.e., fitting parametric models that sample the target distribution. Diffusion models, continuous-time stochastic processes that gradually evolve a simple distribution to a complex target, are powerful density estimators with proven mode-mixing properties [15] ; as such, they have been widely used in the setting of generative models learned from data [70, 72, 28, 50, 66] . However, the problem of training diffusion models to sample from a distribution with a given blackbox density or energy function has attracted less attention. Recent work has drawn connections between diffusion (learning the denoising process) and stochastic control (learning the Föllmer drift [21] ), leading to approaches such as the path integral sampler [PIS; 88], denoising diffusion sampler [DDS; 78], and time-reversed diffusion sampler [DIS; 8]; such approaches were recently unified by [63] and [79] . Another line of work [42, 86] is based on continuous generative flow networks (GFlowNets), which are deep reinforcement learning algorithms adapted to variational inference that offer stable off-policy training and thus flexible exploration [46] .\nDespite the advances in sampling methods and attempts to unify them theoretically [63, 79] , the field suffers from some failures in benchmarking and reproducibility, with the works differing in the choice of model architectures, using unstated hyperparameters, and even disagreeing in their definitions of the same target densities (see §B.1). The first main contribution of this paper is a unified library for diffusion-structured samplers. The library has a focus on off-policy methods (continuous GFlowNets) but also includes simulation-based variational objectives such as PIS. Using this codebase, we are able to benchmark methods from past work under comparable conditions and confirm claims about exploration strategies and desirable inductive biases, while calling into question other claims on robustness and sample efficiency. Our library also includes several new modeling and training techniques, and we provide preliminary evidence of their utility in possible future work ( §5.3).\nOur second contribution is a study of methods for improving exploration and credit assignmentthe propagation of learning signals from the target density to the parameters of earlier sampling steps -in diffusion-structured samplers ( §4). First, our results ( §5.2) suggest that the technique of utilizing partial trajectory information [44, 55] , as done in the diffusion setting by [86] , offers little benefit, and a higher training cost, over on-policy [88] or off-policy [42] trajectory-based optimization. Second, we examine the utility of a gradient-based variant which parametrizes the denoising distribution as a correction to a Langevin process [88] . We show that this inductive bias is also beneficial in the offpolicy (GFlowNet) setting despite higher computational cost. Finally, motivated by recent approaches in discrete sampling, we propose an efficient exploration technique based on local search in the target space with the use of a replay buffer, which improves sample quality across various target distributions.",
+    "2_Prior_work": "Amortized variational inference approaches use a parametric model 𝑞 𝜃 to approximate a given target density 𝑝 target , typically through stochastic optimization [30, 58, 2] . Notably, explicit density models like autoregressive models and normalizing flows have been extensively utilized in density estimation [60, 19, 81, 22, 51] . However, these models impose structural constraints, thereby limiting their expressive power [14, 23, 87] . The adoption of diffusion processes in generative models has stimulated a renewed interest in hierarchical models as density estimators [80, 28, 76] . Approaches like PIS [88] leverage stochastic optimal control for sampling from unnormalized densities, albeit still struggling with scalability in high-dimensional spaces.\nGenerative flow networks, originally defined in the discrete case by [6, 7] , view hierarchical sampling (i.e., stepwise generation) as a sequential decision-making process and represent a synthesis of reinforcement learning and variational inference approaches [46, 90, 73, 18] , expanding from specific scientific domains [e.g., 36, 4, 89] to amortized inference over a broader array of latent structures [e.g., 77, 34] . Their ability to efficiently navigate trajectory spaces via off-policy exploration has been crucial, yet they encounter challenges in training dynamics, such as credit assignment and exploration efficiency [45, 44, 55, 59, 68, 39, 37] . These challenges have repercussions in the scalability of these methods in more complex scenarios, which this paper addresses in the continuous case.",
+    "3_Setting:_Diffusion-structured_sampling": {
+      "3.1_Euler-Maruyama_hierarchical_samplers": "Generative modeling with SDEs. Diffusion models assume a continuous-time generative process given by a neural stochastic differential equation [SDE; 75, 54, 67] :\nEQUATION\nwhere x 0 follows a fixed tractable distribution 𝜇 0 (such as a Gaussian or a point mass). The initial distribution 𝜇 0 and the stochastic dynamics specified by (1) induce marginal densities 𝑝 𝑡 on R 𝑑 for each 𝑡 > 0. The functions 𝑢 and 𝑔 have learnable parameters that we wish to optimize, using some objective, so as to make the terminal density 𝑝 1 close to 𝑝 target . Samples can be drawn from 𝑝 1 by sampling x 0 ∼ 𝜇 0 and simulating the SDE (1) to time 𝑡 = 1.\nThe SDE driving 𝜇 0 to 𝑝 target is not unique. However, if one fixes a reverse-time SDE, or noising process, that pushes 𝑝 target at 𝑡 = 1 to 𝜇 0 at 𝑡 = 0, then its reverse, the forward SDE (1), is uniquely determined under mild conditions and is called the denoising process. For usual choices of the noising process, there are stochastic regression objectives for learning the drift 𝑢 of the denoising process given samples from 𝑝 target , and the diffusion rate 𝑔 is available in closed form [28, 72] .",
+      "3.2_Euler-Maruyama_samplers_as_GFlowNets": "Continuous generative flow networks (GFlowNets) [42] express the problem of enforcing (6) as a reinforcement learning task. In this section, we summarize this interpretation, its connection to neural SDEs, the associated learning objectives, and their relative advantages and disadvantages.\nThe connection between generative flow networks and diffusion models or SDEs was first made informally by [46] in the distribution-matching setting and by [84] in the maximum-likelihood setting, while the theoretical foundations for continuous GFlowNets were later laid down by [42] .\nState and action space. To formulate sampling as a sequential decision-making problem, one must define the spaces of states and actions. In the case of sampling by 𝑇-step Euler-Maruyama integration, assuming 𝜇 0 is a point mass at 0, the state space is S = {(0, 0) ∪ (x, 𝑡) : x ∈ R 𝑑 , 𝑡 ∈ {Δ𝑡, 2Δ𝑡, . . . , 1} , with the point (x, 𝑡) representing that the sampling agent is at position x at time 𝑡.\nSampling begins with the initial state x 0 := (0, 0), proceeds through a sequence of states (x Δ𝑡 , Δ𝑡), (x 2Δ𝑡 , 2Δ𝑡), . . . , and ends at a state (x 1 , 1); states (x, 𝑡) with 𝑡 = 1 are called terminal states and their collection is denoted X. From now on, we will often write x 𝑡 in place of the state (x 𝑡 , 𝑡) when the time 𝑡 is clear from context. The sequence of states\nx 0 → x Δ𝑡 → • • • → x 1 is called a complete trajectory.\nThe actions from a nonterminal state (x 𝑡 , 𝑡) correspond to the possible next states (x 𝑡+Δ𝑡 , 𝑡 + Δ𝑡) that can be reached from (x 𝑡 , 𝑡) by a single step of the Euler-Maruyama integrator. 3 Forward policy and learning problem. A (forward) policy is a collection of continuous distributions over the successor states -states reachable by a single action -of every nonterminal state (x, 𝑡). In our context, this amounts to a collection of conditional probability densities 𝑝 𝐹 (x 𝑡+Δ𝑡 | x 𝑡 ; 𝜃), representing the density of the transition kernel from x 𝑡 to x 𝑡+Δ𝑡 . GFlowNet training optimizes the parameters 𝜃, which may be the weights of a neural network specifying a density over x 𝑡+Δ𝑡 conditioned on x Δ𝑡 . A policy 𝑝 𝐹 induces a distribution over complete trajectories\n𝜏 = (x 0 → x Δ𝑡 → • • • → x 1 ) via 𝑝 𝐹 (𝜏; 𝜃) = 𝑇 -1 𝑖=0 𝑝 𝐹 (x (𝑖+1)Δ𝑡 | x 𝑖Δ𝑡 ; 𝜃).\nIn particular, we get a marginal density over terminal states:\nEQUATION\nThe learning problem solved by GFlowNets is to find the parameters 𝜃 of a policy 𝑝 𝐹 whose terminating density 𝑝 ⊤ 𝐹 is equal to 𝑝 target , i.e.,\nEQUATION\n)\n2 To be precise, the fraction in (7) should be understood as a Radon-Nikodym derivative, which makes sense whether 𝜇 0 is a point mass or a continuous distribution and generalizes to continuous time [8, 63] . 3 Formally, the foundations in [42] require assuming reference measures with respect to which the reward and kernel densities are defined. As we deal with Euclidean spaces and assume the Lebesgue measure, readers need not burden themselves with measure theory. We note, however, that this flexibility allows easy generalization to sampling on other spaces, such as any Riemannian manifolds, where other methods do not directly apply.\nHowever, because the integral (8) is intractable and 𝑍 is unknown, auxiliary objects must be introduced into optimization objectives to enforce (9), as discussed below.\nNotably, if the policy is a Gaussian with mean and variance given by neural networks taking x 𝑡 and 𝑡 as input, then learning the policy amounts to learning the drift 𝑢(x 𝑡 , 𝑡; 𝜃) and diffusion 𝑔(x 𝑡 , 𝑡; 𝜃) of a SDE (1), i.e., fitting a neural SDE. The SDE learning problem in §3.1 is thus the same as that of fitting a GFlowNet with Gaussian policies.",
+      "_text": "Let E : R 𝑑 → R be a differentiable energy function and define 𝑅(x) = exp(-E (x)), the reward or unnormalized target density. Assuming the integral 𝑍 := ∫ R 𝑑 𝑅(x) 𝑑x exists, E defines a Boltzmann density 𝑝 target (x) = 𝑅(x)/𝑍 on R 𝑑 . We are interested in the problems of sampling from 𝑝 target and approximating the partition function 𝑍 given access only to E and possibly to its gradient ∇E.\nWe describe two closely related perspectives on this problem: via neural SDEs and stochastic control ( §3.1) and via continuous generative flow networks ( §3.2)."
+    },
+    "4_Exploration_and_credit_assignment_in_continuous_GFlowNets": {
+      "4.1_Credit_assignment_methods": "Partial energies and subtrajectory-based learning. [86] studied the diffusion sampler learning problem introduced by [42] , but replaced the TB learning objective with the SubTB objective. 4 In addition, an inductive bias resembling the geometric interpolation in [47] was used for the state flow function:\nEQUATION\nwhere NN is a neural network and\n𝑝 ref 𝑡 (x 𝑡 ) = N (x 𝑡 ; 0, 𝜎 2 𝑡𝐼 𝑑 )\nis the marginal density of a Brownian motion with rate 𝜎 at x 𝑡 . The use of the target density log 𝑅(x 𝑡 ) = -E (x 𝑡 ) in the state flow function was hypothesized to provide an effective signal driving the sampler to high-density states at early steps in the trajectory. Such an inductive bias on the state flow was called forward-looking (FL) by [55] , and we will refer to this method as FL-SubTB in §5.\nLangevin dynamics inductive bias. [88] proposed an inductive bias on the architecture of the drift of the neural SDE 𝑢(x 𝑡 , 𝑡; 𝜃) (in GFlowNet terms, the mean of the Gaussian density 𝑝 𝐹 (x 𝑡+Δ𝑡 | x 𝑡 ; 𝜃)) that resembles a Langevin process on the target distribution. One writes\nEQUATION\nwhere NN 1 and NN 2 are neural networks outputting a vector and a scalar, respectively. The second term in ( 14) is a scaled gradient of the target energy -the drift of a Langevin SDE -and the first term is a learned correction. This inductive bias, which we name the Langevin parametrization (LP), was shown to improve the efficiency of PIS. We will study its effect on continuous GFlowNets in §5.\nThe inductive bias (14) placed on policies represents a different way of incorporating the reward signal at intermediate steps in the trajectory and can steer the sampler towards low-energy regions. It contrasts with (13) in that it provides the gradient of the energy directly to the policy, rather than just using the energy to provide a learning signal to policies via the parametrization of the log-state flow (13) .\nConsiderations of the continuous-time limit lead us to conjecture that the Langevin parametrization ( 14) with NN 1 independent of x 𝑡 is equivalent to the forward-looking flow (13) in the limit of small time increments Δ𝑡 → 0, i.e., they induce the same asymptotics of the discrepancy in the SubTB constraints (12) over short partial trajectories. Such theoretical analysis can be the subject of future work.",
+      "4.2_A_new_method_for_off-policy_exploration_with_local_search_and_replay_buffer": "Local search with parallel MALA. The FL and LP inductive biases both induce computational overhead: either in the evaluation and optimization of a state flow or in the need to evaluate the energy gradient at every step of sampling (see §C.3). We present an alternative technique that does not induce additional computation cost per training trajectory. To enhance the quality of samples during training, we incorporate local search into the exploration process, motivated by the success of local exploration [83, 33, 40] and replay buffer [e.g., 17] methods for GFlowNets in discrete spaces. Unlike these methods, which define MCMC kernels via the GFlowNet policies, our method leverages parallel Metropolis-adjusted Langevin (MALA) directly in the target space.\nIn detail, we initially sample 𝑀 candidates from the sampler: {x (1) , . . . , x ( 𝑀 ) } ∼ 𝑝 ⊤ 𝐹 (•). Subsequently, we run parallel MALA across 𝑀 chains over 𝐾 transitions , with the initial states of the Markov chain being {x (1) , . . . , x ( 𝑀 ) }. After the 𝐾 burn-in burn-in transitions, the accepted samples are stored in a local search buffer D LS . We occasionally update the buffer using MALA steps and replay samples from it to minimize the computational demands of iterative local search. MALA steps are far more parallelizable than sampler training and need to be made only rarely (as the buffer is much larger than the training batch size), so the overhead of local search is small.",
+      "_text": "The main challenges in training off-policy sampling models are exploration efficiency (discovery of high-reward states) and credit assignment (propagation of reward signals to the actions that led to them). We describe several new and existing methods for addressing these challenges in the context of diffusion-structured GFlowNets. These techniques will be empirically studied and compared in §5."
+    },
+    "5_Experiments": {
+      "5.1_Tasks_and_baselines": "We explore two types of tasks, with more details provided in §B: sampling from energy distributions -a 2-dimensional mixture of Gaussians with 25 modes (25GMM), the 10-dimensional Funnel, the 32-dimensional Manywell distribution, and the 1600-dimensional Log-Gaussian Cox processand conditional sampling from the latent posterior of a variational autoencoder (VAE; [41, 61] ). This allows us to investigate both unconditional and conditional generative modeling techniques.\nWe evaluate three algorithm categories:\n(1) Traditional sampling methods: We consider a standard Sequential Monte Carlo (SMC) implementation and a state-of-the-art nested sampling method (GGNS, [43] ). (2) Simulation-driven variational approaches: DIS [8] , DDS [78] , and PIS [88] .\n(3) Diffusion-based GFlowNet samplers: Our evaluation focuses on TB-based training and the enhancements described in §4: the VarGrad estimator (VarGrad), off-policy exploration (Expl.), Langevin parametrization (LP), and local search (LS). Additionally, we assess the FL-SubTBbased continuous GFlowNet as studied by [86] for a comprehensive comparison.\nFor (2) and (3), we employ a consistent neural architecture across methods (details in §D).\nLearning problem and fixed backward process. In our main experiments, we borrow the modeling setting from [88] . We aim to learn a Gaussian forward policy 𝑝 𝐹 that samples from the target distribution in 𝑇 = 100 steps (Δ𝑡 = 0.01). Just as in past work [88, 42, 86] , the backward process is fixed to a discretized Brownian bridge with a noise rate 𝜎 that depends on the domain; explicitly,\nEQUATION\nunderstood to be a point mass at 0 when 𝑡 = Δ𝑡. To keep the learning problem consistent with past work, we fix the variance of the forward policy 𝑝 𝐹 to 𝜎 2 . This simplification is justified in continuous time, when the forward and reverse SDEs have the same diffusion rate. However, in §5.3, we will provide evidence that learning the forward policy's variance is quite beneficial for shorter trajectories.",
+      "5.2_Results": "We observe that TB's performance is generally modest without additional exploration and credit assignment mechanisms, except on the Funnel task, where variations in performance across methods are negligible. This confirms hypotheses from past work about the importance of offpolicy exploration [46, 42] and the importance of improved credit assignment [86] . On the other hand, our results do not show a consistent and significant improvement of the FL-SubTB objective used by [86] over TB. Replacing TB with the VarGrad objective yields similar results.\nThe simple off-policy exploration method of adding variance to the policy notably enhances performance on the 25GMM task. We investigate this phenomenon in more detail in Fig. 2 , finding that exploration that slowly decreases over the course of training is the best strategy.\nOn the other hand, our local search-guided exploration with a replay buffer (LS) leads to a substantial improvement in performance, surpassing or competing with GFlowNet baselines, non-GFlowNet baselines, and non-amortized sampling methods in most tasks and metrics. This advantage is attributed to efficient exploration and the ability to replay past low-energy regions, thus preventing mode collapse during training (Fig. 1 ). Further details on LS enhancements are discussed in §E with ablation studies in §E.2. Incorporating Langevin parametrization (LP) into TB or FL-SubTB results in notable performance improvements (despite being 2-3× slower per iteration), indicating that previous observations [88] transfer to off-policy algorithms. Compared to FL-SubTB, which aims for enhanced credit assignment through partial energy, LP achieves superior credit assignment leveraging gradient information, akin to partial energy in continuous time. LP is either superior or competitive across most tasks and metrics.\nIn §C.3, we study the scaling of the algorithms with dimension, showing efficiency of the proposed LS.\nConditional sampling. For the VAE task, we observe that the performance of the baseline GFlowNet-based samplers is generally worse than that of the simulation-based PIS (Table 2 ). While LP and LS improve the performance of TB, they do not close the gap in likelihood estimation; however, with the VarGrad objective, the performance is competitive with or superior to PIS. We hypothesize that this discrepancy is due to the difficulty of fitting the conditional log-partition function estimator, which is required for the TB objective but not for VarGrad, which only learns the policy. (In Fig. D .1 we show decoded samples encoded using the best-performing diffusion encoder.)",
+      "5.3_Extensions_to_general_SDE_learning_problems": "Our implementation of diffusion-structured generative flow networks includes several additional options that diverge from the modeling assumptions made in most past work in the field. Notably, it features the ability to:\n• optimize the backward (noising) process -not only the denoising process -as was done for related learning problems in [12, 63, 79] ; • learn the forward process's diffusion rate 𝑔(x 𝑡 , 𝑡; 𝜃), not only the mean 𝑢(x 𝑡 , 𝑡; 𝜃); • assume a varying noise schedule for the backward process, making it possible to train models with standard noising SDEs used for diffusion models for images.\nThese extensions will allow others to build on our implementation and apply it to problems such as finetuning diffusion models trained on images with a GFlowNet objective.\nAs noted in §5.1, in the main experiments we fixed the diffusion rate of the learned forward process, an assumption inherited from all past work and justified in the continuous-time limit. However, we perform an experiment to show the importance of extensions such as learning the forward variance in discrete time. Fig. 3 shows the samples of models on the 25GMM energy following the experimental setup of [43] . We see that when the forward policy's variance is learned, the model can better capture the details of the target distributions, choosing a low variance in the vicinity of the peaks to avoid 'blurring' them through the noise added in the last step of sampling.\nIn §C.2, we include preliminary results using a variance-preserving backward process, as commonly used in diffusion models, in place of the reversed Brownian motion used in the main experiments.\nThe ability to model distributions accurately in fewer steps is important for computational efficiency. Future work can consider ways to improve performance in coarse time discretizations, such as non-Gaussian transitions, whose utility in diffusion models trained from data has been demonstrated [82] .",
+      "_text": "We conduct comprehensive benchmarks of various diffusion-structured samplers, encompassing both GFlowNet samplers and methods such as PIS. For the GFlowNet samplers, we investigate a range of techniques, including different exploration strategies and loss functions. Additionally, we examine the efficacy of the Langevin parametrization and the newly proposed local search with buffer."
+    },
+    "6_Conclusion": "We have presented a study of diffusion-structured samplers for amortized inference over continuous variables. Our results suggest promising techniques for improving the mode coverage and efficiency of these models. Future work on applications can consider inference of high-dimensional parameters of dynamical systems and inverse problems. In probabilistic machine learning, extensions of this work should study integration of our amortized sequential samplers as variational posteriors in an expectation-maximization loop for training latent variable models, as was recently done for discrete compositional latents by [33] , and for sampling Bayesian posteriors over high-dimensional model parameters. The most important direction of theoretical work is understanding the continuous-time limit (𝑇 → ∞) of all the algorithms we have studied."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Posterior samples of source galaxies in strong gravitational lenses with score-based priors",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Adam",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Coogan",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Legin",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Perreault-Levasseur",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Hezaveh",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Amortized variational inference for simple hierarchical models",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Agrawal",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Domke",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Flow-based generative models for Markov chain Monte Carlo in lattice field theory",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [
+            "S"
+          ],
+          "last": "Albergo",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Kanwar",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "E"
+          ],
+          "last": "Shanahan",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Physical Review D"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Towards bayesian inference of gene regulatory networks with GFlowNets",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Atanackovic",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Tong",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "J"
+          ],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hartford",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dyngfn",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "On free energy barriers in Gaussian priors and failure of cold start MCMC for high-dimensional unimodal distributions",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "S"
+          ],
+          "last": "Bandeira",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Maillard",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Nickl",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Philosophical transactions. Series A, Mathematical, physical, and engineering sciences"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Flow network based generative models for non-iterative diverse candidate generation",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Korablyov",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Precup",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "GFlowNet foundations",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lahlou",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Deleu",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "J"
+          ],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Tiwari",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "An optimal control perspective on diffusion-based generative modeling",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Berner",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Richter",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Ullrich",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "From discrete-time policies to continuous-time diffusion samplers: Asymptotic equivalences and faster training",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Berner",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Richter",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Sendera",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Rector-Brooks",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Nested sampling methods",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Buchner",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Importance weighted autoencoders",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Burda",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "B"
+          ],
+          "last": "Grosse",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Salakhutdinov",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Likelihood training of Schrödinger bridge using forward-backward SDEs theory",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "G.-H",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "A"
+          ],
+          "last": "Theodorou",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "A sequential particle filter method for static models",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Chopin",
+          "suffix": ""
+        }
+      ],
+      "year": 2002,
+      "venue": "Biometrika"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Relaxing bijectivity constraints with continuously indexed normalising flows",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Cornish",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Caterini",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Deligiannidis",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Doucet",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Convergence of denoising diffusion models under the manifold hypothesis",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [],
+          "last": "De Bortoli",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Transactions on Machine Learning Research"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Sequential Monte Carlo samplers",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Del Moral",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Doucet",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Jasra",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Journal of the Royal Statistical Society Series B: Statistical Methodology"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Bayesian structure learning with generative flow networks",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Deleu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Góis",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Emezue",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Rankawat",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lacoste-Julien",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bauer",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Uncertainty in Artificial Intelligence (UAI)"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Discrete probabilistic inference as control in multi-path environments",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Deleu",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Nouri",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Precup",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Uncertainty in Artificial Intelligence (UAI)"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Density estimation using Real NVP",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Dinh",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sohl-Dickstein",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Hybrid Monte Carlo",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Duane",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kennedy",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "J"
+          ],
+          "last": "Pendleton",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Roweth",
+          "suffix": ""
+        }
+      ],
+      "year": 1987,
+      "venue": "Physics Letters B"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "An entropy approach to the time reversal of diffusion processes",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Föllmer",
+          "suffix": ""
+        }
+      ],
+      "year": 1985,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "i-flow: High-dimensional integration and sampling with normalizing flows",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Isaacson",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Krause",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Machine Learning: Science and Technology"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Freeform continuous dynamics for scalable reversible generative models",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Grathwohl",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "T"
+          ],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bettencourt",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Duvenaud",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ffjord",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Representations of knowledge in complex systems",
+      "authors": [
+        {
+          "first": "U",
+          "middle": [],
+          "last": "Grenander",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "I"
+          ],
+          "last": "Miller",
+          "suffix": ""
+        }
+      ],
+      "year": 1994,
+      "venue": "Journal of the Royal Statistical Society: Series B (Methodological)"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Sequential Monte Carlo",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "H"
+          ],
+          "last": "Halton",
+          "suffix": ""
+        }
+      ],
+      "year": 1962,
+      "venue": "Mathematical Proceedings of the Cambridge Philosophical Society"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Variational Bayesian last layers",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Harrison",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Willes",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Snoek",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Probabilistic backpropagation for scalable learning of Bayesian neural networks",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "M"
+          ],
+          "last": "Hernández-Lobato",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Adams",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Denoising diffusion probabilistic models",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "NeuTralizing bad geometry in Hamiltonian Monte Carlo using neural transport",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Hoffman",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sountsov",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "V"
+          ],
+          "last": "Dillon",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Langmore",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Vasudevan",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Stochastic variational inference",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [
+            "D"
+          ],
+          "last": "Hoffman",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "M"
+          ],
+          "last": "Blei",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "W"
+          ],
+          "last": "Paisley",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Journal of Machine Learning Research (JMLR)"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "The No-U-Turn sampler: adaptively setting path lengths in Hamiltonian Monte Carlo",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [
+            "D"
+          ],
+          "last": "Hoffman",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gelman",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Journal of Machine Learning Research (JMLR)"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Stochastic optimal control for collective variable free sampling of molecular transition paths",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Holdijk",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Hooft",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Jaini",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Ensing",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "GFlowNet-EM for learning compositional latent variable models",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [
+            "J"
+          ],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Everett",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Graikos",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Amortizing intractable inference in large language models",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [
+            "J"
+          ],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Elmoznino",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Kaddar",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Lajoie",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "What are Bayesian neural network posteriors really like",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Izmailov",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Vikram",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "D"
+          ],
+          "last": "Hoffman",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "G"
+          ],
+          "last": "Wilson",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Biological sequence design with gflownets",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Hernandez-Garcia",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Rector-Brooks",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "F"
+          ],
+          "last": "Dossou",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "A"
+          ],
+          "last": "Ekbote",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Kilgour",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Learning energy decompositions for partial inference of GFlowNets",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ahn",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Torsional diffusion for molecular conformer generation",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Jing",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Corso",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Barzilay",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Jaakkola",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Learning to scale logits for temperature-conditional GFlowNets",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ko",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Yun",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Local search GFlowNets",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Yun",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ahn",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Auto-encoding variational Bayes",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "P"
+          ],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "A theory of continuous generative flow networks",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lahlou",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Deleu",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Lemos",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Volokhova",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Hernández-Garcıa",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "N"
+          ],
+          "last": "Ezzine",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Improving gradient-guided nested sampling for posterior inference",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Lemos",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Handley",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Hezaveh",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Perreault-Levasseur",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Learning GFlowNets from partial episodes for improved convergence and stability",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Madan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Rector-Brooks",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Korablyov",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Nica",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Bosc",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Trajectory balance: Improved credit assignment in gflownets",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "GFlowNets and variational inference",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lahlou",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Deleu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Everett",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Learning interpolations between Boltzmann densities",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Máté",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Fleuret",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Transactions on Machine Learning Research"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Exploring exchangeable dataset amortization for bayesian posterior inference",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Mittal",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "L"
+          ],
+          "last": "Bracher",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Lajoie",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Jaini",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "A"
+          ],
+          "last": "Brubaker",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICML 2023 Workshop on Structured Probabilistic Inference {\\&} Generative Modeling"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Log Gaussian Cox processes",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Møller",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Syversveen",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Waagepetersen",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": "Scandinavian Journal of Statistics"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Improved denoising diffusion probabili1stic models",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Nichol",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Asymptotically unbiased estimation of physical observables with neural samplers",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [
+            "A"
+          ],
+          "last": "Nicoli",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Nakajima",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Strodthoff",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Samek",
+          "suffix": ""
+        },
+        {
+          "first": "K.-R",
+          "middle": [],
+          "last": "Müller",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Kessel",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Physical Review E"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Boltzmann generators: Sampling equilibrium states of many-body systems with deep learning",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Noé",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Olsson",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Köhler",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Science"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Solving high-dimensional Hamilton-Jacobi-Bellman PDEs using neural networks: perspectives from the theory of controlled diffusions and measures on path space",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Nüsken",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Richter",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Partial Differential Equations and Applications"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Stochastic Differential Equations: An Introduction with Applications",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Øksendal",
+          "suffix": ""
+        }
+      ],
+      "year": 2003,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Better training of GFlowNets with local credit and incomplete trajectories",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Optimal scaling and diffusion limits for the langevin algorithm in high dimensions",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [
+            "S"
+          ],
+          "last": "Pillai",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "M"
+          ],
+          "last": "Stuart",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "H"
+          ],
+          "last": "Thiéry",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "The Annals of Applied Probability"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Learning complex stochastic models with invertible neural networks",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [
+            "T"
+          ],
+          "last": "Radev",
+          "suffix": ""
+        },
+        {
+          "first": "U",
+          "middle": [
+            "K"
+          ],
+          "last": "Mertens",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Voss",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Ardizzone",
+          "suffix": ""
+        },
+        {
+          "first": "U",
+          "middle": [],
+          "last": "Köthe",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bayesflow",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE transactions on neural networks and learning systems"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Black box variational inference",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Ranganath",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gerrish",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Blei",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Artificial Intelligence and Statistics (AISTATS)"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Thompson sampling for improved exploration in GFlowNets",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Rector-Brooks",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Madan",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Korablyov",
+          "suffix": ""
+        },
+        {
+          "first": "C.-H",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Chandar",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Variational inference with normalizing flows",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Rezende",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Mohamed",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Stochastic backpropagation and approximate inference in deep generative models",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "J"
+          ],
+          "last": "Rezende",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Mohamed",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Wierstra",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "VarGrad: A low-variance gradient estimator for variational inference",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Richter",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Boustati",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Nüsken",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "J R"
+          ],
+          "last": "Ruiz",
+          "suffix": ""
+        },
+        {
+          "first": "Ömer",
+          "middle": [],
+          "last": "Deniz",
+          "suffix": ""
+        },
+        {
+          "first": "Akyildiz",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Improved sampling via learned diffusions",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Richter",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Berner",
+          "suffix": ""
+        },
+        {
+          "first": "G.-H",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Optimal scaling of discrete approximations to langevin diffusions",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [
+            "O"
+          ],
+          "last": "Roberts",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "S"
+          ],
+          "last": "Rosenthal",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": "Journal of the Royal Statistical Society: Series B (Statistical Methodology)"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Exponential convergence of Langevin distributions and their discrete approximations",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [
+            "O"
+          ],
+          "last": "Roberts",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "L"
+          ],
+          "last": "Tweedie",
+          "suffix": ""
+        }
+      ],
+      "year": 1996,
+      "venue": "Bernoulli"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "High-resolution image synthesis with latent diffusion models",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Ommer",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Applied stochastic differential equations",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Särkkä",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Solin",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Towards understanding and improving GFlowNet training",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [
+            "W"
+          ],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hajiramezanali",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Loukas",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Cho",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Biancalani",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Nested sampling for general Bayesian computation",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Skilling",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Bayesian Analysis"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Deep unsupervised learning using nonequilibrium thermodynamics",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sohl-Dickstein",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "A"
+          ],
+          "last": "Weiss",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Maheswaranathan",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ganguli",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Maximum likelihood training of score-based diffusion models",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Durkan",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Murray",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "Score-based generative modeling through stochastic differential equations",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sohl-Dickstein",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "P"
+          ],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Poole",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF72",
+      "title": "Generative flow networks as entropyregularized RL",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Tiapkin",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Morozov",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Naumov",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Vetrov",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF73",
+      "title": "Sample-efficient optimization in the latent space of deep generative models via weighted retraining",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Tripp",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Daxberger",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "M"
+          ],
+          "last": "Hernández-Lobato",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF74",
+      "title": "Neural stochastic differential equations: Deep latent Gaussian models in the diffusion limit",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Tzen",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Raginsky",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF75",
+      "title": "Theoretical guarantees for sampling and inference in generative models with latent diffusions",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Tzen",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Raginsky",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Conference on Learning Theory"
+    },
+    {
+      "id": "BIBREF76",
+      "title": "A-NeSI: A scalable approximate method for probabilistic neurosymbolic inference",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Van Krieken",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Thanapalasingam",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tomczak",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Van Harmelen",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Teije",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF77",
+      "title": "Denoising diffusion samplers",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Vargas",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Grathwohl",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Doucet",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF78",
+      "title": "Transport meets variational inference: Controlled Monte Carlo diffusions",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Vargas",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Padhy",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Blessing",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Nüsken",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF79",
+      "title": "A connection between score matching and denoising autoencoders",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Vincent",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Neural computation"
+    },
+    {
+      "id": "BIBREF80",
+      "title": "Stochastic normalizing flows",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Köhler",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Noé",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF81",
+      "title": "Tackling the generative learning trilemma with denoising diffusion GANs",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Kreis",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vahdat",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Leraning Representations"
+    },
+    {
+      "id": "BIBREF82",
+      "title": "Generative flow networks for discrete probabilistic modeling",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Volokhova",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF83",
+      "title": "Unifying generative models with GFlowNets and beyond",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "T Q"
+          ],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Malkin",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF84",
+      "title": "Robust scheduling with GFlowNets",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rainone",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Peschl",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Bondesan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF85",
+      "title": "Diffusion generative flow samplers: Improving learning signals through partial trajectory optimization",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "T Q"
+          ],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "C.-H",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF86",
+      "title": "Diffusion normalizing flow",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF87",
+      "title": "Path integral sampler: a stochastic control approach for sampling",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF88",
+      "title": "Sample-efficient multiobjective molecular optimization with GFlowNets",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "C.-Y",
+          "middle": [],
+          "last": "Hsieh",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF89",
+      "title": "A variational perspective on generative flow networks",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zimmermann",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Lindsten",
+          "suffix": ""
+        },
+        {
+          "first": "J.-W",
+          "middle": [],
+          "last": "Van De Meent",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "A"
+          ],
+          "last": "Naesseth",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Transactions on Machine Learning Research"
+    }
+  ]
+}

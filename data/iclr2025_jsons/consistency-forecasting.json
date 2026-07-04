@@ -1,0 +1,1353 @@
+{
+  "paper_id": "consistency-forecasting",
+  "title": "CONSISTENCY CHECKS FOR LANGUAGE MODEL FORECASTERS",
+  "authors": [
+    {
+      "first": "Daniel",
+      "middle": [],
+      "last": "Paleka",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zurich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Abhimanyu",
+      "middle": [
+        "Pallavi"
+      ],
+      "last": "Sudhir",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zurich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Alejandro",
+      "middle": [],
+      "last": "Alvarez",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zurich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Vineeth",
+      "middle": [],
+      "last": "Bhat",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zurich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Adam",
+      "middle": [],
+      "last": "Shen",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zurich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Evan",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zurich",
+        "location": {}
+      }
+    },
+    {
+      "first": "Florian",
+      "middle": [],
+      "last": "Tramèr",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "ETH Zurich",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Forecasting is a task that is difficult to evaluate: the ground truth can only be known in the future. Recent work showing LLM forecasters rapidly approaching human-level performance begs the question: how can we benchmark and evaluate these forecasters instantaneously? Following the consistency check framework, we measure the performance of forecasters in terms of the consistency of their predictions on different logically-related questions. We propose a new, general consistency metric based on arbitrage: for example, if a forecasting AI illogically predicts that both the Democratic and Republican parties have 60% probability of winning the 2024 US presidential election, an arbitrageur can trade against the forecaster's predictions and make a profit. We build an automated evaluation system that generates a set of base questions, instantiates consistency checks from these questions, elicits the predictions of the forecaster, and measures the consistency of the predictions. We then build a standard, proper-scoring-rule forecasting benchmark, and show that our (instantaneous) consistency metrics correlate with LLM forecasters' ground truth Brier scores (which are only known in the future). We also release a consistency benchmark that resolves in 2028, providing a longterm evaluation tool for forecasting.",
+  "body": {
+    "1_INTRODUCTION": "Prediction markets are markets that pay out contingent on an event. For a market such as \"$1 if Jeb Bush is elected President in 2028\", the price reflects the \"market estimate\" for the probability of that event. Prediction markets are a promising tool for aggregating information from disparate sources to arrive at the most correct possible belief after taking into account all relevant information (Arrow et al., 2008; Hanson, 2002) .\nUntil 2024, LLM forecasters generally performed poorly relative to human forecasters (Zou et al., 2022b; Schoenegger and Park, 2023) . However, recent works (Halawi et al., 2024; Schoenegger et al., 2024; Phan et al., 2024) suggest that LLM-based forecasters can rival human forecasts on forecasting websites such as Metaculus, PredictIt, and Manifold Markets.\nA key question emerges: once LLM forecasters are better than human ones, how can we efficiently evaluate their predictions? In particular, long-term forecasting questions are very important for decision-making (Tetlock et al., 2024; Muehlhauser, Luke, 2019) , and finding ground truth for evaluation in such contexts is infeasible by virtue of the questions resolving far in the future.\nOne approach, proposed by Fluri et al. (2023) , is that even when we cannot evaluate the correctness of LLM decisions, we can evaluate their logical consistency. For example, if an LLM forecaster gives probabilities 0.5 and 0.7 to \"Will Trump be elected US president?\" and \"Will someone other than Trump be elected US president?\", this is necessarily inconsistent. Fluri et al. (2023) demonstrated that GPT-4 and GPT-3.5-turbo, when asked one-sentence forecasting questions, were inconsistent on simple logical checks such as negation.\nOur contributions in this work are as follows:\n1) Principled metrics for consistency. In Section 2, we introduce a theoretical framework for measuring consistency violations of binary forecasts, based on two metrics: an arbitrage metric, based on market arbitrage, and a frequentist metric, based on hypothesis testing. We apply these metrics to 10 different logical consistency rules (see Table 3 ): NEGATION, PARAPHRASE, CONSEQUENCE, ANDOR, AND, OR, BUT, COND, CONDCOND and EXPEVIDENCE.\n2) A consistency evaluation pipeline for binary forecasters. In Section 3, we introduce a consistency evaluation pipeline for LLM forecasters. We create two forecasting datasets with known ground truth resolutions: one scraped from prediction markets, and one synthetically generated from news articles. Both datasets include only events that happen past the training data cutoff of all forecasters we test, and resolve before September 2024. We then generate tuples of forecasting questions satisfying logical consistency rules with associated consistency metrics.\n3) Consistency correlates with ground truth forecasting performance. Our consistency metrics are novel performance metrics for forecasters that can be computed right away, no matter the time horizon. Of course, forecasters could also be evaluated using backtesting, asking past questions with known ground truth resolutions. Yet, backtesting LLM forecasters can be challenging if we do not have clear information about the models' training data contents. Moreover, there may be new types of questions that we want to evaluate forecasters on, for which we do not have appropriate past results (e.g., questions related to pandemics before 2020). It is thus natural to ask: can consistency metrics tell us anything about future forecasting performance?\nIn Section 4, we show that for all forecasters we test, our consistency metrics correlate positively with forecasting performance (as measured by the Brier score) on both our benchmark datasets. The correlation varies across consistency checks, with some logical checks (e.g., consistency of conditional probabilities) having over R = 0.9 correlation with forecasting performance, while other logical tests provide little signal. We hypothesise that this analysis can extend to smarter forecasters and longer time horizons, to provide instantaneous feedback on forecaster performance. 4) Scaling inference-time compute can improve consistency for some logical checks, but fails to generalize. Since we find that consistency correlates with forecasting performance, it is natural to ask whether we can improve forecasters by making them more consistent. Unfortunately, we find that natural ways of improving consistency tend to overfit to specific consistency checks and do not generalize.\nSpecifically, we design ArbitrageForecaster: a forecaster that \"patches\" some base forecaster's output by generating logically related questions and \"arbitraging\" the base forecaster's forecasts for these related questions against each other. In Section 5 and Appendix G, we show that ArbitrageForecaster improves consistency on checks that we optimize against, but this improvement does not generalize to other held-out consistency checks, nor does it improve the actual forecasting performance.\n5) A long-horizon forecasting consistency benchmark. We create a long-horizon benchmark of 3,000 consistency checks for forecasts resolving in 2028. Our benchmark spans questions on various topics for which we will have no ground truth for more than three years, and thus serves as a nice testing ground for advanced LLM forecasters.\nWe release the full codefoot_0 and the datasetsfoot_1 used in the paper.",
+    "2_A_THEORETICAL_FRAMEWORK_FOR_FORECASTING_CONSISTENCY": {
+      "2._Clarity_&_Precision:": "-Each question must be clear, specific, and unambiguous.\n-Avoid subjective terms like \"significant\" or any similar ambiguity.\n-Do not reference sensitive topics from religion, politics, or gender. 3. No Temporal Hints:\n-Do not include any information or context that implies the question was created after {pose date}. -Ensure no indication that the article is used to inform the question, keeping the creation date fully hidden. 4. Resolution Period:\n-If you phrase the resolution date as \"by {month name}, {year}\", then resolution of each question must remain definitive and applicable from the current date until {month name}, {year}. -If you phrase the resolution date as \"in {month name}, {year}\", then resolution of each question must remain definitive and applicable for the month of {month name} in {year}. -Ensure the question's outcome is verifiable and binary (YES or NO) during this period.",
+      "2.1_CONSISTENCY_CHECKS_AND_INCONSISTENCY_METRICS": {
+        "2.1.1_ARBITRAGE_METRIC": "The arbitrage metric is conceptualized as the minimum profit that an arbitrageur can be guaranteed making bets against the forecaster's predictions. More precisely: suppose that the forecaster's probabilities F(x 1 ), . . . F(x n ) were prices offered by a logarithmic market makerfoot_2 with market subsidy parameter $1. If these probabilities are inconsistent, then there are prices p 1 , . . . p n that an arbitrageur could bring to the market such that it is guaranteed to make a profit against the marketmaker, no matter the outcome of each question. We define V(F(x 1 ), . . . F(x n )) as the maximum achievable \"minimum profit\" that the arbitrageur can guarantee by choosing appropriate p 1 , . . . p n . We further denote by A(F(x 1 ), . . . F(x n )) the set of prices p 1 , . . . p n that maximize the minimum profit:\n(arg max, max) p∈[0,1] n min ω∈Ω n i=1 (log p i -log F(x i )) δ ω(i)=⊤ + (log (1 -p i ) -log (1 -F(x i ))) δ ω(i)=⊥\n(1) Here Ω := {ω ∈ Θ ′n | R(ω)} is the set of all possible consistent resolutions of this tuple. A more general version of 1 is given in Appendix D, along with specific worked-out examples of the arbitrage metric for each consistency check, and details on how we compute it; as an example, the arbitrage metric for the Negation Check can be derived exactly (Appendix D.2): V(F(x), F(¬x)) = -2 log F(x)(1 -F(¬x)) + (1 -F(x))F(¬x)\nTo illustrate: V(0.5, 0.6) ≈ 0.01, V(0.5, 0.51) ≈ 10 -4 . The metric is more sensitive to violations for probabilities very close to 0 or 1, due to the logarithmic market maker. In our evals, for all types of checks, we say that a sampled check does not pass if V ≥ 0.01. We have to pick some hyperparameter as an inconsistency threshold; we set it to correspond to giving 110% probability in total to the events of Republican and Democratic parties winning the US presidential election.",
+        "2.1.2_FREQUENTIST_METRIC": "We also compute a different, frequentist consistency metric. Consider a Monte Carlo forecaster that samples a world model n times, and for any event, returns the fraction of samples in which the event occurs. The frequentist metric is the number of standard deviations a given tuple forecast is off from the mean Monte Carlo forecast, scaled to be independent of n. We say that a consistency violation happened if the number of standard deviations away from the mean of the null is at least as in the (0.5, 0.6) case described in Section 2.1.1. The full description is given in Appendix E.",
+        "2.1.3_INTUITION_ON_CONSISTENCY_METRICS": "Our metrics address two major obstacles with measuring inconsistency: tolerance to noise and principled aggregation of inconsistency scores.\nTolerance to noise. In the standard Bayesian setting, beliefs are either consistent or not: there either is a Dutch book (a way to bet against the forecaster's beliefs to get infinite profit) or the probabilities are perfectly consistent. In practice, forecasters' beliefs (even on the same question) are never perfectly consistent across runs. If an election model has a presidential candidate at 48% with one random seed and 50% on the other, this is not a reason to discard it as completely flawed. Hence, instead of being a binary measure of consistency, our metrics increase smoothly with inconsistency.\nPrincipled aggregation and comparison of inconsistency scores Fluri et al. (2023) developed a set of inconsistency checks, used an ad hoc metric for each check they used, and normalized the scores to [0, 1]. There are two important issues with their approach:\n1. The metrics in their work are mostly linear and would treat the inconsistencies of (0.5, 0.6) and (0.89, 0.01) on the NEGATION check as equally bad, which is counterintuitive in many applications.\n2. It is unclear how to compare and aggregate scores from different consistency checks.\nOur approach ensures that all consistency scores share a common \"unit\". For example, in the arbitrage metric, to aggregate inconsistencies, we sum up the profit made by an arbitrageur across questions.",
+        "_text": "In line with Fluri et al. (2023) , a consistency check is conceptualized as a pair of n-ary relations: R : Prop n → {⊤, ⊥} in question space, S : [0, 1] n → {⊤, ⊥} in forecast space, and a predicate for F such that R(x 1 , . . . x n ) =⇒ S(F(x 1 ), . . . F(x n )). In particular, this assertion must be satisfied by all feasible θ, and also any \"correct\" forecasts generated by a world model that accurately accounts for aleatoric uncertainty. Violation of consistency is measured by some violation metric V : [0, 1] n → R which must satisfy V(F(x 1 ), . . . F(x n )) = 0 ⇐⇒ S(F(x 1 ), . . . F(x n )). For example, intuitively, the \"negation\" check NEGATION is given by the relation R(x 1 , x 2 ) := x 1 = ¬x 2 on questions, and the relation S(F(x 1 ), F(x 2 )) := F(x 1 ) + F(x 2 ) ≈ 1 on forecasts. The full table of the consistency checks we use is given in Appendix B.\nImproving upon Fluri et al. (2023) , we derive V from R in a principled way, handling all types of logical consistency checks simultaneously. We introduce two new inconsistency metrics: the arbitrage metric and the frequentist metric for measuring logical inconsistency in probabilistic forecasts."
+      },
+      "_text": "Notation. Let Prop denote the set of forecasting questions we are interested in, Θ denote the set of possible outcomes/resolutions for an individual questions. In this paper, we focus on Prop as a set of binary forecasting questions, so Θ = {⊤, ⊥}. A Forecaster is then a map F : Prop → [0, 1]. One special forecaster is the ground truth resolutions θ : Prop → Θ, returning 1 and 0 probability for {⊤, ⊥}, respectively.\nFor conditional questions that can resolve to None, we also have optional resolutions Θ ′ := Θ ∪ {None} = {⊤, ⊥, None}. We focus on binary questions following Halawi et al. (2024) . Our methods can in principle be extended to study consistency between general probability distributions in forecasting, such as the ones discussed in Gooen (2024) ."
+    },
+    "3_PIPELINE_OVERVIEW": {
+      "3._Rephrasing:": "-For valid questions, rephrase them to enhance clarity, specificity, and compliance with the guidelines while retaining the original intent. Do NOT add any new information that wasn't included in the original question.\n• High-Quality Forecasting Question Examples: Some Examples\n• Task:\n-Carefully validate and rephrase the following forecasting question: {source rough fq data}.\nFigure 21 : Prompt used validate the structure of NewsAPI generated forecasting questions and then rephrase them to enhance predictability.",
+      "3.1_GENERATING_AND_SCRAPING_FORECASTING_QUESTIONS": "Forecasting question format. Each forecasting question includes a title that states the main question, a body that provides detailed resolution criteria, and a resolution date, along with optional fields such as metadata and creation date.\nReal prediction market questions. We scrape questions from two forecasting platforms, Metaculus and Manifold Markets, and only use questions that both resolved and were initially set to resolve between May 1, 2024, and August 15, 2024. This leaves us with over 500 questions, of which 242 pass our verification step (see end of this subsection). An example of a processed question, including its relevant details, is provided in Appendix C.1.",
+      "3.2_INSTANTIATING_TUPLES_OF_QUESTIONS_FOR_CONSISTENCY_CHECKS": "The base forecasting questions are subsequently used to synthetically generate tuples of logically related questions. For example, a pair of base questions (P, Q) can be used to generate a 4-tuple (P, Q, P ∧Q, P ∨Q) for ANDOR, or a 3-tuple (P, ¬P ∧Q, P ∨Q) for BUT (see Appendix B for details). The main question content (titles and bodies) were generated synthetically (using gpt-4o), while the resolution dates and other properties were calculated systematically (e.g. the max of the resolution dates of the base questions).\nWe then conduct two measures to ensure the instantiated tuples are correct and sensible: relevance scoring, and verification that the tuples of questions indeed describe logically related events.\nRelevance scoring. When combining base questions into tuples, we have to take care to avoid off-distribution questions like \"Is SpaceX going to be worth $200B by 2030, given that Sri Lanka's rice production grows 40% by 2040?\". For tuples instantiated from more than one base question, we sort 2000 potential base question combinations by their \"relevance score\", obtained by querying an LLM and asking it to score how relevant the questions are to one another, and choose the top 200 for each consistency check. See Figure 15 for details.\nVerification. The instantiated tuples of questions are then passed to another LLM call to reject if they do not fit their intended structure; for example, we detect if the resolution criteria of the second question are not truly a negation of the resolution criteria of the first question. Examples of verification prompts are given in Appendix H.",
+      "3.3_ELICITING_FORECASTS": "We test a range of forecasters based on various LLM models (gpt-4o, gpt-4o-mini, claude-3.5-sonnet, llama-3.1-8B, llama-3.1-70B, llama-3.1-405B, o1-mini and o1-preview) with and without chain-of-thought prompting: see Appendix F for details. We run each of these forecasters on 5000 tuples in total (for each of the 10 checks, we use 200 tuples from scraped questions and 300 from NewsAPI questions), except for o1-preview, which we test on 50 tuples per check only due to cost constraints. We could not test forecasters from Halawi et al. (2024) due to API deprecations; see Section 6.",
+      "_text": "We illustrate the steps in our data collection pipeline below, and provide more details on each individual steps:\nOnline platforms, news, topics For the first two of the above, we also include the ground truth resolution for each question.\nWe discuss all of these in more detail in Section 3.1.\n• (P -→ (P, Q)) The base questions are synthetically instantiated into tuples that must satisfy certain consistency checks. For example, every single base question P is instantiated into a tuple (P, ¬P ); and pairs of mutually relevant base questions P, Q are instantiated into tuples like (P, Q, P ∧ Q, P ∨ Q).\n• ((P, Q)\nF -→ (p, q))\nThe forecaster is separately queried to elicit forecasts on each question, resulting in forecast tuples that should, if the forecaster is consistent, satisfy consistency properties. For example, for a size-two tuple where Q = ¬P , it should satisfy p + q = 1.\n• ((p, q) V -→ V(p, q)) We score each tuple of forecasts for consistency with both of our violation metrics.\nExamples of data at each step of the pipeline are given in Appendix C. The prompts and LLM calls used in each step before forecasting are given in Appendix H."
+    },
+    "4_RESULTS": "We evaluate a range of forecasters on the datasets described above, for both consistency and ground truth Brier score. We note that the Brier score as the standard metric of forecasting accuracy depends both on model capabilities and the training data cutoff: it should not be surprising for a stronger model to have a worse Brier score if its training data cutoff is earlier than for a weaker model. The full list of forecasters is in Appendix F.\nFor all data analysis in this section, we exclude forecasters that have Brier score worse than random guessing (0.25), such as the basic setup with llama-3.1-8B, as it would unfairly advantage our case of \"correlating consistency with accuracy\".\nAverage consistency scores correlate strongly with forecasting performance. We can aggregate the consistency scores across all checks for each forecaster by aggregating either the arbitrage or the frequentist violations.\nWe plot the average Brier score against the three aggregate consistency scores in Figure 1 . Bayesian consistency checks are the best proxies for forecasting performance. Figure 2a shows the strong correlation between certain consistency checks from Table 3 and average Brier scores across different forecasters. This relationship suggests that COND, which tracks logical consistency in conditional probability estimates, serves as a proxy for overall forecasting accuracy, without knowing how the questions resolved. 3 show a strong correlation with forecasting accuracy as measured by the Brier score.\nCertain consistency metrics are not well correlated with forecasting performance. The measured correlations between the consistency checks and Brier scores are given in Table 1 . We see that some checks yield higher signal on the ground truth performance than others. Aggregating different consistency metrics seems to improve the correlation.\nWe note that the selection of forecasters we test is quite limited, so we cannot guarantee the trends here are representative of future LLM forecasters. Part of the correlation can be attributed to better models being both more consistent and better forecasters. For comparison, the correlations of the Brier score of our forecasters and the MMLU Hendrycks et al. (2020) (college split) error rate on the best approximation of our forecasters in Appendix F are 0.38 and 0.55 on the NewsAPI and scraped datasets, respectively.\nWe include all data (questions, tuples, forecasts, and scores) in the supplementary material. OpenAI's o1-mini forecaster, despite being one of the best reasoning models so far, violates consistency checks more than the (0.5, 0.6) threshold from Section 2 very often. We create a dataset of 900 synthetic questions resolving in 2028 and create 3000 tuples in total from this dataset using the method described in Section 3.2, to evaluate the consistency of the forecasters in questions with a longer horizon, where it's not possible to have the ground truth resolutions. Examples of questions and the results for gpt-4o are in Appendix L.\nWe intend this dataset as a working prototype for a continual long-term forecasting benchmark.",
+    "5_AR_B_I_T_R_A_G_EFO_R_E_C_A_S_T_E_R_:_CAN_WE_DESIGN_A_MORE_CONSISTENT_FORECASTER?": {
+      "5._Factual_Basis:": "-Questions should be directly supported by the article content and not include fabricated information.",
+      "_text": "Let (x 1 , . . . x n ) be a question tuple for some consistency check R, e.g. (P, ¬P ). Given forecasts F(x 1 ), ...F(x n ), the arbitrage metric maximization problem in Equation 1 computes the following (as the argmax and max of the arbitrage respectively):\n1. Improved forecasts F ′ (x 1 ), ...F ′ (x n ) which are consistent, i.e. satisfy S; and 2. The profit earned by an arbitrageur who bets these improved forecasts against the original ones -this is the actual metric.\nThis leads us to wonder: can we use these \"improved consistent forecasts\" to build a new forecaster which builds on the base forecaster F, but is more consistent on R?\nWe introduce: the ArbitrageForecaster with base F arbitraged on consistency check R, denoted by ⟨F⟩ R , which computes its forecast on a question x as follows:\n1. Instantiates a tuple (x 1 , . . . x n ) satisfying R; Despite what one might assume, however, an ArbitrageForecaster is not \"definitionally\" consistent on the check it is arbitraged on, but rather its consistency must be investigated empirically. Suppose, for example, that a forecaster produces forecasts F(P ) = 0.5, F(para(P )) = 0.6, F(para(para(P ))) = 0.7. Then F ′ := ⟨F⟩ PARAPHRASE would produce forecasts F ′ (P ) ≈ 0.55, F ′ (para(P )) ≈ 0.65, which are not consistent.\nAppendix G contains a precise definition of ArbitrageForecaster, including the case of sequentially arbitraging on multiple checks ⟨F⟩ [R1,...Rs] , and a theoretical discussion of its consistency properties. In particular, we list strong theoretical reasons to expect consistency gains from recursive ArbitrageForecaster setups, i.e. ⟨F⟩ r R := ⟨⟨F⟩ r-1 R ⟩ R , in particular with NEGATION, as well as in a non-recursive ArbitrageForecaster with EXPEVIDENCE.\nDue to these priorities and the high costs of running recursive ArbitrageForecasters (see Appendix G.1), we limited ourselves to studying only a small number of ArbitrageForecaster setups, with a limited number of checks rather than the whole list; specifically: ⟨g⟩ r N , ⟨g⟩ r P , ⟨g⟩ r [N,P ] , ⟨g⟩ [E] * s where g :=gpt-4o-mini, N, P, E are NEGATION, PARAPHRASE, EXPEVIDENCE respectively, and r and s vary from 0 to 4.\nThe full results of our experiments with these forecasters are reported in Appendix G.2; our key takeaways from these preliminary runs look hopeful:\n• In the case of the checks we tested, arbitraging on a check indeed makes a forecaster more consistent on that check, with increasing consistency gains with recursive depth, as shown in Fig 3 . Crucially, this also applied when the arbitraging was on more than a single check: ⟨g⟩ r [N,P ] did well on both NEGATION and PARAPHRASE; arbitraging on the next check did not increase inconsistency on the first. We are cautiously optimistic that this may extend to the full list of checks in Table 3 .\n• This consistency gain was greatest with NEGATION, followed by PARAPHRASE, and lowest with EXPEVIDENCE. This finding is in line with our hypothesis in Appendix G that ArbitrageForecaster would be particularly effective on consistency checks which are symmetric. and instantiate deterministically.\n• We do not observe reliable improvements on ground truth forecasting performance, or on consistency checks other than the ones we arbitrage on. I.e. ⟨F⟩ R1 does not reliably do better on R 2 ."
+    },
+    "6_FUTURE_WORK": "We have developed a comprehensive benchmark of static consistency checks for LLM forecasters, and demonstrated its correlation with ground truth accuracy, suggesting that our consistency metrics could serve as a proxy for accuracy when we do not have access to ground truth. We envision several directions in which our framework could be extended:\nConsistency in decision-making. AI systems may be used not only to make forecasts that inform decisions, but also to take decisions directly. Here too, we can have a notion of inconsistency: for example, intransitive preferencesfoot_3 -and analogously, an inconsistent decision-maker may be exploited by an arbitrageur."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Concrete problems in AI safety",
+      "authors": [
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Olah",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Christiano",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Mané",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "The Promise of Prediction Markets",
+      "authors": [
+        {
+          "first": "Kenneth",
+          "middle": [
+            "J"
+          ],
+          "last": "Arrow",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Forsythe",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Gorham",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Hahn",
+          "suffix": ""
+        },
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Hanson",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [
+            "O"
+          ],
+          "last": "Ledyard",
+          "suffix": ""
+        },
+        {
+          "first": "Saul",
+          "middle": [],
+          "last": "Levmore",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Litan",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Milgrom",
+          "suffix": ""
+        },
+        {
+          "first": "Forrest",
+          "middle": [
+            "D"
+          ],
+          "last": "Nelson",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [
+            "R"
+          ],
+          "last": "Neumann",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Ottaviani",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [
+            "C"
+          ],
+          "last": "Schelling",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [
+            "J"
+          ],
+          "last": "Shiller",
+          "suffix": ""
+        },
+        {
+          "first": "Vernon",
+          "middle": [
+            "L"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Erik",
+          "middle": [],
+          "last": "Snowberg",
+          "suffix": ""
+        },
+        {
+          "first": "Cass",
+          "middle": [
+            "R"
+          ],
+          "last": "Sunstein",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [
+            "C"
+          ],
+          "last": "Tetlock",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [
+            "E"
+          ],
+          "last": "Tetlock",
+          "suffix": ""
+        },
+        {
+          "first": "Hal",
+          "middle": [
+            "R"
+          ],
+          "last": "Varian",
+          "suffix": ""
+        },
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Wolfers",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Zitzewitz",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Science"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Hanson's automated market maker",
+      "authors": [
+        {
+          "first": "Henry",
+          "middle": [],
+          "last": "Berg",
+          "suffix": ""
+        },
+        {
+          "first": "Todd",
+          "middle": [
+            "A"
+          ],
+          "last": "Proebsting",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "The Journal of Prediction Markets"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Discovering Latent Knowledge in Language Models Without Supervision",
+      "authors": [
+        {
+          "first": "Collin",
+          "middle": [],
+          "last": "Burns",
+          "suffix": ""
+        },
+        {
+          "first": "Haotian",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Klein",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Metamorphic testing: a new approach for generating next test cases",
+      "authors": [
+        {
+          "first": "Shing",
+          "middle": [
+            "C"
+          ],
+          "last": "Tsong Y Chen",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Cheung",
+          "suffix": ""
+        },
+        {
+          "first": "Ming",
+          "middle": [],
+          "last": "Shiu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Yiu",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Specifying and testing k-safety properties for machine-learning models",
+      "authors": [
+        {
+          "first": "Maria",
+          "middle": [],
+          "last": "Christakis",
+          "suffix": ""
+        },
+        {
+          "first": "Ferit",
+          "middle": [],
+          "last": "Hasan",
+          "suffix": ""
+        },
+        {
+          "first": "Jörg",
+          "middle": [],
+          "last": "Eniser",
+          "suffix": ""
+        },
+        {
+          "first": "Adish",
+          "middle": [],
+          "last": "Hoffmann",
+          "suffix": ""
+        },
+        {
+          "first": "Valentin",
+          "middle": [],
+          "last": "Singla",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wüstholz",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Measuring and improving consistency in pretrained language models",
+      "authors": [
+        {
+          "first": "Yanai",
+          "middle": [],
+          "last": "Elazar",
+          "suffix": ""
+        },
+        {
+          "first": "Nora",
+          "middle": [],
+          "last": "Kassner",
+          "suffix": ""
+        },
+        {
+          "first": "Shauli",
+          "middle": [],
+          "last": "Ravfogel",
+          "suffix": ""
+        },
+        {
+          "first": "Abhilasha",
+          "middle": [],
+          "last": "Ravichander",
+          "suffix": ""
+        },
+        {
+          "first": "Eduard",
+          "middle": [],
+          "last": "Hovy",
+          "suffix": ""
+        },
+        {
+          "first": "Hinrich",
+          "middle": [],
+          "last": "Schütze",
+          "suffix": ""
+        },
+        {
+          "first": "Yoav",
+          "middle": [],
+          "last": "Goldberg",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Transactions of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Utility Theory for Decision Making",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Peter",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Fishburn",
+          "suffix": ""
+        }
+      ],
+      "year": 1970,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Evaluating superhuman models with consistency checks",
+      "authors": [
+        {
+          "first": "Lukas",
+          "middle": [],
+          "last": "Fluri",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Paleka",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Tramèr",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE Conference on Secure and Trustworthy Machine Learning (SaTML)"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "FUTURESEARCH: Manifold markets trading bot",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Futuresearch",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Scorable Functions: A Format for Algorithmic Forecasting",
+      "authors": [
+        {
+          "first": "Ozzie",
+          "middle": [],
+          "last": "Gooen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Approaching Human-Level Forecasting with Language Models",
+      "authors": [
+        {
+          "first": "Danny",
+          "middle": [],
+          "last": "Halawi",
+          "suffix": ""
+        },
+        {
+          "first": "Fred",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Yueh-Han",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Logarithmic Market Scoring Rules for Modular Combinatorial Information Aggregation",
+      "authors": [
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Hanson",
+          "suffix": ""
+        }
+      ],
+      "year": 2002,
+      "venue": "The Journal of Prediction Markets"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Benchmarking neural network robustness to common corruptions and perturbations",
+      "authors": [
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Dietterich",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Measuring massive multitask language understanding",
+      "authors": [
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "Collin",
+          "middle": [],
+          "last": "Burns",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Basart",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "Mantas",
+          "middle": [],
+          "last": "Mazeika",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Reasoning and tools for human-level forecasting",
+      "authors": [
+        {
+          "first": "Elvis",
+          "middle": [],
+          "last": "Hsieh",
+          "suffix": ""
+        },
+        {
+          "first": "Preston",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "AI safety via debate",
+      "authors": [
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Irving",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Christiano",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Consistency analysis of ChatGPT",
+      "authors": [
+        {
+          "first": "Myeongjun",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Lukasiewicz",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Searching for a model's concepts by their shape -a theoretical framework",
+      "authors": [
+        {
+          "first": "Walter",
+          "middle": [],
+          "last": "Kaarel",
+          "suffix": ""
+        },
+        {
+          "first": "Kay",
+          "middle": [],
+          "last": "Laurito",
+          "suffix": ""
+        },
+        {
+          "first": "Alexmennen",
+          "middle": [],
+          "last": "Kozaronek",
+          "suffix": ""
+        },
+        {
+          "first": "June",
+          "middle": [],
+          "last": "Ku",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Economic preferences or attitude expressions?: an analysis of dollar responses to public issues",
+      "authors": [
+        {
+          "first": "Ilana",
+          "middle": [],
+          "last": "Daniel Kahneman",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Ritov",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [
+            "J"
+          ],
+          "last": "Schkade",
+          "suffix": ""
+        },
+        {
+          "first": "Hal",
+          "middle": [
+            "R"
+          ],
+          "last": "Sherman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Varian",
+          "suffix": ""
+        }
+      ],
+      "year": 2000,
+      "venue": "Elicitation of preferences"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Forecastbench: A dynamic benchmark of ai forecasting capabilities",
+      "authors": [
+        {
+          "first": "Ezra",
+          "middle": [],
+          "last": "Karger",
+          "suffix": ""
+        },
+        {
+          "first": "Houtan",
+          "middle": [],
+          "last": "Bastani",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Yueh-Han",
+          "suffix": ""
+        },
+        {
+          "first": "Zachary",
+          "middle": [],
+          "last": "Jacobs",
+          "suffix": ""
+        },
+        {
+          "first": "Danny",
+          "middle": [],
+          "last": "Halawi",
+          "suffix": ""
+        },
+        {
+          "first": "Fred",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [
+            "E"
+          ],
+          "last": "Tetlock",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Goodhart's Law in Reinforcement Learning",
+      "authors": [
+        {
+          "first": "Jacek",
+          "middle": [],
+          "last": "Karwowski",
+          "suffix": ""
+        },
+        {
+          "first": "Oliver",
+          "middle": [],
+          "last": "Hayman",
+          "suffix": ""
+        },
+        {
+          "first": "Xingjian",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Klaus",
+          "middle": [],
+          "last": "Kiendlhofer",
+          "suffix": ""
+        },
+        {
+          "first": "Charlie",
+          "middle": [],
+          "last": "Griffin",
+          "suffix": ""
+        },
+        {
+          "first": "Joar",
+          "middle": [],
+          "last": "Max",
+          "suffix": ""
+        },
+        {
+          "first": "Viktor",
+          "middle": [],
+          "last": "Skalse",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Are AlphaZero-like agents robust to adversarial perturbations",
+      "authors": [
+        {
+          "first": "Li-Cheng",
+          "middle": [],
+          "last": "Lan",
+          "suffix": ""
+        },
+        {
+          "first": "Huan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ti-Rong",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Meng-Yu",
+          "middle": [],
+          "last": "Tsai",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Cho-Jui",
+          "middle": [],
+          "last": "Hsieh",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "A logic-driven framework for consistency of neural models",
+      "authors": [
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Vivek",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "Maitrey",
+          "middle": [],
+          "last": "Mehta",
+          "suffix": ""
+        },
+        {
+          "first": "Vivek",
+          "middle": [],
+          "last": "Srikumar",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Benchmarking and improving generator-validator consistency of language models",
+      "authors": [
+        {
+          "first": "Lisa",
+          "middle": [],
+          "last": "Xiang",
+          "suffix": ""
+        },
+        {
+          "first": "Vaishnavi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Siyan",
+          "middle": [],
+          "last": "Shrivastava",
+          "suffix": ""
+        },
+        {
+          "first": "Tatsunori",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Percy",
+          "middle": [],
+          "last": "Hashimoto",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "TruthfulQA: Measuring how models mimic human falsehoods",
+      "authors": [
+        {
+          "first": "Stephanie",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Hilton",
+          "suffix": ""
+        },
+        {
+          "first": "Owain",
+          "middle": [],
+          "last": "Evans",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Instructor: Structured LLM Outputs",
+      "authors": [
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": ";",
+          "middle": [],
+          "last": "Muehlhauser",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "How Feasible Is Long-range Forecasting?"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "LLMs are superhuman forecasters",
+      "authors": [
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Phan",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Khoja",
+          "suffix": ""
+        },
+        {
+          "first": "Mantas",
+          "middle": [],
+          "last": "Mazeika",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Semantic consistency for assuring reliability of large language models",
+      "authors": [
+        {
+          "first": "Harsh",
+          "middle": [],
+          "last": "Raj",
+          "suffix": ""
+        },
+        {
+          "first": "Vipul",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "Domenic",
+          "middle": [],
+          "last": "Rosati",
+          "suffix": ""
+        },
+        {
+          "first": "Subhabrata",
+          "middle": [],
+          "last": "Majumdar",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Elicitation of Personal Probabilities and Expectations",
+      "authors": [
+        {
+          "first": "Leonard",
+          "middle": [
+            "J"
+          ],
+          "last": "Savage",
+          "suffix": ""
+        }
+      ],
+      "year": 1971,
+      "venue": "Journal of the American Statistical Association"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Large Language Model Prediction Capabilities: Evidence from a Real-World Forecasting Tournament",
+      "authors": [
+        {
+          "first": "Philipp",
+          "middle": [],
+          "last": "Schoenegger",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "S"
+          ],
+          "last": "Park",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Wisdom of the Silicon Crowd: LLM Ensemble Prediction Capabilities Rival Human Crowd Accuracy",
+      "authors": [
+        {
+          "first": "Philipp",
+          "middle": [],
+          "last": "Schoenegger",
+          "suffix": ""
+        },
+        {
+          "first": "Indre",
+          "middle": [],
+          "last": "Tuminauskaite",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "S"
+          ],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [
+            "E"
+          ],
+          "last": "Tetlock",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Testing monotonicity of machine learning models",
+      "authors": [
+        {
+          "first": "Arnab",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "Heike",
+          "middle": [],
+          "last": "Wehrheim",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Long-range subjectiveprobability forecasts of slow-motion variables in world politics: Exploring limits on expert judgment",
+      "authors": [
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Philip E Tetlock",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Karvetski",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ville",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Satopää",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Futures & Foresight Science"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Dutch Book Arguments",
+      "authors": [
+        {
+          "first": "Susan",
+          "middle": [],
+          "last": "Vineberg",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "The Stanford Encyclopedia of Philosophy"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Autocast++: Enhancing world event prediction with zero-shot ranking-based context retrieval",
+      "authors": [
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Raihan",
+          "middle": [],
+          "last": "Seraj",
+          "suffix": ""
+        },
+        {
+          "first": "Jiawei",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Lili",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Tristan",
+          "middle": [],
+          "last": "Sylvain",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    }
+  ]
+}

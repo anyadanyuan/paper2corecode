@@ -1,0 +1,2452 @@
+{
+  "paper_id": "GRSNN",
+  "title": "Temporal Spiking Neural Networks with Synaptic Delay for Graph Reasoning",
+  "authors": [
+    {
+      "first": "Mingqing",
+      "middle": [],
+      "last": "Xiao",
+      "affiliation": {}
+    },
+    {
+      "first": "Yixin",
+      "middle": [],
+      "last": "Zhu",
+      "affiliation": {}
+    },
+    {
+      "first": "Di",
+      "middle": [],
+      "last": "He",
+      "affiliation": {}
+    },
+    {
+      "first": "Zhouchen",
+      "middle": [],
+      "last": "Lin",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "Spiking neural networks (SNNs) are investigated as biologically inspired models of neural computation, distinguished by their computational capability and energy efficiency due to precise spiking times and sparse spikes with event-driven computation. A significant question is how SNNs can emulate human-like graph-based reasoning of concepts and relations, especially leveraging the temporal domain optimally. This paper reveals that SNNs, when amalgamated with synaptic delay and temporal coding, are proficient in executing (knowledge) graph reasoning. It is elucidated that spiking time can function as an additional dimension to encode relation properties via a neuralgeneralized path formulation. Empirical results highlight the efficacy of temporal delay in relation processing and showcase exemplary performance in diverse graph reasoning tasks. The spiking model is theoretically estimated to achieve 20× energy savings compared to non-spiking counterparts, deepening insights into the capabilities and potential of biologically inspired SNNs for efficient reasoning. The code is available at",
+  "body": {
+    "4._Experiments": "In this section, we conduct experiments on transductive knowledge graph completion, inductive knowledge graph relation prediction, and homogeneous graph link prediction to evaluate the proposed GRSNN model. For knowledge graphs, we consider the commonly used FB15k-237 (Toutanova & Chen, 2015) and WN18RR (Dettmers et al., 2018) with the standard transductive splits and inductive splits (Teru et al., 2020) . For homogeneous graphs, we consider Cora, Citeseer, and PubMed (Sen et al., 2008) . The train/valid/test ratio of edges is 85:5:10 following the common practice, and the statistics of datasets can be found in Appendix D.\nFor evaluation of knowledge graph completion, we adhere to the filtered ranking protocol (Bordes et al., 2013) , ranking a test triplet (x, q, y) against all unseen negative triplets and report Mean Rank (MR), Mean Reciprocal Rank (MRR), and HITS@N. For inductive knowledge graph relation prediction, the evaluation adheres to the protocols outlined in the literature (Teru et al., 2020) , where 50 negative triplets are drawn for each positive one using the filtered ranking, and the results are reported as HITS@10. For homogeneous graph link prediction, we follow Kipf & Welling (2016) ; Zhu et al. (2021) to compare the positive edges against the same number of negative edges, and the results are quantified using Area Under the Receiver Operating Characteristic Curve (AUROC) and Average Precision (AP).\nMore experimental details can be found in Appendix E.3.",
+    "2.1._Spiking_Neural_Networks": "SNNs are brain-inspired models comprising spiking neurons that communicate through temporal spike trains. In this work, we employ the current-based Leaky Integrate and Fire (current-based LIF) spiking neuron model, which can be equivalently represented using the Spike Response Model (SRM) form. In this model, each spiking neuron maintains a membrane potential u, integrating input spike trains according to the dynamics:\nEQUATION\n)\nwhere I is the input current, V th is the threshold, R is the resistance, and τ m is the membrane time constant. When u reaches V th at time t f , a spike is emitted, and u is reset to the resting potential u = u rest , typically set to zero. The neuron's output spike train is represented as s(t) = t f δ(t -t f ), using the Dirac delta function. Neurons are interconnected through synapses with weight and delay (axonal or synaptic delay, for simplicity, we call synaptic delay in this paper). The model for input current is given by:\nEQUATION\nwhere w ij and d ij are the synaptic weight and delay from neuron j to neuron i, respectively, b i is a bias term representing background current, and τ c is another time constant.\nGiven the reset mechanism, the equivalent SRM form is:\nEQUATION\nwith κ(τ ) being the temporal kernel function for input spikes and ν(τ (Shrestha & Orchard, 2018) .\n) = -(V th -u rest )e -τ τm representing the reset kernel. Assuming τ c = τ m , the input kernel becomes κ(τ ) = R τm • τ e -τ τm for τ ≥ 0 and κ(τ ) = 0 for τ < 0. Setting R = e, the kernel simplifies to κ(τ ) = τ τm e 1-τ τm , which is commonly used\nIn practice, we simulate SNNs using the discrete computational form of the current-based LIF model:\nEQUATION\nwhere H(x) is the Heaviside step function, s i [t] is the spike signal at discrete time step t, ∆τ is the discretization interval, and α denote the coefficient e∆τ τm . Utilizing the equivalent SRM formulation and surrogate derivatives for the spiking function, gradients for parameters, including w ij and d ij , can be computed through backpropagation over time (Shrestha & Orchard, 2018) . Specifically, the non-differentiable term ∂si[t] ∂ui [t] is substituted by surrogate derivatives of a smooth function, such as the derivative of the sigmoid function:\n∂s ∂u = 1 a1 e (V th -u)/a 1 (1+e (V th -u)/a 1 ) 2 ,\nwith a 1 as a hyperparameter. The gradients are then calculated as ∂L ∂wij = t ∂L ∂si[t] ∂si[t] ∂ui[t] ∂ui[t] ∂wij and ∂L ∂dij = t ∂L ∂si[t] ∂si[t] ∂ui[t] ∂ui[t] ∂rij [t]\nEQUATION\ndenotes the derivative of the kernel κ). In a discrete setting, d ij should be integers, and we employ the straight-throughestimator to train a quantized real-valued variable. For additional details, please refer to Appendix A. In this study, we primarily focus on parameters w ij and d ij , leaving the exploration of heterogeneous neurons for future work.",
+    "3.2._GRSNN_as_Generalized_Path_Formulation": "GRSNN serves as a neural generalization of the path formulation for graphs, allowing for the simultaneous consideration of all paths from a source node without the separate calculation of each one. Path formulation is important to graph reasoning due to better interpretability and inductive generalization ability (Zhu et al., 2021; Yang et al., 2017; Sadeghian et al., 2019) . Traditional path-based algorithms calculate the pair representation between nodes x and y by considering paths from x to y, formulated as a generalized accumulation of path representations (Zhu et al., 2021) :\nEQUATION\nwhere P xy is the set of paths from x to y, e i is the i-th edge on a path P , and v q (e i ) is the edge representation (e.g., the transition probability of this edge). Various methods like Katz Index (Katz, 1953) , Personalized PageRank (Page et al., 1999) , and Graph Distance (Liben-Nowell & Kleinberg, 2007) follow this modeling.\nIn GRSNN, spike trains propagate over time, with spikes at different times simultaneously maintaining all paths from the source node. The spike train of y is:\nEQUATION\nwhere f is the function of spiking neurons, w q z,y and d q z,y are synaptic weights and delays between nodes z and y given the query relation q, N (y) denotes the set of neighbors of y, and f denotes the general composite function for all paths. In some degenerated conditions, the time of a spike is the sum of edge delays on one path, allowing a decoding function F to perform a general summation over all paths represented in the spike train. We show that, with specific settings, GRSNN can solve traditional path-based methods.\nProposition 3.1. Katz Index, Personalized PageRank, and Graph Distance can be solved by GRSNN under specific settings.\nThe proof is detailed in Appendix B, focusing on the construction of appropriate delay and decoding functions. This proposition illustrates that GRSNN can degenerate to emulate traditional path-based algorithms. By employing parameterized synaptic delays for learnable edge representations, and additional parameters like synaptic weights for transformations in another dimension, GRSNN emerges as a neural generalization of the path formulation for graph reasoning. This sheds light on the capability of SNNs to execute neurosymbolic computation on graph paths utilizing spiking time and synaptic delay. Furthermore, GRSNN, as a generalization of path formulation, extends its important applicability to inductive settings and reasoning path interpretations, distinguishing it from entity embedding methods.",
+    "3.1._Model_Overview": "The outline of GRSNN is depicted in Fig. 2 . Each graph node is assigned n spiking neurons, representing each entity by a neuron population (Fig. 2b ). Synaptic connections, corresponding to relation links between entities, are characterized by weight and delay between neuron groups (Fig. 2c ). These synaptic properties, such as delay, are dependent on the graph edge relation and modulated by the query relation (task goal), allowing the integrated properties of paths to be reflected by the spiking time considering delays (Fig. 2e ). Depiction of the temporal domain serving as an additional dimension to process the properties of edges and paths in a network with more propagation paths. In the demonstrated network under a simplified setting where each input spike triggers an output spike for neurons, a spike from the source neuron will lead to four spikes from the target neuron, whose time varies corresponding to four propagation paths with different integrated properties of edges represented by synaptic delay.\nUnlike SNNs for traditional graph tasks, we generalize the model to allow both positive and negative synaptic weights, acting as complementary transformations to learnable synaptic delays that are viewed as an additional dimension to process graph edges and paths.\nFor the link prediction task (Fig. 2d ), a constant current I q is injected to the spiking neurons of the source node x for a given query q between nodes x and y, generating spike trains. The network then propagates these spikes, and a spike train s q y (t) from the target node y's neurons is obtained after a time interval. A decoding function D calculates the pair representation h q (x, y) = D(s q y (t)) for link prediction, and we primarily utilize temporal coding D(s q y (t)) = τ λ τ s q y [τ ] / ( τ λ τ ), emphasizing early spiking time. This corresponds to the decoding for various path formulations (refer to Appendix B for more details).",
+    "5._Discussion_and_Conclusion": "This study demonstrates the potential of bio-inspired SNNs in addressing graph reasoning through the innovative use of synaptic delay and spiking time. We introduced GRSNN, a model that employs synaptic delays to encode relation information of graph edges and utilizes the temporal domain as an additional dimension for processing graph path properties. This approach can be perceived as a neural generalization of the path formulation with better inductive generalization ability and interpretability. It provides insights into the capabilities of networks with biological neuron models to efficiently facilitate neuro-symbolic reasoning in tasks central to human intelligence, such as relational reasoning of concepts. Additionally, it explores the enhanced role that spiking time can play in AI applications. The promising performance and substantial theoretical energy efficiency of our model underscore the potential of SNNs in a wider array of applications such as efficient reasoning.\nOur approach to temporal coding of spike trains assigns varying weights to different times, which is similar to the methodology in Stöckl & Maass (2021) but in our model, earlier spikes are designed to receive higher weights, which also integrates concepts from the time to first spike paradigm (Mostafa, 2017) . Distinct to these works, our focus extends beyond individual neuron temporal coding to encompass the network level, allowing spiking time to integrate path properties during network propagation, and enabling multiple spikes to represent diverse paths globally. Unlike prior studies on traditional graph algorithms (Aimone et al., 2021), which primarily target the shortest path task, our work delves into the multifaceted realm of graph AI tasks with multiple temporal spikes for diverse paths. Together, our work offers a fresh perspective on temporal information processing in SNNs.\nThis study marks an initial exploration of utilizing SNNs for graph reasoning, leveraging the temporal domain, and opens avenues for numerous future directions. First, the reliance on discrete simulation and backpropagation through time for training SNNs is resource-intensive, especially for long simulation times with small discrete intervals. Therefore, this work primarily considers T = 10 discrete time steps, which could sacrifice more precise temporal information. Enhancements in simulation or training methodologies at hardware/coding/algorithm levels may yield improved results given more accurate temporal information. Additionally, the exploration of online training methods conducive to on-chip learning of SNNs (Bellec et al., 2020; Xiao et al., 2022) for learning synaptic delays may offer insights into efficient and more biologically plausible learning of our model. Second, to fulfill the properties of SNNs, many advanced GNN strategies may not be incorporated, such as intricate message and aggregate functions and elaborate network structures. The investigation of SNN-compatible strategies may potentially bridge the performance gap, e.g., heterogeneous neurons and different neuron dynamics may provide more powerful computational properties (Chakraborty & Mukhopadhyay, 2023; Bellec et al., 2018) . Last, given the prevalence of graph tasks in AI applications, future studies could delve into wider applications of graph reasoning such as drug or material design, investigating the potential of bio-inspired models for efficient applications.\nIn conclusion, our study illustrates the capability of braininspired SNNs in efficient symbolic graph reasoning, emphasizing the enhanced role of the temporal domain. Given their neuromorphic attributes, SNNs are poised to achieve substantial energy efficiency and high parallelism on spikebased neuromorphic hardware. It is our aspiration that this research serves as a catalyst for deeper insights and wider applications of biologically inspired efficient SNNs.",
+    "3._Graph_Reasoning_Spiking_Neural_Network": "In this section, we introduce our graph reasoning spiking neural networks. We first introduce the overview of our model in Section 3.1. Then in Section 3.2, we demonstrate that GRSNN can be viewed as a generalized path formulation for graph reasoning. In Section 3.3, we discuss the comparison with graph neural networks. Finally, we introduce implementation details in Section 3.4.",
+    "2.2._Link_Prediction_of_Graphs": "We consider link prediction tasks of (knowledge) graphs. A knowledge graph is denoted by G = (V, E, R), with V, E, and R representing the sets of graph nodes, graph edges, and relation types, respectively. We also consider homogeneous graphs G = (V, E) as a special case with only one relation type. The task is to predict whether an edge of type q exists between entities x, y (Fig. 2a ), and the common methods are to calculate or learn a pair representation h q (x, y) for prediction, e.g., using paths between two nodes or embedding methods or GNNs, while we explore using SNNs. Many link prediction tasks are transductive, i.e., predicting new links on the training graph, and there is also the inductive setting where training and testing graphs have different entities but the same relation types.",
+    "3.4._Implementation_Details": "Model Detail In practice, our models predominantly adhere to Eq. ( 7). The set of learnable parameters encompasses W and b, symbolizing a shared linear transformation of synaptic weights, and d q r , denoting the delay between the spiking neurons of two nodes, contingent on their relation r and the query relation q. Additionally, r signifies the embedding of relations, utilized for both current injection (I q = r q ) and the ultimate link prediction with a parameterized function to predict links based on h q (x, y) and r q . To differentiate the varying contributions of a relation (edge) in forecasting different query relations, we align with previous studies (Zhu et al., 2021) to parameterize the edge representation of relation r as a linear function over the query relation. This is then processed through a sigmoid function with a bound scale β to serve as positive delays, i.e.,\nd q r = βσ(W r r q + b r ).\nIn the context of homogeneous graphs characterized by a singular relation, this simplifies to d q r = βσ(b r ). It undergoes quantization and is trained by the straight-through-estimator. Post-learning, it can be archived in a look-up table, obviating the need for nonlinear computations. This can be analogous to neuromodulation with a superior signal delineating the task objective.",
+    "3.3._Comparison_with_Graph_Neural_Networks": "The introduced GRSNN bears a resemblance to the widelyused message-passing GNNs in machine learning, both propagating messages between interconnected nodes. However, notable distinctions exist.\nFirst, GRSNN incorporates varied temporal synaptic delays in message passing, allowing for the encoding of relational information in spiking times with enhanced spatiotemporal processing. In contrast, GNNs uniformly propagate messages across all edges in each iteration. Second, GRSNN disseminates temporal spike trains throughout the network, as opposed to GNN's real-valued activations. This not only facilitates the representation of multiple paths through diverse spiking times within a spike train but also promotes event-driven energy-efficient computation suitable for neuromorphic hardware. Moreover, while Zhu et al. (2021) interprets GNN as a neural counterpart to the Bellman-Ford algorithm, GRSNN is perceived as a neural generalization of Dijkstra's algorithm. This parallel between artificial and brain-inspired neural networks in generalizing distinct classical algorithms for analogous objectives is intriguing.\nOnce the inherent differences are accounted for, GRSNN can also have a formulation analogous to GNNs. Specifically, at each discrete time step, every node (with spiking neurons) aggregates messages from neighbors. Assuming the sharing of synaptic weights across all edges, akin to GNNs, messages are represented by delayed spikes. The aggregation function then becomes a synthesis of the summation of all messages, a linear transformation, and the spike generation with neuronal dynamics of spiking neurons. Thus, for every node z, the following holds:\nEQUATION\nHere, r signifies the relation from node k to node z, s q k [td q r ] represents the vector of spikes with associated delays d q r , and 1 z=x is an indicator for the current injection to the source node. The time steps can be viewed as the layers of GNNs, with shared weights and delays for all time steps. Consequently, the inference time and space complexity of GRSNN align closely with those of GNNs, except that they are proportional to the number of discrete time steps instead of GNN's layer number.",
+    "4.3._Inductive_Relation_Prediction": "Experiments are also conducted on inductive relation prediction to assess the efficacy of GRSNN. Unlike the transductive setting, which focuses on predicting new links within the training knowledge graph, inductive prediction strives to extrapolate the ability to predict relations from the training graph to a distinct testing graph. This testing graph encompasses different entities but retains the same relation types, as illustrated in Appendix E.2, demonstrating the ability to generalize relational reasoning to new conditions. Traditional entity embedding methods falter under this condition, whereas GRSNN, being a generalized form of path formulation, adeptly manages it.\nThe outcomes, depicted in Fig. 5 , reveal that GRSNN surpasses the performance of most machine learning methods in inductive settings, underscoring its proficiency in generalizing reasoning to new entities. The spike rate statistics in Table 2 also indicate the potential for energy efficiency.",
+    "4.1._Transductive_Knowledge_Graph_Completion": "We initiate our evaluation with experiments on transductive knowledge graph completion to assess the efficacy of GRSNN. This task, illustrated in Appendix E.2, involves predicting unseen relations between two existing entities in a knowledge graph and serves as a standard for assessing graph reasoning link prediction.",
+    "4.2._Analysis_Results": "Parameter amount Fig. 4a contrasts the parameter quantities of several representative methods, highlighting the notable parameter efficiency of GRSNN in achieving competitive performance compared to other methods.\nTheoretical estimation of energy GRSNN leverages the energy efficiency inherent to SNNs through spike-based computation. On the test set of FB15k-237, the model ex-hibits a spike rate-the average spike count per discrete time step-of approximately 0.258. This translates to roughly a 4× reduction in synaptic operations compared to equivalent real-valued neural networks. Given that spikes necessitate only Accumulate (AC) operations as opposed to Multiply-and-Accumulate (MAC) operations, there is a substantial reduction in energy costs, as evidenced by the energy consumption of 32-bit FP MAC and AC operations on a 45 nm CMOS processor being 4.6 pJ and 0.9 pJ, respectively (Horowitz, 2014) . Fig. 4b provides a concise theoretical estimation of the number of addition and multiplication operations and the associated energy requirements, with the multiplication in SNNs arising due to leaky neuronal dynamics (please refer to Appendix E.3 for calculation details).\nBased on these estimations, a potential 20× energy reduction is foreseeable, and under certain conditions where AC can be 31× cheaper than MAC (Yin et al., 2021; Horowitz, 2014) , this could extend to around 100×.\nNote that there can also be costs from synaptic delay. We consider the Ring Buffer as a potential implementation, which is commonly used by digital neuromorphic platforms and analyzed (Patiño-Saucedo et al., 2023) . The additional energy overhead will account for an extremely small proportion of energy-it is estimated as 0.004 mJ, while the energy for synaptic operations estimated above is 1.337 mJ (please refer to Appendix E.3 for calculation details), and this conclusion is consistent with Patiño-Saucedo et al. (2023) . Therefore, the costs of synaptic delay do not affect the substantial energy efficiency.\nMore spike rate statistics on different datasets or tasks are presented in Table 2 , showing that spikes are even sparser on other datasets or tasks introduced in the following. This underscores the substantial potential of GRSNN in enhancing energy efficiency by one to two orders of magnitude.\nInterpretability To demonstrate the interpretability of GRSNN as neural-generalized path formulation, in Appendix F.2, we visualize the reasoning paths for the final predictions of several examples, based on edge and path importance, determined by the gradient of the prediction w.r.t. GRSNN NBFNet S-VGAE SEAL TLC-GNN VGAE node2vec LINE DeepWalk PageRank Katz Index NBFNet S-VGAE GRSNN SEAL VGAE TLC-GNN node2vec DeepWalk LINE PageRank Katz Index GRSNN NBFNet SEAL TLC-GNN S-VGAE VGAE node2vec LINE DeepWalk PageRank Katz Index b a c Cora Citeseer Pubmed Figure 6. Results of Homogeneous Graph Link Prediction on Cora, Citeseer, and PubMed. Detailed values are in Appendix F.1. edges, and beam search for paths of higher importance (refer to Appendix E.3 for details). Results show that GRSNN is adept at discerning relation relevances and exploiting transitions and analogs.\nMore analysis results such as the impact of temporal discretization steps and the impact of neuron number and parameter amount are in Appendix F.",
+    "4.4._Homogeneous_Graph_Link_Prediction": "We also assess the GRSNN in the context of link prediction tasks for standard homogeneous graphs, illustrating its versatility across diverse application domains. Homogeneous graphs are essentially a subset of knowledge graphs, characterized by a singular type of relation, i.e., the presence of graph edges, and are ubiquitously observed. In such instances, the representation of edges remains consistent across the graph, and the GRSNN primarily leverages the information pertaining to graph distance in spiking time, as opposed to relation-specific information.\nThe results shown in Fig. 6 reveal that GRSNN manifests competitive performance in comparison to other proficient machine learning models, underscoring its efficacy. The sparse spike rates presented in Table 2 further highlight the efficiency potential. ",
+    "1._Introduction": "Spiking Neural Networks (SNNs), inspired by the detailed dynamics of biological neurons, are recognized as more biologically plausible models for neural computation and are distinguished as the third generation of neural network models, owing to their advanced computational capabilities derived from spiking time (Maass, 1997) . Unlike traditional Artificial Neural Networks (ANNs), SNNs integrate neuronal dynamics using differential equations and leverage sparse spike trains in the temporal domain for information transition (Fig. 1a ), enhancing the encoding of information in biological brains (Reinagel & Reid, 2000; Huxter et al., 2003) and exhibiting increased expressive power when incorporating delay variables (Maass, 1997) . The utilization of sparse, event-based computation in SNNs facilitates energyefficient operation on neuromorphic hardware with parallel in-/near-memory computing (Davies et al., 2018; Pei et al., 2019; Rao et al., 2022) , making SNNs increasingly prominent as powerful and efficient neuro-inspired models in Artificial Intelligence (AI) applications (Rueckauer et al., 2017; Shrestha & Orchard, 2018; Roy et al., 2019; Bellec et al., 2020; Stöckl & Maass, 2021; Yin et al., 2021; Rao et al., 2022; Xiao et al., 2022; Li et al., 2023; Zhang et al., 2024) . Despite these advancements, critical inquiries remain unresolved regarding the solution by SNNs for human-like graph-based reasoning of concepts or relations and an improved utilization of spiking time for information processing.\nSymbolic and relational reasoning is a cornerstone of human intelligence and advanced AI capabilities (Kemp & Tenenbaum, 2008; Santoro et al., 2017; Rao et al., 2022; Nickel et al., 2015) and can often be formulated as graph reasoning with tasks like link prediction in knowledge graphs (Fig. 1b ) (Nickel et al., 2015) . For example, it can be evaluated by machine learning tasks of knowledge graph completion (Nickel et al., 2015) and inductive relation prediction (Yang et al., 2017; Teru et al., 2020) , resembling humans' ability to reason new relations between entities based on commonsense knowledge graphs or generalize relations to new analogous conditions. Investigating how underlying mechanisms of neural computation can realize this reasoning capability is pivotal for understanding human intelligence and advancing AI systems, as graph reasoning is important for extensive AI tasks such as knowledge graphs, recommendation systems, and drug or material design (Wang et al., 2023) . While various machine learning methods, including path-based (Lao & Cohen, 2010; Yang et al., 2017; Sadeghian et al., 2019) , embedding (Bordes et al., 2013; Yang et al., 2015; Sun et al., 2019) , and Graph Neural Networks (GNNs) (Schlichtkrull et al., 2018; Vashishth et al., 2020; Teru et al., 2020; Zhu et al., 2021) , have been proposed for graph reasoning tasks, the efficacy of bio-inspired models in achieving comparable performance remains largely unexplored. Existing attempts, such as entity embedding by spiking times of single neurons (Dold & Garrido, 2021; Dold, 2022) or in-context relational reasoning (Rao et al., 2022) , have not addressed how reasoning paths can be propagated, especially with optimal utilization of temporal information at the network level, and have shown limitations in inductive generalization, interpretability, and performance in large knowledge graphs.\nMoreover, the importance of spiking time in SNNs (Maass, 1997; Reinagel & Reid, 2000; Huxter et al., 2003) and its potential in AI applications necessitate further exploration. Many previous works have primarily focused on enhancing SNNs as energy-efficient alternatives to ANNs for tasks like image classification (Rueckauer et al., 2017; Shrestha & Orchard, 2018; Xiao et al., 2022) , with an emphasis on spike counts. Efforts to leverage spiking time have explored encoding information for single neurons by the time to first spike (Mostafa, 2017; Comsa et al., 2020; Dold & Garrido, 2021) , the interval between spikes (Dold, 2022) , or adopting different weight coefficients at different times (Stöckl & Maass, 2021) , and some have delved into temporal processing tasks like time series classification (Yin et al., 2021; Rao et al., 2022; Patiño-Saucedo et al., 2023; Hammouamri et al., 2024) . However, more systematic utilization of synaptic delay at the network level and the coding principles embedded in neuronal spike trains are areas that warrant deeper investigation for better understanding and application of SNNs in extensive AI tasks.\nIn this work, we introduce Graph Reasoning Spiking Neural Network (GRSNN), a novel method allowing SNNs to adeptly solve knowledge graph reasoning tasks by leverag-ing synaptic delay to encode relational information. This method enables the temporal domain of SNNs to act as an additional dimension to process edge and path properties at the network level, offering a fresh perspective on temporal information processing and coding in SNNs.\nWe consider link prediction tasks of knowledge graphs and GRSNN is proposed as a neural generalization to the path formulation of graph algorithms, drawing inspiration from existing works (Aimone et al., 2021; Zhu et al., 2021) . Path formulation is important to graph reasoning due to better interpretability and inductive generalization ability (Zhu et al., 2021; Yang et al., 2017; Sadeghian et al., 2019) . We generalize the thought-SNNs can provide a parallelizable and efficient solution to traditional graph path tasks-into AI applications of graph reasoning. It can serve as a neural generalization of Dijkstra's algorithm with learnable synaptic delays representing the properties of graph edges (also coupled with synaptic weights), enabling high-performance and interpretable solutions.\nExperiments on diverse graph prediction tasks are conducted to assess the effectiveness of GRSNN. The results underscore the advantage of synaptic delay in encoding relation information in SNNs for competitive performance, revealing a potential mechanism of spiking neurons for knowledge reasoning, and demonstrate the efficiency of GRSNN by fewer parameters and spike computation, with a theoretical estimation indicating significant energy savings compared to non-spiking counterparts. These insights enhance our understanding of the role of neuro-inspired models in graphbased reasoning tasks, central to human intelligence, and emphasize the potential of the temporal domain of SNNs in developing energy-efficient solutions for graph-based AI applications.",
+    "2.3._Synaptic_Delay_for_Traditional_Graph_Algorithms": "Some previous works show that the synaptic delay of SNNs can be leveraged to solve traditional graph tasks, providing a parallelizable and efficient neuromorphic computing solution to graph algorithms (Aimone et al., 2021) . For the traditional graph single-source shortest path problem, by assigning a neuron to each graph node and configuring the delay between neurons as the graph edge weight, SNNs can parallelly simulate Dijkstra's algorithm. An example is shown in Fig. 2e if we decode the spike train of the target neuron by the time to first spike. We will generalize the thought-delays in SNNs can represent the properties of graph edges-to graph AI reasoning tasks with neural generalization and advanced temporal coding with multiple temporal spikes for diverse paths."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Provable advantages for graph algorithms in spiking neural networks",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "B"
+          ],
+          "last": "Aimone",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Parekh",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "A"
+          ],
+          "last": "Phillips",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Pinar",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Severa",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ACM Symposium on Parallelism in Algorithms and Architectures (SPAA)"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Low-rank bilinear pooling for link prediction",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Amin",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Varanasi",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "A"
+          ],
+          "last": "Dunfield",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Neumann",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Lowfer",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Long short-term memory and learning-to-learn in networks of spiking neurons",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Bellec",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Salaj",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Subramoney",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Legenstein",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Maass",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "A solution to the learning dilemma for recurrent networks of spiking neurons",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Bellec",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Scherr",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Subramoney",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hajek",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Salaj",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Legenstein",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Maass",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature Communications"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Translating embeddings for modeling multi-relational data",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bordes",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Usunier",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Garcia-Duran",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Weston",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Yakhnenko",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Heterogeneous neuronal and synaptic dynamics for spike-efficient unsupervised learning: Theory and design principles",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Chakraborty",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Mukhopadhyay",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Temporal coding in spiking neural networks with alpha synaptic function",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [
+            "M"
+          ],
+          "last": "Comsa",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Potempa",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Versari",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Fischbacher",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Gesmundo",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Alakuijala",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE International Conference on Acoustics, Speech and Signal Processing"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Hyperspherical variational auto-encoders",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [
+            "R"
+          ],
+          "last": "Davidson",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Falorsi",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "De Cao",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Kipf",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "M"
+          ],
+          "last": "Tomczak",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Conference on Uncertainty in Artificial Intelligence (UAI)"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Loihi: A neuromorphic manycore processor with on-chip learning",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Davies",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Srinivasa",
+          "suffix": ""
+        },
+        {
+          "first": "T.-H",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Chinya",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "H"
+          ],
+          "last": "Choday",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Dimou",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Joshi",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Imam",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "IEEE Micro"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Convolutional 2d knowledge graph embeddings",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Dettmers",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Minervini",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Stenetorp",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Riedel",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "AAAI Conference on Artificial Intelligence (AAAI)"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Relational representation learning with spike trains",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Dold",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Joint Conference on Neural Networks (IJCNN)"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Spike: Spike-based embeddings for multi-relational graph data",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Dold",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "S"
+          ],
+          "last": "Garrido",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Joint Conference on Neural Networks (IJCNN)"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Brain-inspired graph spiking neural networks for commonsense knowledge representation and reasoning",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Incorporating learnable membrane time constant to enhance learning of spiking neural networks",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Masquelier",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Computer Vision (ICCV)"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "node2vec: Scalable feature learning for networks",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Grover",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Leskovec",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD)"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Learning delays in spiking neural networks using dilated convolutions with learnable spacings",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Hammouamri",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Khalfaoui-Hassani",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Masquelier",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "1.1 computing's energy problem (and what we can do about it)",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Horowitz",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "IEEE International Solid-State Circuits Conference (ISSCC)"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Independent rate and temporal coding in hippocampal pyramidal cells",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Huxter",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Burgess",
+          "suffix": ""
+        },
+        {
+          "first": "O'",
+          "middle": [],
+          "last": "Keefe",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2003,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "A new status index derived from sociometric analysis",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Katz",
+          "suffix": ""
+        }
+      ],
+      "year": 1953,
+      "venue": "Psychometrika"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "The discovery of structural form",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Kemp",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "B"
+          ],
+          "last": "Tenenbaum",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Variational graph auto-encoders",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [
+            "N"
+          ],
+          "last": "Kipf",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Relational retrieval using a combination of path-constrained random walks",
+      "authors": [
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Lao",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [
+            "W"
+          ],
+          "last": "Cohen",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "Machine Learning"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Scaling up dynamic graph representation learning via spiking neural networks",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "AAAI Conference on Artificial Intelligence (AAAI)"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "A free lunch from ann: Towards efficient, accurate spiking neural networks calibration",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "The link-prediction problem for social networks",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Liben-Nowell",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Kleinberg",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "Journal of the American Society for Information Science and Technology"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Spiking convolutional neural networks for text classification",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lv",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Networks of spiking neurons: the third generation of neural network models",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Maass",
+          "suffix": ""
+        }
+      ],
+      "year": 1997,
+      "venue": "Neural Networks"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Fine-grained evaluation of rule-and embedding-based systems for knowledge graph completion",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Meilicke",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Fink",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Ruffinelli",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Gemulla",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Stuckenschmidt",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Semantic Web Conference (ISWC)"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Training high-performance low-latency spiking neural networks by differentiation on spike representation",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Z.-Q",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Training much deeper spiking neural networks with a small number of time-steps",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Z.-Q",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Neural Networks"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Supervised learning based on temporal coding in spiking neural networks",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Mostafa",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "IEEE Transactions on Neural Networks and Learning Systems (TNNLS)"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "A review of relational machine learning for knowledge graphs",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Nickel",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Murphy",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Tresp",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Gabrilovich",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Proceedings of the IEEE"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "The pagerank citation ranking: Bringing order to the web",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Page",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Brin",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Motwani",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Winograd",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Empirical study on the efficiency of spiking neural networks with axonal delays, and algorithm-hardware benchmarking",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Patiño-Saucedo",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Yousefzadeh",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Corradi",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Linares-Barranco",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Sifalakis",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE International Symposium on Circuits and Systems (ISCAS)"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Towards artificial general intelligence with hybrid Tianjic chip architecture",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Pei",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Online learning of social representations",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Perozzi",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Al-Rfou",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Skiena",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Deepwalk",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD)"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "A long shortterm memory for AI applications in spike-based neuromorphic hardware",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Plank",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Wild",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Maass",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Nature Machine Intelligence"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Temporal coding of visual information in the thalamus",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Reinagel",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "C"
+          ],
+          "last": "Reid",
+          "suffix": ""
+        }
+      ],
+      "year": 2000,
+      "venue": "Journal of Neuroscience"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Towards spike-based machine intelligence with neuromorphic computing",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Jaiswal",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Panda",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Conversion of continuous-valued deep networks to efficient event-driven networks for image classification",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Rueckauer",
+          "suffix": ""
+        },
+        {
+          "first": "I.-A",
+          "middle": [],
+          "last": "Lungu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Pfeiffer",
+          "suffix": ""
+        },
+        {
+          "first": "S.-C",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Frontiers in Neuroscience"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Drum: End-to-end differentiable rule mining on knowledge graphs",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sadeghian",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Armandpour",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "Z"
+          ],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "A simple neural network module for relational reasoning",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Santoro",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Raposo",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "G"
+          ],
+          "last": "Barrett",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Malinowski",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Pascanu",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Battaglia",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Lillicrap",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Modeling relational data with graph convolutional networks",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Schlichtkrull",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "N"
+          ],
+          "last": "Kipf",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bloem",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Van Den",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Berg",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Titov",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "European Semantic Web Conference (ESWC)"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Opportunities for neuromorphic computing algorithms and applications",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [
+            "D"
+          ],
+          "last": "Schuman",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "R"
+          ],
+          "last": "Kulkarni",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Parsa",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "P"
+          ],
+          "last": "Mitchell",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Kay",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Nature Computational Science"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Collective classification in network data",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sen",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Namata",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Bilgic",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Getoor",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Galligher",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Eliassi-Rad",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "AI Magazine"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Slayer: spike layer error reassignment in time",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [
+            "B"
+          ],
+          "last": "Shrestha",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Orchard",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Optimized spiking neurons can classify images with high accuracy through temporal coding with two spikes",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Stöckl",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Maass",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Nature Machine Intelligence"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Knowledge graph embedding by relational rotation in complex space",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Z.-H",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "J.-Y",
+          "middle": [],
+          "last": "Nie",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Rotate",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Line: Large-scale information network embedding",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Qu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Mei",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International Conference on World Wide Web (WWW)"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Inductive relation prediction by subgraph reasoning",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Teru",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Denis",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Hamilton",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Observed versus latent features for knowledge base and text inference",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Toutanova",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Proceedings of the 3rd Workshop on Continuous Vector Space Models and their Compositionality"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Complex embeddings for simple link prediction",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Trouillon",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Welbl",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Riedel",
+          "suffix": ""
+        },
+        {
+          "first": "É",
+          "middle": [],
+          "last": "Gaussier",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Bouchard",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Composition-based multi-relational graph convolutional networks",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Vashishth",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sanyal",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Nitin",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Talukdar",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Scientific discovery in the age of artificial intelligence",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Chandak",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Van Katwyk",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Deac",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Training feedback spiking neural networks by implicit differentiation on the equilibrium state",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Online training through time for spiking neural networks",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Hebbian learning based orthogonal projection for continual learning of spiking neural networks",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Sampling complex topology structures for spiking neural networks",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Neural Networks"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Link prediction with persistent homology: An interactive view",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Embedding entities and relations for learning and inference in knowledge bases",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "W"
+          ],
+          "last": "Yih",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": ".-T",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Differentiable learning of logical rules for knowledge base reasoning",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [
+            "W"
+          ],
+          "last": "Cohen",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Accurate and efficient time-domain classification with adaptive spiking recurrent neural networks",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Corradi",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "M"
+          ],
+          "last": "Bohté",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Nature Machine Intelligence"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Link prediction based on graph neural networks",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Efficient and generalizable cross-patient epileptic seizure detection through a spiking neural network",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Frontiers in Neuroscience"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Dance of snn and ann: Solving binding problem by combining spike timing and reconstructive attention",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Temporal-coded deep spiking neural network with easy training and robust performance",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "T"
+          ],
+          "last": "Chandrasekaran",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sanyal",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "AAAI Conference on Artificial Intelligence (AAAI)"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Neural bellman-ford networks: A general graph neural network framework for link prediction",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "L.-P",
+          "middle": [],
+          "last": "Xhonneux",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Spiking graph convolutional networks",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Joint Conference on Artificial Intelligence (IJCAI)"
+    }
+  ]
+}

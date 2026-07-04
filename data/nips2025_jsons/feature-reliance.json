@@ -1,0 +1,2733 @@
+{
+  "paper_id": "feature-reliance",
+  "title": "ImageNet-trained CNNs are not biased towards texture: Revisiting feature reliance through controlled suppression",
+  "authors": [
+    {
+      "first": "Tom",
+      "middle": [],
+      "last": "Burgert",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Trento",
+        "location": {}
+      }
+    },
+    {
+      "first": "Oliver",
+      "middle": [],
+      "last": "Stoll",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Trento",
+        "location": {}
+      }
+    },
+    {
+      "first": "Paolo",
+      "middle": [],
+      "last": "Rota",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Trento",
+        "location": {}
+      }
+    },
+    {
+      "first": "Begüm",
+      "middle": [],
+      "last": "Demir",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of Trento",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "The hypothesis that Convolutional Neural Networks (CNNs) are inherently texturebiased has shaped much of the discourse on feature use in deep learning. We revisit this hypothesis by examining limitations in the cue-conflict experiment by Geirhos et al. To address these limitations, we propose a domain-agnostic framework that quantifies feature reliance through systematic suppression of shape, texture, and color cues, avoiding the confounds of forced-choice conflicts. By evaluating humans and neural networks under controlled suppression conditions, we find that CNNs are not inherently texture-biased but predominantly rely on local shape features. Nonetheless, this reliance can be substantially mitigated through modern training strategies or architectures (ConvNeXt, ViTs). We further extend the analysis across computer vision, medical imaging, and remote sensing, revealing that reliance patterns differ systematically: computer vision models prioritize shape, medical imaging models emphasize color, and remote sensing models exhibit a stronger reliance on texture.",
+  "body": {
+    "5._Open_access_to_data_and_code": "Question: Does the paper provide open access to the data and code, with sufficient instructions to faithfully reproduce the main experimental results, as described in supplemental material? Answer: [Yes] .\nJustification: Upon acceptance, our code will be made publicly available, which contains the full implementation of the proposed suppression-based evaluation framework, scripts for reproducing all key experiments, and instructions for environment setup and execution. The code also contains the tool for the human study interface. All datasets used are publicly available, and instructions for accessing them are provided.\nGuidelines:\n• The answer NA means that paper does not include experiments requiring code.\n• Please see the NeurIPS code and data submission guidelines (https://nips.cc/ public/guides/CodeSubmissionPolicy) for more details.\n• While we encourage the release of code and data, we understand that this might not be possible, so \"No\" is an acceptable answer. Papers cannot be rejected simply for not including code, unless this is central to the contribution (e.g., for a new open-source benchmark).\n• The instructions should contain the exact command and environment needed to run to reproduce the results. See the NeurIPS code and data submission guidelines (https: //nips.cc/public/guides/CodeSubmissionPolicy) for more details.\n• The authors should provide instructions on data access and preparation, including how to access the raw data, preprocessed data, intermediate data, and generated data, etc.\n• The authors should provide scripts to reproduce all experimental results for the new proposed method and baselines. If only a subset of experiments are reproducible, they should state which ones are omitted from the script and why.\n• At submission time, to preserve anonymity, the authors should release anonymized versions (if applicable).\n• Providing as much information as possible in supplemental material (appended to the paper) is recommended, but including URLs to data and code is permitted.",
+    "1_Introduction": {
+      "1._Claims": "Question: Do the main claims made in the abstract and introduction accurately reflect the paper's contributions and scope?\nAnswer: [Yes] .\nJustification: The introduction and abstract clearly state the paper's core contributions: a critical re-evaluation of the cue-conflict protocol, the introduction of a suppression-based framework for assessing feature reliance, the empirical comparison of human and model reliance, and a further analysis across different visual domains. These claims are directly supported by the theoretical arguments in Section 3, the methodological framework in Section 4, and the empirical findings in Section 5.\nGuidelines:\n• The answer NA means that the abstract and introduction do not include the claims made in the paper.\n• The abstract and/or introduction should clearly state the claims made, including the contributions made in the paper and important assumptions and limitations. A No or NA answer to this question will not be perceived well by the reviewers.\n• The claims made should match theoretical and experimental results, and reflect how much the results can be expected to generalize to other settings.\n• It is fine to include aspirational goals as motivation as long as it is clear that these goals are not attained by the paper.",
+      "_text": "Convolutional neural networks (CNNs) have played a central role in the development of deep learning models for visual recognition [1] , [2] , [3] , [4] . Their success across a range of computer vision (CV) benchmarks has contributed to the perception that they acquire perceptual representations resembling those of humans [5] , [6] , [7] . However, a growing body of work suggests that CNNs may process visual information in fundamentally different ways [8] , [9] , [10] . One of the most influential claims in this direction is that CNNs trained on ImageNet are inherently biased towards texture [8] , in contrast to humans who predominantly rely on shape cues [11] . This claim, first formalized by Geirhos et al. [8] through their cue-conflict experiment, has since shaped much of the discourse on how to evaluate and interpret the use of features in deep neural networks.\nIn the cue-conflict experiment, images are synthesized by combining the shape of one object class with the texture of another, using neural style transfer techniques [12] . Models and humans are then presented with these hybrid images, and their predictions are analyzed to infer which visual cues they rely on. The observed divergence, with CNNs favoring texture and humans favoring shape, has become a dominant narrative for understanding human-machine perceptual differences and has inspired a wide range of follow-up studies [13] , [14] , [15] , [16] , [17] .\nAlthough influential, the cue-conflict experiment is based on assumptions that may limit the generalizability and clarity of its findings. Conceptually, it reduces feature reliance to a binary choice between shape and texture, overlooking other potentially informative cues such as color, and tends to link salience with reliance implicitly. Methodologically, the generated stimuli entangle unintentionally multiple features, introduce texture cues across the image in a spatially unbalanced manner, and rely on shape-based response interfaces that may bias human judgments. As discussed further in Section 3, these conceptual and methodological limitations complicate conclusions about the feature use of models and humans.\nIn this work, we argue for a conceptual shift: from analyzing feature bias through forced-choice conflicts to assessing feature reliance through targeted suppression. This conceptual distinction reframes how feature preferences and reliance should be evaluated. A model may prefer a certain cue in conflict, not because it is more predictive, but because it is more salient. Conversely, a model may rely heavily on a feature in natural settings, even if it does not dominate in cue-conflict scenarios. To address the aforementioned limitations, we propose a new domain-agnostic evaluation framework that quantifies performance degradation under systematic suppression of individual feature types (e.g., shape, texture, and color), enabling empirical measurement of reliance. The proposed framework does not rely on adversarial inputs or neural style transfer, but instead uses direct feature-suppressing transformations. By isolating individual feature contributions, our framework offers a more reliable basis for interpreting model decisions and comparing representational strategies, both between humans and neural networks, and across model architectures and domains.\nOur main contributions are as follows:\n(1) We present a re-examination of Geirhos et al.'s cue-conflict experiment [8] , highlighting aspects in their evaluation protocol that may limit its generalizability. (2) We introduce a domain-agnostic framework for evaluating feature reliance through targeted feature suppression, enabling cleaner measurement of model dependence on individual visual cues without requiring conflicting cue setups. (3) Using the proposed framework, we systematically compare human and model feature reliance under controlled conditions. Our results challenge the texture bias hypothesis [8] by showing that CNNs are not inherently texture-biased; instead, they only exhibit a pronounced sensitivity to local shape, which can be mitigated through modern training strategies. Notably, models trained with vision-language supervision most closely match human behavior. (4) We apply the same framework to assess domain-specific differences in feature reliance, showing that models trained on CV, remote sensing (RS), and medical imaging (MI) datasets prioritize distinct visual cues depending on domain characteristics."
+    },
+    "2_Related_Work": {
+      "2._Limitations": "Question: Does the paper discuss the limitations of the work performed by the authors?\nAnswer: [Yes] .\nJustification: The paper includes a dedicated paragraph for limitations at the end of the conclusion (Section 6), which acknowledges several key constraints. Specifically, it discusses the imperfect isolation of visual features due to their interdependent nature, potential artifacts introduced by suppression transformations (e.g., block structures or smoothing effects), and the constrained generalizability of the human study due to a controlled forced-choice setup with a limited category set and brief stimulus exposure.\nGuidelines:\n• The answer NA means that the paper has no limitation while the answer No means that the paper has limitations, but those are not discussed in the paper.\n• The authors are encouraged to create a separate \"Limitations\" section in their paper.\n• The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be.\n• The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated.\n• The authors should reflect on the factors that influence the performance of the approach.\nFor example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon.\n• The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size.\n• If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness.\n• While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren't acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an important role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations.",
+      "_text": "Understanding which features deep neural networks rely on for image classification has been a longstanding research question. While early interpretations of CNNs assumed a hierarchical buildup from low-level edges to complex shape representations [5] , [6] , [7] more recent studies have challenged this view, suggesting that CNNs often rely disproportionately on local texture rather than global shape [9] , [10] , [8] , [18] . Geirhos et al. [8] formalized this observation as the texture bias hypothesis, using a cue-conflict protocol to reveal divergent feature preferences between humans and CNNs.\nSubsequent work investigated factors shaping feature reliance beyond architecture. Hermann et al. [13] showed that texture bias in CNNs arises primarily from training objectives and augmentations, with techniques like blurring and cropping increasing shape bias more than architectural changes. Although shape features are present in deeper layers [15] , [14] , they are not consistently used during classification. Transformer-based models and vision-language models have shifted this discussion. Vision transformers (ViTs) exhibit lower texture bias due to their global attention mechanism [19] , [20] , and vision-language models show improved alignment with human-like shape use [21] .\nVarious methods have attempted to enforce shape bias or suppress texture cues for improved robustness, including anisotropic filtering [22] , edge encoding [23] , style disentanglement [24] , [25] , and shape-focused augmentations [26] , [27] . However, stylization alone may improve robustness independent of shape bias [28] , and neither shape nor texture bias reliably predicts generalization [16] . These findings have motivated integrative approaches that combine diverse feature biases. Joint supervision [29] , ensembles [30] , and adaptive recombination [31] aim to harness complementary features. Ge et al. [32] and Jain et al. [17] show that disentangling and combining shape, texture, and color improve robustness and interpretability. Nonetheless, Lucieri et al. [33] caution that in domains like MI, cue entanglement is essential and biasing towards shape may be counterproductive.\nEfforts to increase shape bias are often motivated by the broader goal of human-model alignment. Geirhos et al. [34] , [35] show that even robust models exhibit error patterns that diverge from humans, revealing a persistent consistency gap. Muttenthaler et al. [36] further argue that alignment with human conceptual structure depends more on training signals than model scale, indicating that robustness and shape bias alone are insufficient proxies for human-like perception."
+    },
+    "3_Rethinking_Texture_Bias:_A_Critical_Look_at_Cue-Conflict_Evaluation": {
+      "3._Theory_assumptions_and_proofs": "Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof? Answer: [NA] . Justification: The paper does not include theoretical results.\nGuidelines:\n• The answer NA means that the paper does not include theoretical results.\n• All the theorems, formulas, and proofs in the paper should be numbered and crossreferenced.\n• All assumptions should be clearly stated or referenced in the statement of any theorems.\n• The proofs can either appear in the main paper or the supplemental material, but if they appear in the supplemental material, the authors are encouraged to provide a short proof sketch to provide intuition.\n• Inversely, any informal proof provided in the core of the paper should be complemented by formal proofs provided in appendix or supplemental material. • Theorems and Lemmas that the proof relies upon should be properly referenced.",
+      "_text": "The hypothesis that CNNs trained on ImageNet are biased towards texture was popularized by Geirhos et al. [8] , who introduced a cue-conflict evaluation protocol. In this protocol, images were generated by neural style transfer [12] , combining the shape content (cue) of one class with the texture content (cue) of another. Predictions from both humans and CNNs on these images were then used to infer whether classification decisions were driven more by shape or texture features. Over time, the cue-conflict evaluation protocol has become a de facto standard for assessing feature bias in deep neural networks. While impactful, this protocol introduced several assumptions and limitations that have received limited attention. Conceptually, the protocol frames feature reliance as a binary shape-or-texture choice, which may overlook other cues such as color and conflates preference with dependence. In addition, the stylized stimuli constrain the evaluation of feature bias to naturalistic images with a similar set of classes and cannot be generalized across datasets (e.g., flower classification) or domains (e.g., RS, MI). Beyond these conceptual limitations, the cue-conflict protocol exhibits three methodological concerns in its design and implementation:\n(i) Lack of Feature Isolation. The texture cues within the cue-conflict images also preserved information beyond texture, including color and local shape structures (e.g., contours and parts of silhouettes). As a result, the synthesized texture cue was not a pure representation of texture but a composite of multiple features, making it difficult to attribute classification behavior to texture alone. An example can be seen in Figure 2a .\n(ii) Overloaded Texture Class Signals. The protocol consistently inserted texture cues not only into the object region but also into the image background. Since CNNs aggregate local statistics across spatial positions, this broad spatial distribution increases the signal strength of the texture class relative to the shape class. This spatial imbalance systematically biases CNNs towards texture-based decisions, not because of an intrinsic preference but due to the dominant spatial availability of the texture signal. An example can be seen in Figure 2b .\n(iii) Human Interface Bias Towards Shape. Participants in the human experiments selected the image class by clicking on buttons labeled with icons representing each category. These icons represented global shape characteristics (i.e., silhouettes), potentially guiding participants towards matching shape features in the cue-conflict image with the icon. This response format potentially introduces bias towards shape decisions, especially when participants were unsure which feature to prioritize. The used icons are visualized in Figure 2c . These design choices may inadvertently influence CNNs towards texture-driven decisions and humans towards shape-based decisions and complicate drawing definitive conclusions about the actual feature reliance of models."
+    },
+    "4_A_Domain-Agnostic_Framework_for_Feature_Reliance": {
+      "4._Experimental_result_reproducibility": "Question: Does the paper fully disclose all the information needed to reproduce the main experimental results of the paper to the extent that it affects the main claims and/or conclusions of the paper (regardless of whether the code and data are provided or not)? Answer: [Yes] . Justification: The paper provides sufficient methodological detail to reproduce the main experimental results. It specifies all datasets used (e.g., ImageNet16, MedMNIST, RS benchmarks), feature suppression transformations with hyperparameters (e.g., Patch Shuffle grid sizes, bilateral filter settings), model architectures (including training recipes and pretrained sources), and evaluation procedures for both human and model experiments.\nFor the human study, participant design, timing protocols, category sets, and interface descriptions are clearly outlined. Additional implementation details, ablations, and visual examples are provided in the supplemental material. Together, these descriptions enable reproduction of the core results and validation of the paper's main claims. Upon acceptance, our code will be made publicly available,e containing the necessary scripts or CLI commands to reproduce the experiments. Guidelines:\n• The answer NA means that the paper does not include experiments.\n• If the paper includes experiments, a No answer to this question will not be perceived well by the reviewers: Making the paper reproducible is important, regardless of whether the code and data are provided or not.\n• If the contribution is a dataset and/or model, the authors should describe the steps taken to make their results reproducible or verifiable.\n• Depending on the contribution, reproducibility can be accomplished in various ways.\nFor example, if the contribution is a novel architecture, describing the architecture fully might suffice, or if the contribution is a specific model and empirical evaluation, it may be necessary to either make it possible for others to replicate the model with the same dataset, or provide access to the model. In general. releasing code and data is often one good way to accomplish this, but reproducibility can also be provided via detailed instructions for how to replicate the results, access to a hosted model (e.g., in the case of a large language model), releasing of a model checkpoint, or other means that are appropriate to the research performed.\n• While NeurIPS does not require releasing code, the conference does require all submissions to provide some reasonable avenue for reproducibility, which may depend on the nature of the contribution. For example (a) If the contribution is primarily a new algorithm, the paper should make it clear how to reproduce that algorithm. (b) If the contribution is primarily a new model architecture, the paper should describe the architecture clearly and fully. (c) If the contribution is a new model (e.g., a large language model), then there should either be a way to access this model for reproducing the results or a way to reproduce the model (e.g., with an open-source dataset or instructions for how to construct the dataset). (d) We recognize that reproducibility may be tricky in some cases, in which case authors are welcome to describe the particular way they provide for reproducibility.\nIn the case of closed-source models, it may be that access to the model is limited in some way (e.g., to registered users), but it should be possible for other researchers to have some path to reproducing or verifying the results.",
+      "4.1_Quantitative_Validation_of_Suppression_Transformations": "While the individual transformations used in this work are not novel, their selection for targeted feature suppression requires empirical justification. To validate that each transformation suppresses the intended visual feature (e.g., texture, shape) while preserving others, we quantify their effects using four metrics: Local Variance (LV) [39] and High-Frequency Energy (HFE) [40] to assess texture suppression, and Edge-SSIM (ESSIM) [41] and Gradient Correlation (GC) to measure shape preservation. All metrics are normalized to the range [0, 1] by dividing by the scores of the unsuppressed (i.e., original) image. Higher values of ESSIM and GC indicate better preservation of edge and structural information, while lower values of LV and HFE reflect stronger suppression of texture features. Further, we compute a harmonic mean across the two texture metrics (Texture) and the two shape metrics (Shape) for each transformation.\nWe test the effectiveness of the feature suppression transformations across 800 sampled images from the ImageNet validation set. For each transformation, we evaluate a representative parameter setting chosen to balance suppression of the target feature and preservation of others. The respective parameters, such as kernel size or smoothing strength, are indexed by Param IDs in Table 2 , with details listed below the table. A full ablation of different parameter settings is provided in the supplemental material (see Section D). In addition to our selected texture suppression transformations, we also compare common alternatives such as Non-Local Means Denoising [42] , Box blur, and Median filtering [43] to ensure a fair comparison across standard smoothing techniques. Among texture-suppressing methods, bilateral filtering yields the most balanced trade-off between reducing texture (LV: 0.54, HFE: 0.49) and preserving shape (ESSIM: 0.74, GC: 0.85). Gaussian Blur suppresses texture more uniformly but leads to a greater loss of shape information. Box blur and median filtering remove texture strongly, but at a substantial cost to shape preservation. For shape suppression, we evaluate Patch Shuffle and Patch Rotation with a grid size of 6. These transformations preserve texture but substantially disrupt structural contours, making them suitable for assessing shape reliance. To complement the quantitative evaluation, qualitative visual examples of the suppression effects are provided in the supplemental material (see Section C).",
+      "_text": "Accurately assessing how deep neural networks rely on different visual features remains a central challenge in understanding their behavior. While the cue-conflict evaluation protocol [8] introduced a reliance test based on feature bias, it imposes conceptual and methodological constraints that limit its generalizability. Rather than forcing models to choose between shape and texture, we propose to assess their reliance on individual feature types by systematically suppressing them and measuring the resulting impact on classification performance. This shift enables a more flexible, generalizable, and semantically grounded analysis of feature use in neural networks.\nTo evaluate the reliance of deep neural networks on individual visual features, we employ a set of image transformations that selectively suppress shape, texture, or color information while minimally affecting the remaining features. Each transformation is chosen for its ability to target a specific feature class. We define three feature types:\n• Shape refers to information carried by spatial arrangement and structural contours, including both global (object outline) and local (part-level) shape.\n• Texture is defined by repetitive patterns, high-frequency local variations, and fine-grained surface details.\n• Color denotes chromatic information independent of spatial layout or texture.\nFor each feature type, we include two complementary transformations that differ in their suppression mechanisms and preservation profiles, offering distinct but comparable perspectives on the targeted feature. The transformations are summarized in Table 1 and briefly described in the following. Patch Shuffle [37] , [28] and Patch Rotation disrupt shape by modifying non-overlapping image patches: Shuffle randomizes spatial positions, while Rotation preserves locality of patches but breaks edge continuity. Both affect global or local shape, depending on the grid size. Bilateral Filtering [38] and Gaussian Blur reduce texture by smoothing high-frequency details, with the former preserving edges more effectively. Grayscale removes chromatic cues entirely, while Channel Shuffle disrupts color correlations without altering intensity. In the following, we validate the suppression effects of these transformations using quantitative metrics. Legend: A: d=11, c=170, s=75; B: k=11; C: k=11, =2.0; D: k=11; E: h=20, tws=11, sws=11; F: grid=6."
+    },
+    "5.1_Experiment_I:_Human_vs._CNNs_Feature_Reliance_Experimental_Setup.": "To compare human and model reliance on different visual features, we designed a controlled experiment inspired by Geirhos et al. [34] , [8] . We constructed an ImageNet16-like dataset by selecting 50 representative images for each of 16 entry-level categories derived from the WordNet hierarchy [44] (see [34] for details). Images were selected based on the most confidently predicted samples in the ImageNet validation set [45] by a ResNet50 [2] pretrained on ImageNet1k, ensuring balanced subclass coverage. For categories with insufficient confident predictions (airplane, knife, oven), additional samples were manually added. All images were resized to 224 ⇥ 224 pixels.\nHumans were presented with image stimuli in randomized order under one of five conditions: original, global shape suppression, local shape suppression, texture suppression, or color suppression. Each feature was suppressed via a single transformation with fixed hyperparameters: Patch Shuffle with grid size 3 (global shape), grid size 6 (local shape), bilateral filtering with d=12, color =170 and space =75 (texture), and grayscale conversion (color). See Section 4.1 for justification. Each participant saw only one randomly chosen version of each image to avoid learning effects. The five suppression conditions of one image were split across groups of five participants to ensure balanced coverage. Twenty participants completed the study. Following Geirhos et al. [8] , each trial included a 300 ms fixation square, 200 ms image presentation, and 200 ms pink noise mask (1/f spectral shape) to minimize feedback processing. Participants selected one of 16 categories via a 4⇥4 grid of alphabetically sorted class names. An additional \"not clear\" button was available for unrecognizable stimuli. Attention checks were administered every 100 trials, and failed trials were excluded. Additional details and interface screenshots can be found in the supplemental material.\nModel evaluation mirrored the human protocol, evaluating their performance under the same five suppression conditions using the identical image set shown to humans. For each image, the class prediction was computed by summing softmax outputs over all ImageNet subclasses mapping to the same entry-level category. Only predictions above the threshold of 0.5 were considered correct. This procedure was chosen heuristically, complementary results using argmax to define class predictions are reported in the supplemental material and show nearly identical reliance profiles.\nWe evaluated several architectures: ResNet50-standard, trained from scratch with basic augmentations, and ResNet50-sota, trained with a modern recipe [46] . Additional CNNs include MobileNetV3 [47] , EfficientNet [3] , EfficientNetV2 [48] , ConvMixer [49] , ConvNeXt [4] , and ConvNeXtV2 [50] . Transformer-based models include ViT [51] , DeiT [52] , SwinTransformer [53] , and CLIP ViT [54] .\nAll models except ResNet50-standard were obtained as pretrained checkpoints from the timm library [55] . The detailed training procedures can be found in the supplemental material.",
+    "5.2_Experiment_II:_Domain-specific_Feature_Reliance": "While Section 5.1 focuses on comparing feature reliance between humans and CNNs on a fixed benchmark, this section explores how reliance on shape, texture, and color varies across domains.\nThe same suppression-based framework introduced earlier is applied to three representative visual domains: CV, MI, and RS. In each case, we fix the architecture to a ResNet50 and apply the standard training protocol, including only the data augmentation techniques random resized crop and horizontal flip. For CV datasets, we either train from scratch or initialize models with ImageNet-pretrained weights (standard training protocol) and then fine-tune on the respective datasets. For MI and RS, we train from scratch to allow a disentangled comparison across domains. Additional results for MI and RS with pretrained models to simulate operational scenarios can be found in the supplemental material. Details about the hyperparameter, as well as an overview of the corresponding validation accuracies, are provided in the supplemental material. In contrast to the previous experiment, in this experiment, suppression strength is treated as a continuous hyperparameter and systematically varied to obtain suppression curves that characterize feature reliance across domains. To reduce redundancy, we report results using one representative suppression technique per feature type in the main paper. Results using alternative suppression methods per feature type are included in the supplemental material and exhibit qualitatively similar patterns across domains.\nTo visualize domain-specific suppression sensitivity, we present a composite figure of per-domain results in Figure 4 , showing the effect of suppressing shape, texture, and color for datasets from each domain. To ensure comparability across datasets with different numbers of classes and baseline accuracies, we standardize performance by rescaling: chance-level accuracy is mapped to 0, and baseline accuracy (i.e., accuracy on original images) is mapped to 1. Relative accuracy under suppression is then expressed on this normalized scale, facilitating direct comparison of feature reliance across domains and datasets. Finally, to synthesize the findings, we aggregate suppression curves in a domain-level comparison (Figure 5 ) by averaging results across datasets within each domain.",
+    "6_Conclusion": {
+      "6._Experimental_setting_details": "Question: Does the paper specify all the training and test details (e.g., data splits, hyperparameters, how they were chosen, type of optimizer, etc.) necessary to understand the results?\nAnswer: [Yes] .\nJustification: The paper provides all essential training and test details necessary to understand the experimental results. It describes dataset preprocessing, suppression methods with fixed parameters, and evaluation protocols. For model experiments, it distinguishes • The paper should provide the amount of compute required for each of the individual experimental runs as well as estimate the total compute. • The paper should disclose whether the full research project required more compute than the experiments reported in the paper (e.g., preliminary or failed experiments that didn't make it into the paper). 9. Code of ethics Question: Does the research conducted in the paper conform, in every respect, with the NeurIPS Code of Ethics https://neurips.cc/public/EthicsGuidelines? Answer: [Yes] . Justification: The research adheres to the NeurIPS Code of Ethics. All datasets used are publicly available. The human study was conducted in accordance with institutional ethical guidelines. All participants provided informed consent prior to participation. The experiments do not involve sensitive data, privacy risks, or unfair bias against individuals or groups. Results are reported transparently, with limitations and assumptions clearly stated. Guidelines: • The answer NA means that the authors have not reviewed the NeurIPS Code of Ethics.\n• If the authors answer No, they should explain the special circumstances that require a deviation from the Code of Ethics.\n• The authors should make sure to preserve anonymity (e.g., if there is a special consideration due to laws or regulations in their jurisdiction). 10.",
+      "_text": "This paper revisited the widely cited claim that CNNs trained on ImageNet are inherently biased towards texture. We identify critical conceptual and methodological limitations in the cue-conflict experiment popularized by Geirhos et al. [8] that support this hypothesis. Further, we propose a new framework for evaluating feature reliance based on targeted suppression rather than forced-choice preference. Using this framework, we find no evidence for an inherent texture bias in CNNs, but instead observed a pronounced reliance on local shape features. Nonetheless, we show that this reliance can be substantially mitigated through modern training strategies. Across domains, we find that feature reliance varies substantially: CV models prioritize shape, MI models rely more evenly on color, and RS models exhibit strong texture sensitivity. These findings challenge the notion of fixed architectural biases and instead position feature reliance as a flexible property shaped by optimization objectives and domain-specific semantics, offering new directions for designing models that better align with human perceptual strategies. At the same time, the relative contributions of architectural components and training strategies to these reliance patterns remain to be systematically evaluated."
+    }
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "ImageNet classification with deep convolutional neural networks",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Krizhevsky",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Deep residual learning for image recognition",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Efficientnet: Rethinking model scaling for convolutional neural networks",
+      "authors": [
+        {
+          "first": "Mingxing",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Quoc",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "A convnet for the 2020s",
+      "authors": [
+        {
+          "first": "Zhuang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Hanzi",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Chao-Yuan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Feichtenhofer",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Darrell",
+          "suffix": ""
+        },
+        {
+          "first": "Saining",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Deep learning",
+      "authors": [
+        {
+          "first": "Yann",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Deep neural networks as a computational model for human shape sensitivity",
+      "authors": [
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Kubilius",
+          "suffix": ""
+        },
+        {
+          "first": "Stefania",
+          "middle": [],
+          "last": "Bracci",
+          "suffix": ""
+        },
+        {
+          "first": "Hans P Op",
+          "middle": [],
+          "last": "De",
+          "suffix": ""
+        },
+        {
+          "first": "Beeck",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "PLoS computational biology"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Cognitive psychology for deep neural networks: A shape bias case study",
+      "authors": [
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Ritter",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "T"
+          ],
+          "last": "David",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Barrett",
+          "suffix": ""
+        },
+        {
+          "first": "Matt",
+          "middle": [
+            "M"
+          ],
+          "last": "Santoro",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Botvinick",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "ImageNet-trained CNNs are biased towards texture; increasing shape bias improves accuracy and robustness",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Geirhos",
+          "suffix": ""
+        },
+        {
+          "first": "Patricia",
+          "middle": [],
+          "last": "Rubisch",
+          "suffix": ""
+        },
+        {
+          "first": "Claudio",
+          "middle": [],
+          "last": "Michaelis",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Bethge",
+          "suffix": ""
+        },
+        {
+          "first": "Felix",
+          "middle": [
+            "A"
+          ],
+          "last": "Wichmann",
+          "suffix": ""
+        },
+        {
+          "first": "Wieland",
+          "middle": [],
+          "last": "Brendel",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Deep convolutional networks do not classify based on global object shape",
+      "authors": [
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Baker",
+          "suffix": ""
+        },
+        {
+          "first": "Hongjing",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Gennady",
+          "middle": [],
+          "last": "Erlikhman",
+          "suffix": ""
+        },
+        {
+          "first": "Philip",
+          "middle": [
+            "J"
+          ],
+          "last": "Kellman",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "PLoS computational biology"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Approximating CNNs with Bag-of-local-Features models works surprisingly well on ImageNet",
+      "authors": [
+        {
+          "first": "Wieland",
+          "middle": [],
+          "last": "Brendel",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Bethge",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "The importance of shape in early lexical learning",
+      "authors": [
+        {
+          "first": "Barbara",
+          "middle": [],
+          "last": "Landau",
+          "suffix": ""
+        },
+        {
+          "first": "Linda",
+          "middle": [
+            "B"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Susan",
+          "middle": [
+            "S"
+          ],
+          "last": "Jones",
+          "suffix": ""
+        }
+      ],
+      "year": 1988,
+      "venue": "Cognitive Development"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Image style transfer using convolutional neural networks",
+      "authors": [
+        {
+          "first": "Leon",
+          "middle": [
+            "A"
+          ],
+          "last": "Gatys",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [
+            "S"
+          ],
+          "last": "Ecker",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Bethge",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "The Origins and Prevalence of Texture Bias in Convolutional Neural Networks",
+      "authors": [
+        {
+          "first": "Katherine",
+          "middle": [],
+          "last": "Hermann",
+          "suffix": ""
+        },
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Kornblith",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "What shapes feature representations? Exploring datasets, architectures, and training",
+      "authors": [
+        {
+          "first": "Katherine",
+          "middle": [],
+          "last": "Hermann",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Lampinen",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Shape or Texture: Understanding Discriminative Features in CNNs",
+      "authors": [
+        {
+          "first": "Amirul",
+          "middle": [],
+          "last": "Md",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Islam",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Kowal",
+          "suffix": ""
+        },
+        {
+          "first": "Sen",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "Björn",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Konstantinos",
+          "middle": [
+            "G"
+          ],
+          "last": "Ommer",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Derpanis",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bruce",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Can Biases in ImageNet Models Explain Generalization",
+      "authors": [
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Gavrikov",
+          "suffix": ""
+        },
+        {
+          "first": "Janis",
+          "middle": [],
+          "last": "Keuper",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Combining diverse feature priors",
+      "authors": [
+        {
+          "first": "Saachi",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Dimitris",
+          "middle": [],
+          "last": "Tsipras",
+          "suffix": ""
+        },
+        {
+          "first": "Aleksander",
+          "middle": [],
+          "last": "Madry",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Spatial-frequency channels, shape bias, and adversarial robustness",
+      "authors": [
+        {
+          "first": "Ajay",
+          "middle": [],
+          "last": "Subramanian",
+          "suffix": ""
+        },
+        {
+          "first": "Elena",
+          "middle": [],
+          "last": "Sizikova",
+          "suffix": ""
+        },
+        {
+          "first": "Najib",
+          "middle": [],
+          "last": "Majaj",
+          "suffix": ""
+        },
+        {
+          "first": "Denis",
+          "middle": [],
+          "last": "Pelli",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Intriguing properties of vision transformers",
+      "authors": [
+        {
+          "first": "Muhammad",
+          "middle": [],
+          "last": "Muzammal Naseer",
+          "suffix": ""
+        },
+        {
+          "first": "Kanchana",
+          "middle": [],
+          "last": "Ranasinghe",
+          "suffix": ""
+        },
+        {
+          "first": "Salman",
+          "middle": [
+            "H"
+          ],
+          "last": "Khan",
+          "suffix": ""
+        },
+        {
+          "first": "Munawar",
+          "middle": [],
+          "last": "Hayat",
+          "suffix": ""
+        },
+        {
+          "first": "Fahad",
+          "middle": [],
+          "last": "Shahbaz Khan",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Hsuan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Are convolutional neural networks or transformers more like human vision",
+      "authors": [
+        {
+          "first": "Shikhar",
+          "middle": [],
+          "last": "Tuli",
+          "suffix": ""
+        },
+        {
+          "first": "Ishita",
+          "middle": [],
+          "last": "Dasgupta",
+          "suffix": ""
+        },
+        {
+          "first": "Erin",
+          "middle": [],
+          "last": "Grant",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [
+            "L"
+          ],
+          "last": "Griffiths",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Can We Talk Models Into Seeing the World Differently",
+      "authors": [
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Gavrikov",
+          "suffix": ""
+        },
+        {
+          "first": "Jovita",
+          "middle": [],
+          "last": "Lukasik",
+          "suffix": ""
+        },
+        {
+          "first": "Steffen",
+          "middle": [],
+          "last": "Jung",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Geirhos",
+          "suffix": ""
+        },
+        {
+          "first": "Muhammad",
+          "middle": [
+            "Jehanzeb"
+          ],
+          "last": "Mirza",
+          "suffix": ""
+        },
+        {
+          "first": "Margret",
+          "middle": [],
+          "last": "Keuper",
+          "suffix": ""
+        },
+        {
+          "first": "Janis",
+          "middle": [],
+          "last": "Keuper",
+          "suffix": ""
+        }
+      ],
+      "year": 2025,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Learning visual representations for transfer learning by suppressing texture",
+      "authors": [
+        {
+          "first": "Shlok",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "Anshul",
+          "middle": [],
+          "last": "Shah",
+          "suffix": ""
+        },
+        {
+          "first": "Ankan",
+          "middle": [],
+          "last": "Bansal",
+          "suffix": ""
+        },
+        {
+          "first": "Janit",
+          "middle": [],
+          "last": "Anjaria",
+          "suffix": ""
+        },
+        {
+          "first": "Jonghyun",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        },
+        {
+          "first": "Abhinav",
+          "middle": [],
+          "last": "Shrivastava",
+          "suffix": ""
+        },
+        {
+          "first": "Abhishek",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Jacobs",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "British Machine Vision Conference"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "The role of shape for domain generalization on sparsely-textured images",
+      "authors": [
+        {
+          "first": "Narges",
+          "middle": [],
+          "last": "Honarvar",
+          "suffix": ""
+        },
+        {
+          "first": "Nazari",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Adriana",
+          "middle": [],
+          "last": "Kovashka",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Reducing Domain Gap by Reducing Style Bias",
+      "authors": [
+        {
+          "first": "Hyeonseob",
+          "middle": [],
+          "last": "Nam",
+          "suffix": ""
+        },
+        {
+          "first": "Hyunjae",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Jongchan",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Wonjun",
+          "middle": [],
+          "last": "Yoon",
+          "suffix": ""
+        },
+        {
+          "first": "Donggeun",
+          "middle": [],
+          "last": "Yoo",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Towards Domain Adversarial Methods to Mitigate Texture Bias",
+      "authors": [
+        {
+          "first": "Dhruva",
+          "middle": [],
+          "last": "Kashyap",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Sumukh",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Aithal",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rakshith",
+          "suffix": ""
+        },
+        {
+          "first": "Natarajan",
+          "middle": [],
+          "last": "Subramanyam",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Learning Representations Workshop"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Improving Robustness to Texture Bias via Shape-Focused Augmentation",
+      "authors": [
+        {
+          "first": "Sangjun",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Inwoo",
+          "middle": [],
+          "last": "Hwang",
+          "suffix": ""
+        },
+        {
+          "first": "Gi-Cheon",
+          "middle": [],
+          "last": "Kang",
+          "suffix": ""
+        },
+        {
+          "first": "Byoung-Tak",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Edges to shapes to concepts: Adversarial augmentation for robust vision",
+      "authors": [
+        {
+          "first": "Aditay",
+          "middle": [],
+          "last": "Tripathi",
+          "suffix": ""
+        },
+        {
+          "first": "Rishubh",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "Anirban",
+          "middle": [],
+          "last": "Chakraborty",
+          "suffix": ""
+        },
+        {
+          "first": "Pradeep",
+          "middle": [],
+          "last": "Shenoy",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Does enhanced shape bias improve neural network robustness to common corruptions?",
+      "authors": [
+        {
+          "first": "Chaithanya",
+          "middle": [],
+          "last": "Kumar Mummadi",
+          "suffix": ""
+        },
+        {
+          "first": "Ranjitha",
+          "middle": [],
+          "last": "Subramaniam",
+          "suffix": ""
+        },
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Hutmacher",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Vitay",
+          "suffix": ""
+        },
+        {
+          "first": "Volker",
+          "middle": [],
+          "last": "Fischer",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Hendrik Metzen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Shape-Texture Debiased Neural Network Training",
+      "authors": [
+        {
+          "first": "Yingwei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Qihang",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Mingxing",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Jieru",
+          "middle": [],
+          "last": "Mei",
+          "suffix": ""
+        },
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [],
+          "last": "Yuille",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Universal adversarial robustness of texture and shape-biased models",
+      "authors": [
+        {
+          "first": "Luis",
+          "middle": [],
+          "last": "Kenneth T Co",
+          "suffix": ""
+        },
+        {
+          "first": "Leslie",
+          "middle": [],
+          "last": "Muñoz-González",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Kanthan",
+          "suffix": ""
+        },
+        {
+          "first": "Emil",
+          "middle": [
+            "C"
+          ],
+          "last": "Glocker",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Lupu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE International Conference on Image Processing"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Shape-biased CNNs are Not Always Superior in Out-of-Distribution Robustness",
+      "authors": [
+        {
+          "first": "Xinkuan",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        },
+        {
+          "first": "Meina",
+          "middle": [],
+          "last": "Kan",
+          "suffix": ""
+        },
+        {
+          "first": "Yongbin",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Yanchao",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        },
+        {
+          "first": "Shiguang",
+          "middle": [],
+          "last": "Shan",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Contributions of shape, texture, and color in visual recognition",
+      "authors": [
+        {
+          "first": "Yunhao",
+          "middle": [],
+          "last": "Ge",
+          "suffix": ""
+        },
+        {
+          "first": "Yao",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhi",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Xingrui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Laurent",
+          "middle": [],
+          "last": "Itti",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "European Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Revisiting the shape-bias of deep learning for dermoscopic skin lesion classification",
+      "authors": [
+        {
+          "first": "Adriano",
+          "middle": [],
+          "last": "Lucieri",
+          "suffix": ""
+        },
+        {
+          "first": "Fabian",
+          "middle": [],
+          "last": "Schmeisser",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Peter Balada",
+          "suffix": ""
+        },
+        {
+          "first": "Ahmed",
+          "middle": [],
+          "last": "Shoaib",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Siddiqui",
+          "suffix": ""
+        },
+        {
+          "first": "Sheraz",
+          "middle": [],
+          "last": "Dengel",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ahmed",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Annual Conference on Medical Image Understanding and Analysis"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Generalisation in humans and deep neural networks",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Geirhos",
+          "suffix": ""
+        },
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Carlos Rm Temme",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Rauber",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Heiko",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Schütt",
+          "suffix": ""
+        },
+        {
+          "first": "Felix",
+          "middle": [
+            "A"
+          ],
+          "last": "Bethge",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wichmann",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Partial success in closing the gap between human and machine vision",
+      "authors": [
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Geirhos",
+          "suffix": ""
+        },
+        {
+          "first": "Kantharaju",
+          "middle": [],
+          "last": "Narayanappa",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Mitzkus",
+          "suffix": ""
+        },
+        {
+          "first": "Tizian",
+          "middle": [],
+          "last": "Thieringer",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Bethge",
+          "suffix": ""
+        },
+        {
+          "first": "Felix",
+          "middle": [
+            "A"
+          ],
+          "last": "Wichmann",
+          "suffix": ""
+        },
+        {
+          "first": "Wieland",
+          "middle": [],
+          "last": "Brendel",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Human alignment of neural network representations",
+      "authors": [
+        {
+          "first": "Lukas",
+          "middle": [],
+          "last": "Muttenthaler",
+          "suffix": ""
+        },
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Dippel",
+          "suffix": ""
+        },
+        {
+          "first": "Lorenz",
+          "middle": [],
+          "last": "Linhardt",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [
+            "A"
+          ],
+          "last": "Vandermeulen",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Kornblith",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Defective Convolutional Networks",
+      "authors": [
+        {
+          "first": "Tiange",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Tianle",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Mengxiao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Siyu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Di",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Liwei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Bilateral filtering for gray and color images",
+      "authors": [
+        {
+          "first": "Carlo",
+          "middle": [],
+          "last": "Tomasi",
+          "suffix": ""
+        },
+        {
+          "first": "Roberto",
+          "middle": [],
+          "last": "Manduchi",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": "International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Textural features for image classification",
+      "authors": [
+        {
+          "first": "Karthikeyan",
+          "middle": [],
+          "last": "Robert M Haralick",
+          "suffix": ""
+        },
+        {
+          "first": "Its' Hak",
+          "middle": [],
+          "last": "Shanmugam",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dinstein",
+          "suffix": ""
+        }
+      ],
+      "year": 1973,
+      "venue": "IEEE Transactions on Systems, Man, and Cybernetics"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Digital image processing",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rafael",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Gonzales",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wintz",
+          "suffix": ""
+        }
+      ],
+      "year": 1987,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Image quality assessment: from error visibility to structural similarity",
+      "authors": [
+        {
+          "first": "Zhou",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [
+            "C"
+          ],
+          "last": "Bovik",
+          "suffix": ""
+        },
+        {
+          "first": "Hamid",
+          "middle": [
+            "R"
+          ],
+          "last": "Sheikh",
+          "suffix": ""
+        },
+        {
+          "first": "Eero",
+          "middle": [
+            "P"
+          ],
+          "last": "Simoncelli",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": "IEEE Transactions on Image Processing"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "A non-local algorithm for image denoising",
+      "authors": [
+        {
+          "first": "Antoni",
+          "middle": [],
+          "last": "Buades",
+          "suffix": ""
+        },
+        {
+          "first": "Bartomeu",
+          "middle": [],
+          "last": "Coll",
+          "suffix": ""
+        },
+        {
+          "first": "J-M",
+          "middle": [],
+          "last": "Morel",
+          "suffix": ""
+        }
+      ],
+      "year": 2005,
+      "venue": "IEEE Computer Society Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "A fast two-dimensional median filtering algorithm",
+      "authors": [
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Greory",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 1979,
+      "venue": "IEEE transactions on Acoustics, Speech, and Signal Processing"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "WordNet: a lexical database for English",
+      "authors": [
+        {
+          "first": "George",
+          "middle": [
+            "A"
+          ],
+          "last": "Miller",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "Communications of the ACM"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Imagenet: A large-scale hierarchical image database",
+      "authors": [
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        },
+        {
+          "first": "Li-Jia",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "ResNet strikes back: An improved training procedure in timm",
+      "authors": [
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Wightman",
+          "suffix": ""
+        },
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Herve",
+          "middle": [],
+          "last": "Jegou",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems Workshop"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Searching for mobilenetv3",
+      "authors": [
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Howard",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Sandler",
+          "suffix": ""
+        },
+        {
+          "first": "Grace",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "Liang-Chieh",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Mingxing",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Weijun",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yukun",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Ruoming",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "Vijay",
+          "middle": [],
+          "last": "Vasudevan",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Others",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Efficientnetv2: Smaller models and faster training",
+      "authors": [
+        {
+          "first": "Mingxing",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Quoc",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Patches Are All You Need? Transactions on Machine Learning Research",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "Zico"
+          ],
+          "last": "Asher Trockman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kolter",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Convnext v2: Co-designing and scaling convnets with masked autoencoders",
+      "authors": [
+        {
+          "first": "Sanghyun",
+          "middle": [],
+          "last": "Woo",
+          "suffix": ""
+        },
+        {
+          "first": "Shoubhik",
+          "middle": [],
+          "last": "Debnath",
+          "suffix": ""
+        },
+        {
+          "first": "Ronghang",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Xinlei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "In",
+          "middle": [],
+          "last": "So Kweon",
+          "suffix": ""
+        },
+        {
+          "first": "Saining",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "An image is worth 16x16 words: Transformers for image recognition at scale",
+      "authors": [
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "Dirk",
+          "middle": [],
+          "last": "Weissenborn",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "Mostafa",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Minderer",
+          "suffix": ""
+        },
+        {
+          "first": "Georg",
+          "middle": [],
+          "last": "Heigold",
+          "suffix": ""
+        },
+        {
+          "first": "Sylvain",
+          "middle": [],
+          "last": "Gelly",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Houlsby",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Training data-efficient image transformers & distillation through attention",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Matthieu",
+          "middle": [],
+          "last": "Cord",
+          "suffix": ""
+        },
+        {
+          "first": "Matthijs",
+          "middle": [],
+          "last": "Douze",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Sablayrolles",
+          "suffix": ""
+        },
+        {
+          "first": "Hervé",
+          "middle": [],
+          "last": "Jégou",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Swin Transformer: Hierarchical Vision Transformer Using Shifted Windows",
+      "authors": [
+        {
+          "first": "Ze",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yutong",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Yue",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Yixuan",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Baining",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Learning transferable visual models from natural language supervision",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Jong",
+          "middle": [
+            "Wook"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Hallacy",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Goh",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Others",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "PyTorch Image Models",
+      "authors": [
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Wightman",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Learning Generative Visual Models from Few Training Examples: An Incremental Bayesian Approach Tested on 101 Object Categories",
+      "authors": [
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Fergus",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Perona",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": "Conference on Computer Vision and Pattern Recognition Workshop"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Automated flower classification over a large number of classes",
+      "authors": [
+        {
+          "first": "Maria-Elena",
+          "middle": [],
+          "last": "Nilsback",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Indian Conference on Computer Vision, Graphics & Image Processing"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Cats and dogs",
+      "authors": [
+        {
+          "first": "Andrea",
+          "middle": [],
+          "last": "Omkar M Parkhi",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Vedaldi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Jawahar",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "IEEE Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "An analysis of single-layer networks in unsupervised feature learning",
+      "authors": [
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Coates",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Ng",
+          "suffix": ""
+        },
+        {
+          "first": "Honglak",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Proceedings of the International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "MedMNIST v2-A large-scale lightweight benchmark for 2D and 3D biomedical image classification",
+      "authors": [
+        {
+          "first": "Jiancheng",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Donglai",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Zequan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Lin",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Bilian",
+          "middle": [],
+          "last": "Ke",
+          "suffix": ""
+        },
+        {
+          "first": "Hanspeter",
+          "middle": [],
+          "last": "Pfister",
+          "suffix": ""
+        },
+        {
+          "first": "Bingbing",
+          "middle": [],
+          "last": "Ni",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Scientific Data"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Bag-of-visual-words and spatial extensions for land-use classification",
+      "authors": [
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Shawn",
+          "middle": [],
+          "last": "Newsam",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "Proceedings of the 18th SIGSPATIAL International Conference on Advances in Geographic Information Systems"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Accurate object localization in remote sensing images based on convolutional neural networks",
+      "authors": [
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Long",
+          "suffix": ""
+        },
+        {
+          "first": "Yiping",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Zhifeng",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Qing",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "IEEE Transactions on Geoscience and Remote Sensing"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Deepglobe 2018: A challenge to parse the earth through satellite images",
+      "authors": [
+        {
+          "first": "Ilke",
+          "middle": [],
+          "last": "Demir",
+          "suffix": ""
+        },
+        {
+          "first": "Krzysztof",
+          "middle": [],
+          "last": "Koperski",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Lindenbaum",
+          "suffix": ""
+        },
+        {
+          "first": "Guan",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "Jing",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Saikat",
+          "middle": [],
+          "last": "Basu",
+          "suffix": ""
+        },
+        {
+          "first": "Forest",
+          "middle": [],
+          "last": "Hughes",
+          "suffix": ""
+        },
+        {
+          "first": "Devis",
+          "middle": [],
+          "last": "Tuia",
+          "suffix": ""
+        },
+        {
+          "first": "Ramesh",
+          "middle": [],
+          "last": "Raskar",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition Workshops"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "PatternNet: A benchmark dataset for performance evaluation of remote sensing image retrieval",
+      "authors": [
+        {
+          "first": "Weixun",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Shawn",
+          "middle": [],
+          "last": "Newsam",
+          "suffix": ""
+        },
+        {
+          "first": "Congmin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenfeng",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "ISPRS Journal of Photogrammetry and Remote Sensing"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "AID: A benchmark data set for performance evaluation of aerial scene classification",
+      "authors": [
+        {
+          "first": "Gui-Song",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "Jingwen",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Baoguang",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Yanfei",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Liangpei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoqiang",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "IEEE Transactions on Geoscience and Remote Sensing"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "SciPy 1.0 Contributors. SciPy 1.0: Fundamental Algorithms for Scientific Computing in Python",
+      "authors": [
+        {
+          "first": "Pauli",
+          "middle": [],
+          "last": "Virtanen",
+          "suffix": ""
+        },
+        {
+          "first": "Ralf",
+          "middle": [],
+          "last": "Gommers",
+          "suffix": ""
+        },
+        {
+          "first": "Travis",
+          "middle": [
+            "E"
+          ],
+          "last": "Oliphant",
+          "suffix": ""
+        },
+        {
+          "first": "Matt",
+          "middle": [],
+          "last": "Haberland",
+          "suffix": ""
+        },
+        {
+          "first": "Tyler",
+          "middle": [],
+          "last": "Reddy",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Cournapeau",
+          "suffix": ""
+        },
+        {
+          "first": "Evgeni",
+          "middle": [],
+          "last": "Burovski",
+          "suffix": ""
+        },
+        {
+          "first": "Pearu",
+          "middle": [],
+          "last": "Peterson",
+          "suffix": ""
+        },
+        {
+          "first": "Warren",
+          "middle": [],
+          "last": "Weckesser",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Bright",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Stéfan",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Van Der Walt",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [],
+          "last": "Brett",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Wilson",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolay",
+          "middle": [],
+          "last": "Jarrod Millman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mayorov",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "J"
+          ],
+          "last": "Andrew",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Nelson",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Kern",
+          "suffix": ""
+        },
+        {
+          "first": "C J",
+          "middle": [],
+          "last": "Larson",
+          "suffix": ""
+        },
+        {
+          "first": "İlhan",
+          "middle": [],
+          "last": "Carey",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Polat",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "W"
+          ],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Jake",
+          "middle": [],
+          "last": "Moore",
+          "suffix": ""
+        },
+        {
+          "first": "Denis",
+          "middle": [],
+          "last": "Vanderplas",
+          "suffix": ""
+        },
+        {
+          "first": "Josef",
+          "middle": [],
+          "last": "Laxalde",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Perktold",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Cimrman",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "A"
+          ],
+          "last": "Henriksen",
+          "suffix": ""
+        },
+        {
+          "first": "Charles",
+          "middle": [
+            "R"
+          ],
+          "last": "Quintero",
+          "suffix": ""
+        },
+        {
+          "first": "Anne",
+          "middle": [
+            "M"
+          ],
+          "last": "Harris",
+          "suffix": ""
+        },
+        {
+          "first": "Antônio",
+          "middle": [
+            "H"
+          ],
+          "last": "Archibald",
+          "suffix": ""
+        },
+        {
+          "first": "Fabian",
+          "middle": [],
+          "last": "Ribeiro",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Pedregosa",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Van Mulbregt",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature Methods"
+    }
+  ]
+}

@@ -1,0 +1,1578 @@
+{
+  "paper_id": "GGS",
+  "title": "IMPROVING PROTEIN OPTIMIZATION WITH SMOOTHED FITNESS LANDSCAPES",
+  "authors": [
+    {
+      "first": "Andrew",
+      "middle": [],
+      "last": "Kirjner",
+      "affiliation": {}
+    },
+    {
+      "first": "Jason",
+      "middle": [],
+      "last": "Yim",
+      "affiliation": {}
+    },
+    {
+      "first": "Raman",
+      "middle": [],
+      "last": "Samusevich",
+      "affiliation": {}
+    },
+    {
+      "first": "Shahar",
+      "middle": [],
+      "last": "Bracha",
+      "affiliation": {}
+    },
+    {
+      "first": "Tommi",
+      "middle": [],
+      "last": "Jaakkola",
+      "affiliation": {}
+    },
+    {
+      "first": "Regina",
+      "middle": [],
+      "last": "Barzilay",
+      "affiliation": {}
+    },
+    {
+      "first": "Ila",
+      "middle": [],
+      "last": "Fiete",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "The ability to engineer novel proteins with higher fitness for a desired property would be revolutionary for biotechnology and medicine. Modeling the combinatorially large space of sequences is infeasible; prior methods often constrain optimization to a small mutational radius, but this drastically limits the design space. Instead of heuristics, we propose smoothing the fitness landscape to facilitate protein optimization. First, we formulate protein fitness as a graph signal then use Tikunov regularization to smooth the fitness landscape. We find optimizing in this smoothed landscape leads to improved performance across multiple methods in the GFP and AAV benchmarks. Second, we achieve state-of-the-art results utilizing discrete energy-based models and MCMC in the smoothed landscape. Our method, called Gibbs sampling with Graph-based Smoothing (GGS), demonstrates a unique ability to achieve 2.5 fold fitness improvement (with in-silico evaluation) over its training set. GGS demonstrates potential to optimize proteins in the limited data regime. Code",
+  "body": {
+    "1_INTRODUCTION": "In protein engineering, fitness can be defined as performance on a desired property or function. Examples of fitness include catalytic activity for enzymes (Anderson et al., 2021) and fluorescence for biomarkers (Remington, 2011) . Protein optimization seeks to improve protein fitness by altering the underlying sequences of amino acids. However, the number of possible proteins increases exponentially with sequence length, rendering it infeasible to perform brute-force search to engineer novel functions, which often require multiple mutations from the starting sequence (i.e. at least 3 (Ghafari & Weissman, 2019) ). Directed evolution (Arnold, 1998) has been successful in improving protein fitness, but it requires substantial labor and time. We aim to computationally generate high-fitness proteins by optimizing a learned model of the fitness landscape, but face several challenges. Proteins can be notorious for highly non-smooth fitness landscapes 1 : fitness can change dramatically with single mutations, fitness measurements contain experimental noise, and most protein sequences have zero fitness (Brookes et al., 2022) . Furthermore, protein fitness datasets are scarce and difficult to generate due to their high costs (Dallago et al., 2021) . As a result, machine learning (ML) methods are susceptible to predicting false positives and getting stuck in local optima (Brookes et al., 2019) . The 3D protein structure, if available, can provide information in navigating the noisy fitness landscape such as identifying hot spot residues (Zerbe et al., 2012) , but high quality structures are not available in many cases.\nOne way to deal with noisy and limited data is to regularize the fitness landscape modelfoot_0 . Our work considers a smoothing regularizer in which similar sequences (based on a distance measure) are predicted to have similar predicted fitness. While actual fitness lanscapes are not smooth, smoothing can be an important tool in the context of optimization, allowing gradient-based methods to reach higher peaks by avoiding local optima, especially in discrete optimization (Zanella, 2020) . A few works have studied properties of protein fitness landscapes (Section 2), but none have directly applied smoothing with a graph framework during optimization.\nWe propose a novel method for applying smoothing to protein sequence and fitness data together with an optimization technique that takes advantage of the smoothing. First, we formulate sequences as a graph with fitness values as node attributes and apply Tikunov regularization to smooth the topological signal measured by the graph Laplacian. The smoothed data is then fitted with a neural network to be used as a model for discrete optimization (Figure 1 top). Second, we sample over the energy function for high fitness sequences by using the model's gradients in a Gibbs With Gradients (GWG) procedure (Grathwohl et al., 2021) . In GWG, a discrete distribution is constructed based on the model's gradients where mutations with improved fitness will correlate with higher probability. The process of taking gradients and sampling mutations is performed in an iterative fashion where subsequent mutations will guide towards higher fitness (Figure 1 bottom).\nFigure 1 shows an overview of the method. We refer to the procedure of smoothing then sampling as Gibbs sampling with Graph-based Smoothing (GGS). To evaluate our method, we introduce a set of tasks using the well studied Green Fluorescent Proteins (GFP) (Sarkisyan et al., 2016) and Adeno-Associated Virus (AAV) (Bryant et al., 2021) proteins. We chose GFP and AAV because of their real-world importance and availability of large mutational data. We design a set of tasks that emulate starting with noisy and limited data and evaluate with a trained model (as done in most prior works). We evaluate GGS and prior works on our proposed benchmarks to show that GGS is state-of-the-art in GFP and AAV fitness optimization. Our contributions are summarized as follows:\n• We develop a novel sequence-based protein optimization algorithm, GGS, which uses graph-based smoothing to train a smoothed fitness model. The model is used as a discrete energy function to progressively sample mutations towards higher-fitness sequences with GWG (Section 3).\n• We develop a set of tasks that measure a method's ability to extrapolate towards higher fitness.\nWe use publicly available GFP and AAV datasets to emulate difficult optimization scenarios of starting with limited and noisy data (Section 4.1).\n• Our benchmark shows prior methods fail to extrapolate towards higher fitness. However, we show graph-based smoothing can drastically improve their performance; in one baseline, the fitness jumps from 18% to 39% in GFP and 4% to 44% in AAV after smoothing (Section 4.2).\n• Our method GGS directly exploits smoothness to achieve state-of-the-art results with 5 times higher fitness in GFP and 2 times higher in AAV compared to the next best method (Section 4.2).",
+    "2_RELATED_WORK": "Protein fitness regularization. The NK model was an early attempt to model smoothness of protein fitness through a statistical model of epistasis (Kauffman & Weinberger, 1989) . Brookes et al. (2022) proposed a framework to approximate the sparsity of protein fitness using a generalized NK model (Buzas & Dinitz, 2013) . Concurrently, dWJS (Frey et al., 2023) is most related to our work by utilizing Gaussian noise to regularize the discrete energy function during Langevin MCMC. dWJS trains by denoising to smooth a energy-based model whereas we apply discrete regularization using graph-based smoothing techniques.\nFinally, we distinguish our smoothing method from traditional regularizers applied during training such as dropout (Srivastava et al., 2014) . Our goal is to smooth the fitness landscape in a way that is amenable for iterative optimization. We enforce similar sequences to have similar fitness which is not guaranteed with dropout or similar regularizers applied in minibatch training. Evaluating multiple smoothing strategies is not the focus of our work, but rather to demonstrate their importance.",
+    "3_METHOD": {
+      "3.1_PROBLEM_FORMULATION": "We denote the starting set of N proteins as D = (X, Y ) where X = {x 1 , . . . , x N } ⊂ V M are the sequences and Y = {y 1 , . . . , y N } are corresponding real-valued scalar fitness measurements. Each sequence x i ∈ V M is composed of M residues from a vocabulary V of 20 amino acids. Subscripts refer to different sequences. Note our method can be extended to other modalities, e.g. nucleic acids.\nFor in-silico evaluation, we denote the set of all known sequences and fitness measurements as D * = (X * , Y * ). We assume there exists a unknown black-box function g : V M → R such that g(x * ) = y * . In practice, g needs to be approximated by a evaluator model, g ϕ , trained with weights ϕ to minimize prediction error on D * . g ϕ poses a limitation to evaluation since the true fitness needs to be verified with biological experiments. Nevertheless, an in-silico approximation provides a accessible way for evaluation and is done in all prior works. The starting dataset is a strict subset of the known dataset D ⊂ D * to simulate fitness optimization scenarios. Given D, our task is to generate a set of sequences with higher fitness than the starting set.",
+      "3.2_GRAPH-BASED_SMOOTHING_ON_PROTEINS": "Our goal is to develop a model of the sequence-to-fitness mapping that can be utilized when sampling higher fitness sequences. Unfortunately, the high-dimensional sequence space coupled with few data points and noisy labels can result in a noisy model that is prone to sampling false positives or getting stuck in local optima. To address this, we use smoothing techniques from graph signal processing.\nThe smoothing process is depicted in Figure 2 . First, we train a noisy fitness model f θ : V M → R with weights θ on the initial dataset D using Mean-Squared Error (MSE). D is usually very small in real-world scenarios. We augment the dataset by using f θ to infer the fitness of neighboring sequences which we do not have labels for -known as transductive inference. Neighboring sequences are generated by randomly applying point mutations to each sequence in X. The augmented and original sequences become nodes, V , in our graph while their fitness labels are node attributes. Edges, E, are constructed with a k-nearest neighbor (kNN) graph around each node based on the Levenshtein distancefoot_1 . The graph construction algorithm can be found in Algorithm 4.\nThe following borrows techniques from Isufi et al. (2022) . The smoothness of the fitness variability in our protein graph is defined as the sum over the square of all local variability,\nTV 2 (Y ) = 1 2 i∈V (∆y i ) 2 , ∆y i = (i,j)∈E (y i -y j ) 2 .\nTV refers to Total Variation and ∆y i is the local variability of node i that measures local changes in fitness. Using TV 2 as a regularizer, we solve the following optimization problem, known as Tikhunov regularization (Zhou & Schölkopf, 2004) , for a new set of smoothed fitness labels, arg min\nEQUATION\nWith abuse of notation, we represent Y as a vector with each node's fitness. γ is a hyperparameter set to control the smoothness; too high can lead to underfitting. We experiment with different γ's in Section 4. Since eq. ( 1) is a quadratic convex problem, it has a closed form solution, Ŷ = (I+γL) -1 Y where L is the graph Laplacian and I is the identity matrix. The final step is to retrain the model on the sequences in the graph and their smoothed fitness labels. The result will be a model f θ with lower TV 2 than before and thus improved smoothness. The smoothing algorithm is in Algorithm 2.",
+      "3.3_SAMPLING_IMPROVED_FITNESS_WITH_GIBBS": "Equipped with model f θ from section 3.2, we apply it in a procedure to sample mutations that improve the starting sequences' fitness. f θ can also be viewed as an energy-based model (EBM) that defines a Boltzmann distribution log p(x) = f θ (x) -log Z where Z is the normalization constant. Higher fitness sequences will be more likely under this distribution, while sampling will induce diversity and novelty. To sample from p(x), we use Gibbs With Gradients (GWG) Grathwohl et al. (2021) which has attracted significant interest due to its simplicity and state-of-the-art performance in discrete optimization. In this section, we describe the GWG procedure for protein sequences. GWG uses Gibbs sampling with approximations of locally informed proposals (Zanella, 2020) :\nq(x ′ |x) ∝ exp 1 2 i (x ′ i ) ⊤ d θ (x) i 1(x ′ ∈ H(x)), d θ (x) i = [∇ x f θ (x)] i -x i ⊙ [∇f θ (x)] i .\n(2) With slight abuse of notation, we use the one-hot sequence representation x ∈ {0, 1} M ×|V| where x i ∈ {0, 1} |V| represents the ith index of the sequence with 1 at its amino acid index and 0 elsewhere. ⊙ is the element wise product. H(x) = {y ∈ V M : d Hamming (x, y) ≤ 1} is the 1-ball around x using Hamming distance. The core idea of GWG is to use d θ (x) i as the first order approximation of a continuous gradient of the change in likelihood from mutating the ith index of x to a different amino acid. The quality of the proposals in eq. ( 2) rely on the smoothness of the energy f θ (Theorem 1 in Grathwohl et al. (2021) ). If the gradients, ∇f θ , are noisy, then the proposal distributions are ineffective in sampling better sequences. Hence, smoothing f θ is desirable (see section 4).\nThe choice of H(•) as the 1-Hamming ball limits x ′ to point mutations from x and only requires O (M × |V|) compute to construct. Let the point mutation where x and x ′ differ be defined by the residue location, i loc ∈ {1, . . . , M }, and amino acid substitution, j sub ∈ {1, . . . , |V|}. By limiting x ′ to point mutants (i loc , j sub ), sampling q(x ′ |x) is equivalent to sampling the following,\nEQUATION\nwhere τ is the sampling temperature and d θ (x) i,j is the logits of mutating to (i, j). The proposal sequence x ′ is constructed by setting its i loc residue to j sub and equal to x elsewhere. Each proposed sequence is accepted or rejected using Metropolis-Hasting (MH),\nEQUATION\nWe provide the GWG algorithm in Algorithm 3.\nClustered sampling. GWG requires a starting sequence to start mutating. A reasonable starting set are the sequences X used to train the model. On each round r, we use eq. ( 3) to propose N prop mutations for each sequence. If accepted via eq. ( 4), then the mutated sequence will be added to the next round. However, this procedure can lead to an intractable number of sequences to consider.\nTo control compute bandwidth, we perform hierarchical clustering (Müllner, 2011) on all the sequences in a round and take the sequence of each cluster with the highest predicted fitness using f θ .\nLet C be the number of clusters which we set based on amount of available compute. This procedure, known as Reduce, is,\nEQUATION\nEach round r reduces the sequences from the previous round and performs GWG sampling.\nXr = Reduce(X r ; θ), X r+1 = GWG( Xr ; θ)\nTo summarize, we adapted GWG for protein optimization by developing a smoothed model to satisfy GWG's smoothness assumptions and use clustering during sampling to reduce redundancy and compute. An illustration of clustered sampling is provided in Figure 5 .\nThe full algorithm for smoothing and clustered sampling is provided in Algorithm 1.",
+      "_text": "The following describes our method. Section 3.1 details the problem formulation. Next section 3.2 describes the procedure for training a smoothed model. Lastly, section 3.3 provides background on Gibbs With Gradients (GWG) which is adapted for protein optimization. The full algorithm, Gibbs sampling with Graph-based Smoothing (GGS), is presented in Algorithm 1."
+    },
+    "4.1_BENCHMARK": "We develop a set of tasks based on two well-studied protein systems: Green Fluoresent Protein (GFP) and Adeno-Associated Virus (AAV) (Sarkisyan et al., 2016; Bryant et al., 2021) . These were chosen due to their relatively large amount of measurements, 56,806 and 44,156 respectively, with sequence variability of up to 15 mutations from the wild-type. Other datasets are either too small or do not have enough sequence variability. GFP's fitness is its fluorescence properties as a biomarker while for AAV's is the ability to package a DNA payload, i.e. for gene delivery. We found GFP and AAV to suffice in demonstrating how prior methods fail to extrapolate.\nOne measure of difficulty is the number of mutations required to achieve the highest known fitness; this assesses a method's exploration capability. We designate the set of optimal proteins, X 99th , as any sequence in the 99th fitness percentile in the entire datasetfoot_2 . Quantitatively, we compute the minimum number of mutations required from the training set to achieve the optimal fitness:\nEQUATION\nA high mutational gap would require the method discovering many mutations in a high dimensional space. A second measure of difficulty is the fitness range of the starting set of sequences. Starting with a low range of fitness requires the method to learn from barely functional proteins and exploit limited knowledge to find mutations that confer higher fitness. Appendix A shows Gap and starting rate are necessary as we found the previous GFP benchmark (Trabucco et al., 2022) as too \"easy\" by only requiring one mutation to achieve the optimal fitness.\nRecall the protein optimization task is to use the starting set D to propose a set of sequences with higher fitness. We design two difficulties, medium and hard, for GFP and AAV based on the properties of D. We restricted the range and the mutational gap to modulate task difficulty. We found Gap= 7 and Range < 30% to suffice in finding where our baseline methods fail to discover better proteins. We use this setting as the hard difficulty and sought to develop GGS to solve it.\nTable 1: GFP tasks Difficulty Range (%) Gap |D| Medium 20th-40th 6 2828 Hard < 30th 7 2426 Table 2: AAV tasks Difficulty Range (%) Gap |D| Medium 20th-40th 6 2139 Hard < 30th 7 3448\nIn-silico evaluation. We follow prior works in using a trained evaluator model as a proxy for realworld experimental validation. A popular model choice is the TAPE transformer (Rao et al., 2019) . However, we noticed a poor performance of the transformer compared to a simpler CNN that matches the findings of Dallago et al. (2021) . We use CNN architecture for the evaluator due to its superior performance. Following Jain et al. (2022) , each method generates 128 samples X = {x i } 128 i=1 whose approximated fitness is predicted with the evaluator. We additionally report Diversity and Novelty that are also used in Jain et al. (2022) . Descriptions of these metrics can be found in Appendix B.2 We emphasize that higher diversity and novelty are not equivalent to better performance, but provide insight into the exploration and exploitation trade-offs of different methods. For instance, a random algorithm would achieve maximum diversity and novelty.",
+    "4.2_RESULTS": "We run 5 seeds and report the average metric across all seeds including the standard deviation in parentheses. We evaluate GGS and previously described baselines. To ensure a fair comparison, we use the same CNN architecture as the model across all methods -all our baselines (and GGS) perform model-based optimization. Since graph-based smoothing (GS) is a general technique, we sought to evaluate its effectiveness in each of our baselines. To incorporate GS, we used the smoothed predictor as a replacement in each baseline which will be denoted with \"+ GS\". Table 3 summarizes GFP results while table 4 summarizes AAV.\nGGS substantially outperforms all unsmoothed baselines, consistently achieving a improvement in fitness from the starting range of fitness in each difficulty. However, the smoothed baselines (lines with + GS) demonstrated a up to three fold improvement for CbAS, AdaLead. We find larger improvements in GFP where the sequence space is far larger than AAV -suggesting the GFP fitness landscape is harder to optimize over.\nThe most difficult task is clearly hard difficulty on GFP where all the baselines without smoothing cannot achieve fitness higher than the training set. With smoothing, GGS achieves the best fitness since the sampling procedure uses gradient-based proposals that benefit from a smooth model. Appendix C.2.1 presents results on additional difficulties to analyze GGS beyond hard.. We observe GGS is able to achieve the highest fitness while exhibiting respectable diversity and novelty. Notably, GGS's novelty falls within the range of the mutational gap in each difficulty, suggesting it is extrapolating an appropriate amount for each task. Our sampling procedure, GWG, fails to perform without smoothing which agrees with its theoretical requirements of requiring a smooth model for good performance. We conclude smoothing is a beneficial technique not only for GGS but also for some baselines. GGS is able to achieve state-of-the-art results in our benchmark. We analyze the effect of varying the following hyperparameters: number of nodes N nodes in the protein graph, smoothness weight γ in eq. ( 1), and number of sampling rounds R during GWG sampling. For space, we leave the analysis of the sampling temperature τ in appendix C.1. Figure 3 presents the results of running GGS with different hyperparameters on the hard difficulty of GFP and AAV. Along the X-axis, we plot the median performance of the sequences during each round of GWG where r = 0 is initialization and r = 15 are the sequences and the end of GWG. The Y-axis shows the predicted fitness of the smoothed model in blue while the fitness scored with our is shown in red. Interestingly, we find in the majority of cases the smoothed model's predictions are highly correlated with the evaluator along the sampling trajectory. This is despite the model being trained on 4% of the data with the hard filtering. Appendix C.2.2 shows the prediction error where we find smoothing greatly improves in predicting the fitness of unseen sequences despite having higher train error.\nGraph size. We find N nodes = 250, 000 nodes to have the best performance over a smaller graph with 100,000 nodes. Larger graphs allow for better approximation of the fitness landscape. However, larger graphs require more compute. A future direction could be to determine optimal graph size with different node augmentations strategies than random mutations.\nSmoothing. Too much smoothing γ = 10.0 can lead to worse performance in AAV while GFP is not sensitive. This suggests the optimal γ is dependent on the particular fitness landscape. Since real proteins landscapes are unknown, the biggest limitation of our method is determining the optimal γ.\nAn important extension of GGS is to theoretically characterize landscapes (Buzas & Dinitz, 2013) and provide guidelines of selecting γ.",
+    "5_DISCUSSION": "We present Gibbs sampling with Graph-based Smoothing (GGS) for protein optimization with a smoothed fitness landscape. Our main contribution and insight is a novel application of graph signal processing to protein optimization. We show smoothing is not only beneficial to our method but also to our baselines. To evaluate, we designed a suite of tasks around two measure of difficulty: number of edits to achieve the 99th percentile (mutational gap) and starting range of fitness. All baselines struggled to achieve good performance on our tasks. However, some baselines showed a three fold improvement with smoothing. GGS performed the best by combining Gibbs with gradients with a smoothed model -demonstrating the synergy of gradient-based sampling with a smooth discrete energy-based model. Our results highlight the benefits of optimizing over a smooth landscape that may not be reflective of the true fitness landscape. We believe it's important to investigate how regularization can be used to transform protein fitness data to be compatible with modern optimization algorithms. Our goal is to not learn the excess biological noise, but find the signal in the data to discover the best protein. We conclude with limitations."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "The adaptive landscape of a metallo-enzyme is shaped by environment-dependent epistasis",
+      "authors": [
+        {
+          "first": "Dave",
+          "middle": [
+            "W"
+          ],
+          "last": "Anderson",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Baier",
+          "suffix": ""
+        },
+        {
+          "first": "Gloria",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Nobuhiko",
+          "middle": [],
+          "last": "Tokuriki",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Nature Communications"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Model-based reinforcement learning for biological sequence design",
+      "authors": [
+        {
+          "first": "Christof",
+          "middle": [],
+          "last": "Angermueller",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Dohan",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Belanger",
+          "suffix": ""
+        },
+        {
+          "first": "Ramya",
+          "middle": [],
+          "last": "Deshpande",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Murphy",
+          "suffix": ""
+        },
+        {
+          "first": "Lucy",
+          "middle": [],
+          "last": "Colwell",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Design by directed evolution",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Frances",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Arnold",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": "Accounts of chemical research"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Conditioning by adaptive sampling for robust design",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Brookes",
+          "suffix": ""
+        },
+        {
+          "first": "Hahnbeom",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Jennifer",
+          "middle": [],
+          "last": "Listgarten",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "On the sparsity of fitness functions and implications for learning",
+      "authors": [
+        {
+          "first": "Amirali",
+          "middle": [],
+          "last": "David H Brookes",
+          "suffix": ""
+        },
+        {
+          "first": "Jennifer",
+          "middle": [],
+          "last": "Aghazadeh",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Listgarten",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Deep diversification of an aav capsid protein by machine learning",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Drew",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Bryant",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Bashir",
+          "suffix": ""
+        },
+        {
+          "first": "Nina",
+          "middle": [
+            "K"
+          ],
+          "last": "Sinai",
+          "suffix": ""
+        },
+        {
+          "first": "Pierce",
+          "middle": [
+            "J"
+          ],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [
+            "F"
+          ],
+          "last": "Ogden",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [
+            "M"
+          ],
+          "last": "Riley",
+          "suffix": ""
+        },
+        {
+          "first": "Lucy",
+          "middle": [
+            "J"
+          ],
+          "last": "Church",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "D"
+          ],
+          "last": "Colwell",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kelsic",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Nature Biotechnology"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "An analysis of nk landscapes: Interaction structure, statistical properties, and expected number of local optima",
+      "authors": [
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Buzas",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Dinitz",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "IEEE Transactions on Evolutionary Computation"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Flip: Benchmark tasks in fitness landscape inference for proteins",
+      "authors": [
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Dallago",
+          "suffix": ""
+        },
+        {
+          "first": "Jody",
+          "middle": [],
+          "last": "Mou",
+          "suffix": ""
+        },
+        {
+          "first": "Kadina",
+          "middle": [
+            "E"
+          ],
+          "last": "Johnston",
+          "suffix": ""
+        },
+        {
+          "first": "Bruce",
+          "middle": [
+            "J"
+          ],
+          "last": "Wittmann",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Bhattacharya",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Goldman",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Madani",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [
+            "K"
+          ],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "bioRxiv"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Plug & play directed evolution of proteins with gradient-based discrete mcmc",
+      "authors": [
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Emami",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [],
+          "last": "Perreault",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Law",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Biagioni",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "St",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Machine Learning: Science and Technology"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Protein discovery with discrete walk-jump sampling",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Nathan C Frey",
+          "suffix": ""
+        },
+        {
+          "first": "Karina",
+          "middle": [],
+          "last": "Berenberg",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Zadorozhny",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Kleinhenz",
+          "suffix": ""
+        },
+        {
+          "first": "Isidro",
+          "middle": [],
+          "last": "Lafrance-Vanasse",
+          "suffix": ""
+        },
+        {
+          "first": "Yan",
+          "middle": [],
+          "last": "Hotzel",
+          "suffix": ""
+        },
+        {
+          "first": "Stephen",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Ra",
+          "suffix": ""
+        },
+        {
+          "first": "Kyunghyun",
+          "middle": [],
+          "last": "Bonneau",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Cho",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "The expected time to cross extended fitness plateaus",
+      "authors": [
+        {
+          "first": "Mahan",
+          "middle": [],
+          "last": "Ghafari",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [
+            "B"
+          ],
+          "last": "Weissman",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Theoretical Population Biology"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Oops i took a gradient: Scalable sampling for discrete distributions",
+      "authors": [
+        {
+          "first": "Will",
+          "middle": [],
+          "last": "Grathwohl",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Swersky",
+          "suffix": ""
+        },
+        {
+          "first": "Milad",
+          "middle": [],
+          "last": "Hashemi",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Duvenaud",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Maddison",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Protein design with guided discrete diffusion",
+      "authors": [
+        {
+          "first": "Nate",
+          "middle": [],
+          "last": "Gruver",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Stanton",
+          "suffix": ""
+        },
+        {
+          "first": "Nathan",
+          "middle": [
+            "C"
+          ],
+          "last": "Frey",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [
+            "Gj"
+          ],
+          "last": "Rudner",
+          "suffix": ""
+        },
+        {
+          "first": "Isidro",
+          "middle": [],
+          "last": "Hotzel",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Lafrance-Vanasse",
+          "suffix": ""
+        },
+        {
+          "first": "Arvind",
+          "middle": [],
+          "last": "Rajpal",
+          "suffix": ""
+        },
+        {
+          "first": "Kyunghyun",
+          "middle": [],
+          "last": "Cho",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Gordon",
+          "suffix": ""
+        },
+        {
+          "first": "Wilson",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Graph filters for signal processing and machine learning on graphs",
+      "authors": [
+        {
+          "first": "Elvin",
+          "middle": [],
+          "last": "Isufi",
+          "suffix": ""
+        },
+        {
+          "first": "Fernando",
+          "middle": [],
+          "last": "Gama",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "I"
+          ],
+          "last": "Shuman",
+          "suffix": ""
+        },
+        {
+          "first": "Santiago",
+          "middle": [],
+          "last": "Segarra",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Biological sequence design with GFlowNets",
+      "authors": [
+        {
+          "first": "Moksh",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Emmanuel",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Hernandez-Garcia",
+          "suffix": ""
+        },
+        {
+          "first": "Jarrid",
+          "middle": [],
+          "last": "Rector-Brooks",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "P"
+          ],
+          "last": "Bonaventure",
+          "suffix": ""
+        },
+        {
+          "first": "Chanakya",
+          "middle": [],
+          "last": "Dossou",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Ajit Ekbote",
+          "suffix": ""
+        },
+        {
+          "first": "Tianyu",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Dinghuai",
+          "middle": [],
+          "last": "Kilgour",
+          "suffix": ""
+        },
+        {
+          "first": "Lena",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Payel",
+          "middle": [],
+          "last": "Simine",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the 39th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "The nk model of rugged fitness landscapes and its application to maturation of the immune response",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Stuart",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [
+            "D"
+          ],
+          "last": "Kauffman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Weinberger",
+          "suffix": ""
+        }
+      ],
+      "year": 1989,
+      "venue": "Journal of theoretical biology"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Adam: A method for stochastic optimization",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Diederik",
+          "suffix": ""
+        },
+        {
+          "first": "Jimmy",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Protein sequence design in a latent space via model-based reinforcement learning",
+      "authors": [
+        {
+          "first": "Minji",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Felipe",
+          "middle": [],
+          "last": "Luiz",
+          "suffix": ""
+        },
+        {
+          "first": "Hyunkyu",
+          "middle": [],
+          "last": "Vecchietti",
+          "suffix": ""
+        },
+        {
+          "first": "Hyunjoo",
+          "middle": [],
+          "last": "Jung",
+          "suffix": ""
+        },
+        {
+          "first": "Meeyoung",
+          "middle": [],
+          "last": "Ro",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Cha",
+          "suffix": ""
+        },
+        {
+          "first": "Min",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Local latent space bayesian optimization over structured inputs",
+      "authors": [
+        {
+          "first": "Natalie",
+          "middle": [],
+          "last": "Maus",
+          "suffix": ""
+        },
+        {
+          "first": "Haydn",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Juston",
+          "middle": [],
+          "last": "Moore",
+          "suffix": ""
+        },
+        {
+          "first": "Matt",
+          "middle": [
+            "J"
+          ],
+          "last": "Kusner",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Bradshaw",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Gardner",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Language models enable zero-shot prediction of the effects of mutations on protein function",
+      "authors": [
+        {
+          "first": "Joshua",
+          "middle": [],
+          "last": "Meier",
+          "suffix": ""
+        },
+        {
+          "first": "Roshan",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Verkuil",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Sercu",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Rives",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Modern hierarchical, agglomerative clustering algorithms",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Müllner",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Tranception: protein fitness prediction with autoregressive transformers and inference-time retrieval",
+      "authors": [
+        {
+          "first": "Pascal",
+          "middle": [],
+          "last": "Notin",
+          "suffix": ""
+        },
+        {
+          "first": "Mafalda",
+          "middle": [],
+          "last": "Dias",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Frazer",
+          "suffix": ""
+        },
+        {
+          "first": "Javier",
+          "middle": [
+            "Marchena"
+          ],
+          "last": "Hurtado",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Debora",
+          "middle": [],
+          "last": "Marks",
+          "suffix": ""
+        },
+        {
+          "first": "Yarin",
+          "middle": [],
+          "last": "Gal",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Extrapolative controlled sequence generation via iterative refinement",
+      "authors": [
+        {
+          "first": "Vishakh",
+          "middle": [],
+          "last": "Padmakumar",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [
+            "Yuanzhe"
+          ],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "He",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Ankur P",
+          "middle": [],
+          "last": "Parikh",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Evaluating protein transfer learning with tape",
+      "authors": [
+        {
+          "first": "Roshan",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Bhattacharya",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Thomas",
+          "suffix": ""
+        },
+        {
+          "first": "Yan",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        },
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Canny",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "Yun",
+          "middle": [
+            "S"
+          ],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Green fluorescent protein: a perspective",
+      "authors": [
+        {
+          "first": "Remington",
+          "middle": [],
+          "last": "James",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Protein Science"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Proximal exploration for model-guided protein sequence design",
+      "authors": [
+        {
+          "first": "Jiahan",
+          "middle": [],
+          "last": "Zhizhou Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Jianzhu",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the 39th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Local fitness landscape of the green fluorescent protein",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Karen S Sarkisyan",
+          "suffix": ""
+        },
+        {
+          "first": "Margarita",
+          "middle": [
+            "V"
+          ],
+          "last": "Dmitry A Bolotin",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Meer",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dinara R Usmanova",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [
+            "V"
+          ],
+          "last": "Alexander S Mishin",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Sharonov",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Dmitry",
+          "suffix": ""
+        },
+        {
+          "first": "Nina",
+          "middle": [
+            "G"
+          ],
+          "last": "Ivankov",
+          "suffix": ""
+        },
+        {
+          "first": "Mikhail",
+          "middle": [
+            "S"
+          ],
+          "last": "Bozhanova",
+          "suffix": ""
+        },
+        {
+          "first": "Onuralp",
+          "middle": [],
+          "last": "Baranov",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Soylemez",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Adalead: A simple and robust adaptive greedy search algorithm for sequence design",
+      "authors": [
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Sinai",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Whatley",
+          "suffix": ""
+        },
+        {
+          "first": "Stewart",
+          "middle": [],
+          "last": "Slocum",
+          "suffix": ""
+        },
+        {
+          "first": "Elina",
+          "middle": [],
+          "last": "Locane",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "D"
+          ],
+          "last": "Kelsic",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Importance weighted expectation-maximization for protein sequence design",
+      "authors": [
+        {
+          "first": "Zhenqiao",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Dropout: a simple way to prevent neural networks from overfitting",
+      "authors": [
+        {
+          "first": "Nitish",
+          "middle": [],
+          "last": "Srivastava",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Krizhevsky",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Ruslan",
+          "middle": [],
+          "last": "Salakhutdinov",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "The journal of machine learning research"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Accelerating bayesian optimization for biological sequence design with denoising autoencoders",
+      "authors": [
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Stanton",
+          "suffix": ""
+        },
+        {
+          "first": "Wesley",
+          "middle": [],
+          "last": "Maddox",
+          "suffix": ""
+        },
+        {
+          "first": "Nate",
+          "middle": [],
+          "last": "Gruver",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Maffettone",
+          "suffix": ""
+        },
+        {
+          "first": "Emily",
+          "middle": [],
+          "last": "Delaney",
+          "suffix": ""
+        },
+        {
+          "first": "Peyton",
+          "middle": [],
+          "last": "Greenside",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Gordon",
+          "suffix": ""
+        },
+        {
+          "first": "Wilson",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Conservative objective models for effective offline model-based optimization",
+      "authors": [
+        {
+          "first": "Brandon",
+          "middle": [],
+          "last": "Trabucco",
+          "suffix": ""
+        },
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyang",
+          "middle": [],
+          "last": "Geng",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 38th International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Design-bench: Benchmarks for data-driven offline model-based optimization",
+      "authors": [
+        {
+          "first": "Brandon",
+          "middle": [],
+          "last": "Trabucco",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyang",
+          "middle": [],
+          "last": "Geng",
+          "suffix": ""
+        },
+        {
+          "first": "Aviral",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "The reparameterization trick for acquisition functions",
+      "authors": [
+        {
+          "first": "Riccardo",
+          "middle": [],
+          "last": "James T Wilson",
+          "suffix": ""
+        },
+        {
+          "first": "Frank",
+          "middle": [],
+          "last": "Moriconi",
+          "suffix": ""
+        },
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        },
+        {
+          "first": "Deisenroth",
+          "middle": [],
+          "last": "Peter",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Informed proposals for local mcmc in discrete spaces",
+      "authors": [
+        {
+          "first": "Giacomo",
+          "middle": [],
+          "last": "Zanella",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Journal of the American Statistical Association"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Relationship between hot spot residues and ligand binding hot spots in protein-protein interfaces",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [
+            "R"
+          ],
+          "last": "Brandon S Zerbe",
+          "suffix": ""
+        },
+        {
+          "first": "Sandor",
+          "middle": [],
+          "last": "Hall",
+          "suffix": ""
+        },
+        {
+          "first": "Adrian",
+          "middle": [],
+          "last": "Vajda",
+          "suffix": ""
+        },
+        {
+          "first": "Dima",
+          "middle": [],
+          "last": "Whitty",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kozakov",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Journal of chemical information and modeling"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "A regularization framework for learning from graph data",
+      "authors": [
+        {
+          "first": "Dengyong",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Bernhard",
+          "middle": [],
+          "last": "Schölkopf",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": "ICML 2004 Workshop on Statistical Relational Learning and Its Connections to Other Fields"
+    }
+  ]
+}

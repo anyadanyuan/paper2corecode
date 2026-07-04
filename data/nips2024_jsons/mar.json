@@ -1,0 +1,2592 @@
+{
+  "paper_id": "mar",
+  "title": "Autoregressive Image Generation without Vector Quantization",
+  "authors": [
+    {
+      "first": "Tianhong",
+      "middle": [],
+      "last": "Li",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "MIT CSAIL",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yonglong",
+      "middle": [],
+      "last": "Tian",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Google DeepMind",
+        "location": {}
+      }
+    },
+    {
+      "first": "He",
+      "middle": [],
+      "last": "Li",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Tsinghua University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Mingyang",
+      "middle": [],
+      "last": "Deng",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "MIT CSAIL",
+        "location": {}
+      }
+    },
+    {
+      "first": "Kaiming",
+      "middle": [],
+      "last": "He",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "MIT CSAIL",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Conventional wisdom holds that autoregressive models for image generation are typically accompanied by vector-quantized tokens. We observe that while a discrete-valued space can facilitate representing a categorical distribution, it is not a necessity for autoregressive modeling. In this work, we propose to model the per-token probability distribution using a diffusion procedure, which allows us to apply autoregressive models in a continuous-valued space. Rather than using categorical cross-entropy loss, we define a Diffusion Loss function to model the pertoken probability. This approach eliminates the need for discrete-valued tokenizers. We evaluate its effectiveness across a wide range of cases, including standard autoregressive models and generalized masked autoregressive (MAR) variants. By removing vector quantization, our image generator achieves strong results while enjoying the speed advantage of sequence modeling. We hope this work will motivate the use of autoregressive generation in other continuous-valued domains and applications. Code is available at https://github.com/LTH14/mar.",
+  "body": {
+    "1_Introduction": "Autoregressive models are currently the de facto solution to generative models in natural language processing [38, 39, 3] . These models predict the next word or token in a sequence based on the previous words as input. Given the discrete nature of languages, the inputs and outputs of these models are in a categorical, discrete-valued space. This prevailing approach has led to a widespread belief that autoregressive models are inherently linked to discrete representations.\nAs a result, research on generalizing autoregressive models to continuous-valued domains-most notably, image generation-has intensely focused on discretizing the data [6, 13, 40] . A commonly adopted strategy is to train a discrete-valued tokenizer on images, which involves a finite vocabulary obtained by vector quantization (VQ) [51, 41] . Autoregressive models are then operated on the discrete-valued token space, analogous to their language counterparts. In this work, we aim to address the following question: Is it necessary for autoregressive models to be coupled with vector-quantized representations? We note that the autoregressive nature, i.e., \"predicting next tokens based on previous ones\", is independent of whether the values are discrete or continuous. What is needed is to model the per-token probability distribution, which can be measured by a loss function and used to draw samples from. Discrete-valued representations can be conveniently modeled by a categorical distribution, but it is not conceptually necessary. If alternative models for per-token probability distributions are presented, autoregressive models can be approached without vector quantization.\nWith this observation, we propose to model the per-token probability distribution by a diffusion procedure operating on continuous-valued domains. Our methodology leverages the principles of diffusion models [45, 24, 33, 10] for representing arbitrary probability distributions. Specifically, our method autoregressively predicts a vector z for each token, which serves as a conditioning for a denoising network (e.g., a small MLP). The denoising diffusion procedure enables us to represent an underlying distribution p(x|z) for the output x (Figure 1 ). This small denoising network is 38th Conference on Neural Information Processing Systems (NeurIPS 2024). diffusion loss for p(x|z) ε MLP condition z noisy x t Figure 1 : Diffusion Loss. Given a continuous-valued token x to be predicted, the autoregressive model produces a vector z, which serves as the condition of a denoising diffusion network (a small MLP). This offers a way to model the probability distribution p(x|z) of this token. This network is trained jointly with the autoregressive model by backpropagation. At inference time, with a predicted z, running the reverse diffusion procedure can sample a token following the distribution: x ∼ p(x|z). This method eliminates the need for discrete-valued tokenizers.\ntrained jointly with the autoregressive model, with continuous-valued tokens as the input and target. Conceptually, this small prediction head, applied to each token, behaves like a loss function for measuring the quality of z. We refer to this loss function as Diffusion Loss.\nOur approach eliminates the need for discrete-valued tokenizers. Vector-quantized tokenizers are difficult to train and are sensitive to gradient approximation strategies [51, 41, 40, 27] . Their reconstruction quality often falls short compared to continuous-valued counterparts [42] . Our approach allows autoregressive models to enjoy the benefits of higher-quality, non-quantized tokenizers.\nTo broaden the scope, we further unify standard autoregressive (AR) models [13] and masked generative models [4, 29] into a generalized autoregressive framework (Figure 3 ). Conceptually, masked generative models predict multiple output tokens simultaneously in a randomized order, while still maintaining the autoregressive nature of \"predicting next tokens based on known ones\". This leads to a masked autoregressive (MAR) model that can be seamlessly used with Diffusion Loss.\nWe demonstrate by experiments the effectiveness of Diffusion Loss across a wide variety of cases, including AR and MAR models. It eliminates the need for vector-quantized tokenizers and consistently improves generation quality. Our loss function can be flexibly applied with different types of tokenizers. Further, our method enjoys the advantage of the fast speed of sequence models. Our MAR model with Diffusion Loss can generate at a rate of < 0.3 second per image while achieving a strong FID of < 2.0 on ImageNet 256×256. Our best model can approach 1.55 FID.\nThe effectiveness of our method reveals a largely uncharted realm of image generation: modeling the interdependence of tokens by autoregression, jointly with the per-token distribution by diffusion. This is in contrast with typical latent diffusion models [42, 37] in which the diffusion process models the joint distribution of all tokens. Given the effectiveness, speed, and flexibility of our method, we hope that the Diffusion Loss will advance autoregressive image generation and be generalized to other domains in future research.",
+    "2_Related_Work": "Sequence Models for Image Generation. Pioneering efforts on autoregressive image models [17, 50, 49, 36, 7, 6] operate on sequences of pixels. Autoregression can be performed by RNNs [50] , CNNs [49, 7] , and, most lately and popularly, Transformers [36, 6] . Motivated by language models, another series of works [51, 41, 13, 40] model images as discrete-valued tokens. Autoregressive [13, 40] and masked generative models [4, 29] can operate on the discrete-valued token space. But discrete tokenizers are difficult to train, which has recently drawn special focus [27, 54, 32] .\nRelated to our work, the recent work on GIVT [48] also focuses on continuous-valued tokens in sequence models. GIVT and our work both reveal the significance and potential of this direction. In GIVT, the token distribution is represented by Gaussian mixture models. It uses a pre-defined number of mixtures, which can limit the types of distributions it can represent. In contrast, our method leverages the effectiveness of the diffusion process for modeling arbitrary distributions.\nDiffusion for Representation Learning. The denoising diffusion process has been explored as a criterion for visual self-supervised learning. For example, DiffMAE [53] replaces the L2 loss in the original MAE [21] with a denoising diffusion decoder; DARL [30] trains autoregressive models with a denoising diffusion patch decoder. These efforts have been focused on representation learning, rather than image generation. In their scenarios, generating diverse images is not a goal; these methods have not presented the capability of generating new images from scratch.",
+    "3_Method": {
+      "3.1_Rethinking_Discrete-Valued_Tokens": "To begin with, we revisit the roles of discrete-valued tokens in autoregressive generation models. Denote as x the ground-truth token to be predicted at the next position. With a discrete tokenizer, x can be represented as an integer: 0 ≤ x < K, with a vocabulary size K. The autoregressive model produces a continuous-valued D-dim vector z ∈ R D , which is then projected by a K-way classifier matrix W ∈ R K×D . Conceptually, this formulation models a categorical probability distribution in the form of p(x|z) = softmax(W z).\nIn the context of generative modeling, this probability distribution must exhibit two essential properties. (i) A loss function that can measure the difference between the estimated and true distributions. In the case of categorical distribution, this can be simply done by the cross-entropy loss. (ii) A sampler that can draw samples from the distribution x ∼ p(x|z) at inference time. In the case of categorical distribution, this is often implemented as drawing a sample from p(x|z) = softmax(W z/τ ), in which τ is a temperature that controls the diversity of the samples. Sampling from a categorical distribution can be approached by the Gumbel-max method [18] or inverse transform sampling. This analysis suggests that discrete-valued tokens are not necessary for autoregressive models. Instead, it is the requirement of modeling a distribution that is essential. A discrete-valued token space implies a categorical distribution, whose loss function and sampler are simple to define. What we actually need are a loss function and its corresponding sampler for distribution modeling.",
+      "3.2_Diffusion_Loss": "Denoising diffusion models [24] offer an effective framework to model arbitrary distributions. But unlike common usages of diffusion models for representing the joint distribution of all pixels or all tokens, in our case, the diffusion model is for representing the distribution for each token.\nConsider a continuous-valued vector x ∈ R d , which denotes the ground-truth token to be predicted at the next position. The autoregressive model produces a vector z ∈ R D at this position. Our goal is to model a probability distribution of x conditioned on z, that is, p(x|z). The loss function and sampler can be defined following the diffusion models [24, 33, 10] , described next.\nLoss function. Following [24, 33, 10] , the loss function of an underlying probability distribution p(x|z) can be formulated as a denoising criterion:\nEQUATION\nHere, ε ∈ R d is a noise vector sampled from N (0, I). The noise-corrupted vector x t is x t = √ ᾱt x + √ 1ᾱt ε, where ᾱt defines a noise schedule [24, 33] . t is a time step of the noise schedule. The noise estimator ε θ , parameterized by θ, is a small MLP network (see Sec. 4). The notation ε θ (x t |t, z) means that this network takes x t as the input, and is conditional on both t and z. As per [46, 47] , Eqn. (1) conceptually behaves like a form of score matching: it is related to a loss function concerning the score function of p(x|z), that is, ∇ log x p(x|z). Diffusion Loss is a parameterized loss function, in the same vein as the adversarial loss [15] or perceptual loss [56] .\nIt is worth noticing that the conditioning vector z is produced by the autoregressive network: z = f (•), as we will discuss later. The gradient of z = f (•) is propagated from the loss function in Eqn. (1) . Conceptually, Eqn. (1) defines a loss function for training the network f (•).\nWe note that the expectation E ε,t [•] in Eqn. (1) is over t, for any given z. As our denoising network is small, we can sample t multiple times for any given z. This helps improve the utilization of the loss function, without recomputing z. We sample t by 4 times during training for each image.",
+      "3.3_Diffusion_Loss_for_Autoregressive_Models": "Next, we describe the autoregressive model with Diffusion Loss for image generation. Given a sequence of tokens {xfoot_0 , x 2 , ..., x n } where the superscript 1 ≤ i ≤ n specifies an order, autoregressive models [17, 50, 49, 36, 7, 6] formulate the generation problem as \"next token prediction\":\nEQUATION\nA network is used to represent the conditional probability p(x i | x 1 , ..., x i-1 ). In our case, x i can be continuous-valued. We can rewrite this formulation in two parts. We first produce a conditioning vector z i by a network (e.g., Transformer [52] ) operating on previous tokens:\nz i = f (x 1 , ..., x i-1 ).\nThen, we model the probability of the next token by p(x i |z i ). Diffusion Loss in Eqn. (1) can be applied on p(x i |z i ). The gradient is backpropagated to z i for updating the parameters of f (•).",
+      "3.4_Unifying_Autoregressive_and_Masked_Generative_Models": "We show that masked generative models, e.g., MaskGIT [4] and MAGE [29] , can be generalized under the broad concept of autoregression, i.e., next token prediction.",
+      "_text": "In a nutshell, our image generation approach is a sequence model operated on a tokenized latent space [6, 13, 40] . But unlike previous methods that are based on vector-quantized tokenizers (e.g., variants of VQ-VAE [51, 13] ), we aim to use continuous-valued tokenizers (e.g., [42] ). We propose Diffusion Loss that makes sequence models compatible with continuous-valued tokens."
+    },
+    "4_Implementation": {
+      "4.1_Diffusion_Loss": "Diffusion Process. Our diffusion process follows [33] . Our noise schedule has a cosine shape, with 1000 steps at training time; at inference time, it is resampled with fewer steps (by default, 100) [33] . Our denoising network predicts the noise vector ε [24] . The loss can optionally include the variational lower bound term L vlb [33] . Diffusion Loss naturally supports classifier-free guidance (CFG) [23] (detailed in Appendix B).\nDenoising MLP. We use a small MLP consisting of a few residual blocks [20] for denoising. Each block sequentially applies a LayerNorm (LN) [1] , a linear layer, SiLU [12] , and another linear layer, merging with a residual connection. By default, we use 3 blocks and a width of 1024 channels.\nThe denoising MLP is conditioned on a vector z produced by the AR/MAR model (see Figure 1 ). The vector z is added to the time embedding of the noise schedule time-step t, which serves as the condition of the MLP in the LN layers via AdaLN [37] .",
+      "4.2_Autoregressive_and_Masked_Autoregressive_Image_Generation": "Tokenizer. We use the publicly available tokenizers provided by LDM [42] . Our experiments will involve their VQ-16 and KL-16 versions [42] . VQ-16 is a VQ-GAN [13] , i.e., VQ-VAE [51] with GAN loss [15] and perceptual loss [56] ; KL-16 is its counterpart regularized by Kullback-Leibler (KL) divergence, without vector quantization. 16 denotes the tokenizer strides.\nTransformer. Our architecture follows the Transformer [52] implementation in ViT [11] . Given a sequence of tokens from a tokenizer, we add positional embedding [52] and append the class tokens [cls]; then we process the sequence by a Transformer. By default, our Transformer has 32 blocks and a width of 1024, which we refer to as the Large size or -L (∼400M parameters).\nAutoregressive baseline. Causal attention is implemented following the common practice of GPT [38] (Figure 2(a) ). The input sequence is shifted by one token (here, [cls]). Triangular masking [52] is applied to the attention matrix. At inference time, temperature (τ ) sampling is applied. We use kv-cache [44] for efficient inference.",
+      "_text": "This section describes our implementation. We note that the concepts introduced in this paper are general and not limited to specific implementations. More detailed specifics are in Appendix B."
+    },
+    "5_Experiments": {
+      "5.1_Properties_of_Diffusion_Loss": "Diffusion Loss vs. Cross-entropy Loss. We first compare continuous-valued tokens with Diffusion Loss and standard discrete-valued tokens with cross-entropy loss (Table 1 ). For fair comparisons, the tokenizers (\"VQ-16\" and \"KL-16\") are both downloaded from the LDM codebase [42] . These are popularly used tokenizers (e.g., [13, 42, 37] ). The comparisons are in four variants of AR/MAR. As shown in Table 1 , Diffusion Loss consistently outperforms the cross-entropy counterpart in all cases. Specifically, in MAR (e.g., the default), using Diffusion Loss can reduce FID by relatively ∼50%-60%. This is because the continuous-valued KL-16 has smaller compression loss than VQ-16 (discussed next in Table 2 ), and also because a diffusion process models distributions more effectively than categorical ones.\nIn the following ablations, unless specified, we follow the \"default\" MAR setting in Table 1 .\nFlexibility of Diffusion Loss. One significant advantage of Diffusion Loss is its flexibility with various tokenizers. We compare several publicly available tokenizers in Table 2 .\nDiffusion Loss can be easily used even given a VQ tokenizer. We simply treat the continuous-valued latent before the VQ layer as the tokens. This variant gives us 7.82 FID (w/o CFG), compared favorably with 8.79 FID (Table 1 ) of cross-entropy loss using the same VQ tokenizer. This suggests the better capability of diffusion for modeling distributions.\nThis variant also enables us to compare the VQ-16 and KL-16 tokenizers using the same loss. As shown in Table 2 , VQ-16 has a much worse reconstruction FID (rFID) than KL-16, which consequently leads to a much worse generation FID (e.g., 7.82 vs. 3.50 in Table 2 ).\nInterestingly, Diffusion Loss also enables us to use tokenizers with mismatched strides. In Table 2 , we study a KL-8 tokenizer whose stride is 8 and output sequence length is 32×32. Without increasing the sequence length of the generator, we group 2×2 tokens into a new token. Despite the mismatch, we are able to obtain decent results, e.g., KL-8 gives us 2.05 FID, vs. KL-16's 1.98 FID. Further, this property allows us to investigate other tokenizers, e.g., Consistency Decoder [35] , a non-VQ tokenizer of a different architecture/stride designed for different goals.\nFor comprehensiveness, we also train a KL-16 tokenizer on ImageNet using the code of [42] , noting that the original KL-16 in [42] was trained on OpenImages [28] . The comparison is in the last row of Table 2 . We use this tokenizer in the following explorations.\nMLP w/o CFG w/ CFG width params FID↓ IS↑ FID↓ IS↑ inference time 256 2M 3.47 195.3 2.45 274.0 0.286 s / im. 512 6M 3.24 199.1 2.11 281.0 0.288 s / im. 1024 21M 2.85 214.0 1.97 291.2 0.288 s / im. 1536 45M 2.93 207.6 1.91 289.3 0.291 s / im.\nTable 3: Denoising MLP in Diffusion Loss. The denoising MLP is small and efficient. Here, the inference time involves the entire generation model, and the Transformer's size is 407M. Settings: MAR-L, 400 epochs, Im-ageNet 256×256, 3 MLP blocks. 0.90 0.95 1.00 1.05 Temperature 1.5 2.0 2.5 3.0 3.5 4.0 4.5 FID 0.90 0.95 1.00 1.05 Temperature 175 200 225 250 275 300 325 350 Inception Score w/o CFG CFG=2.0 CFG=3.0 CFG=4.0 Figure 5: Temperature of Diffusion Loss. Temperature τ has clear influence on both FID (left) and IS (right). Just like the temperature in discrete-valued autoregression, the temperature here also plays a critical role in continuous-valued autoregression.\nDenoising MLP in Diffusion Loss. We investigate the denoising MLP in Table 3 . Even a very small MLP (e.g., 2M) can lead to competitive results. As expected, increasing the MLP width helps improve the generation quality; we have explored increasing the depth and had similar observations. Note that our default MLP size (1024 width, 21M) adds only ∼5% extra parameters to the MAR-L model. During inference, the diffusion sampler has a decent cost of ∼10% overall running time. Increasing the MLP width has negligible extra cost in our implementation (Table 3 ), partially because the main overhead is not about computation but memory communication.",
+      "5.2_Properties_of_Generalized_Autoregressive_Models": "From AR to MAR. Table 1 is also a comparison on the AR/MAR variants, which we discuss next. First, replacing the raster order in AR with random order has a significant gain, e.g., reducing FID from 19.23 to 13.07 (w/o CFG). Next, replacing the causal attention with the bidirectional counterpart leads to another massive gain, e.g., reducing FID from 13.07 to 3.43 (w/o CFG).\nThe random-order, bidirectional AR is essentially a form of MAR that predicts one token at a time. Predicting multiple tokens ('>1') at each step can effectively reduce the number of autoregressive steps. In Table 1 , we show that the MAR variant with 64 steps slightly trades off generation quality. A more comprehensive trade-off comparison is discussed next.",
+      "5.3_Benchmarking_with_Previous_Systems": "We compare with the leading systems in Table 4 . We explore various model sizes (see Appendix B) and train for 800 epochs. Similar to autoregressive language models [3] , we observe encouraging scaling behavior. Further investigation into scaling could be promising. Regarding metrics, we report 2.35 FID without CFG, largely outperforming other token-based methods. Our best entry has 1.55 FID and compares favorably with leading systems. Figure 7 shows qualitative results.",
+      "_text": "We experiment on ImageNet [9] at a resolution of 256×256. We evaluate FID [22] and IS [43] , and provide Precision and Recall as references following common practice [10] . We follow the evaluation suite provided by [10] ."
+    },
+    "6_Discussion_and_Conclusion": "The effectiveness of Diffusion Loss on various autoregressive models suggests new opportunities: modeling the interdependence of tokens by autoregression, jointly with the per-token distribution by diffusion. This is unlike the common usage of diffusion that models the joint distribution of all tokens. Our strong results on image generation suggest that autoregressive models or their extensions are powerful tools beyond language modeling. These models do not need to be constrained by vector-quantized representations. We hope our work will motivate the research community to explore sequence models with continuous-valued representations in other domains. Ours DiT Ours DiT Ours DiT Figure 8: Failure cases. Similar to existing methods, our system can produce results with noticeable artifacts.\nFor each pair, we show MAR-H and DiT-XL's results of the same class. The leftmost example of DiT is taken from their paper [37] ; the others are obtained from their official code."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Layer normalization",
+      "authors": [
+        {
+          "first": "Jimmy",
+          "middle": [],
+          "last": "Lei Ba",
+          "suffix": ""
+        },
+        {
+          "first": "Jamie",
+          "middle": [],
+          "last": "Ryan Kiros",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "All are worth words: a vit backbone for score-based diffusion models",
+      "authors": [
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Chongxuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yue",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "NeurIPS 2022 Workshop on Score-Based Methods"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Language models are few-shot learners",
+      "authors": [
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Nick",
+          "middle": [],
+          "last": "Ryder",
+          "suffix": ""
+        },
+        {
+          "first": "Melanie",
+          "middle": [],
+          "last": "Subbiah",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [
+            "D"
+          ],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Arvind",
+          "middle": [],
+          "last": "Neelakantan",
+          "suffix": ""
+        },
+        {
+          "first": "Pranav",
+          "middle": [],
+          "last": "Shyam",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Ariel",
+          "middle": [],
+          "last": "Herbert-Voss",
+          "suffix": ""
+        },
+        {
+          "first": "Gretchen",
+          "middle": [],
+          "last": "Krueger",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        },
+        {
+          "first": "Rewon",
+          "middle": [],
+          "last": "Child",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Ziegler",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Clemens",
+          "middle": [],
+          "last": "Winter",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Hesse",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Sigler",
+          "suffix": ""
+        },
+        {
+          "first": "Mateusz",
+          "middle": [],
+          "last": "Litwin",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Gray",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Chess",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Berner",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Mccandlish",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "MaskGIT: Masked generative image Transformer",
+      "authors": [
+        {
+          "first": "Huiwen",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Ce",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [
+            "T"
+          ],
+          "last": "Freeman",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Muse: Textto-image generation via masked generative Transformers",
+      "authors": [
+        {
+          "first": "Huiwen",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jarred",
+          "middle": [],
+          "last": "Barber",
+          "suffix": ""
+        },
+        {
+          "first": "Jose",
+          "middle": [],
+          "last": "Maschinot",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Lezama",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Hsuan",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Murphy",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "William T Freeman",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhen",
+          "middle": [],
+          "last": "Rubinstein",
+          "suffix": ""
+        },
+        {
+          "first": "Dilip",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Krishnan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Generative pretraining from pixels",
+      "authors": [
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Rewon",
+          "middle": [],
+          "last": "Child",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Heewoo",
+          "middle": [],
+          "last": "Jun",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Luan",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "PixelSNAIL: An improved autoregressive generative model",
+      "authors": [
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Nikhil",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "Mostafa",
+          "middle": [],
+          "last": "Rohaninejad",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Diffusion policy: Visuomotor policy learning via action diffusion",
+      "authors": [
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Chi",
+          "suffix": ""
+        },
+        {
+          "first": "Siyuan",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Yilun",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenjia",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Cousineau",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Burchfiel",
+          "suffix": ""
+        },
+        {
+          "first": "Shuran",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "RSS"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "ImageNet: A large-scale hierarchical image database",
+      "authors": [
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        },
+        {
+          "first": "Li-Jia",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Diffusion models beat GANs on image synthesis",
+      "authors": [
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Nichol",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "An image is worth 16x16 words: Transformers for image recognition at scale",
+      "authors": [
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "Dirk",
+          "middle": [],
+          "last": "Weissenborn",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "Mostafa",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Minderer",
+          "suffix": ""
+        },
+        {
+          "first": "Georg",
+          "middle": [],
+          "last": "Heigold",
+          "suffix": ""
+        },
+        {
+          "first": "Sylvain",
+          "middle": [],
+          "last": "Gelly",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Houlsby",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Sigmoid-weighted linear units for neural network function approximation in reinforcement learning",
+      "authors": [
+        {
+          "first": "Stefan",
+          "middle": [],
+          "last": "Elfwing",
+          "suffix": ""
+        },
+        {
+          "first": "Eiji",
+          "middle": [],
+          "last": "Uchibe",
+          "suffix": ""
+        },
+        {
+          "first": "Kenji",
+          "middle": [],
+          "last": "Doya",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Neural networks"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Taming Transformers for high-resolution image synthesis",
+      "authors": [
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        },
+        {
+          "first": "Bjorn",
+          "middle": [],
+          "last": "Ommer",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Masked diffusion Transformer is a strong image synthesizer",
+      "authors": [
+        {
+          "first": "Shanghua",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Pan",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Ming",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Shuicheng",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Generative adversarial nets",
+      "authors": [
+        {
+          "first": "Ian",
+          "middle": [
+            "J"
+          ],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "Jean",
+          "middle": [],
+          "last": "Pouget-Abadie",
+          "suffix": ""
+        },
+        {
+          "first": "Mehdi",
+          "middle": [],
+          "last": "Mirza",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Warde-Farley",
+          "suffix": ""
+        },
+        {
+          "first": "Sherjil",
+          "middle": [],
+          "last": "Ozair",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Accurate, large minibatch SGD: Training ImageNet in 1 hour",
+      "authors": [
+        {
+          "first": "Priya",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Noordhuis",
+          "suffix": ""
+        },
+        {
+          "first": "Lukasz",
+          "middle": [],
+          "last": "Wesolowski",
+          "suffix": ""
+        },
+        {
+          "first": "Aapo",
+          "middle": [],
+          "last": "Kyrola",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Tulloch",
+          "suffix": ""
+        },
+        {
+          "first": "Yangqing",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Deep autoregressive networks",
+      "authors": [
+        {
+          "first": "Karol",
+          "middle": [],
+          "last": "Gregor",
+          "suffix": ""
+        },
+        {
+          "first": "Ivo",
+          "middle": [],
+          "last": "Danihelka",
+          "suffix": ""
+        },
+        {
+          "first": "Andriy",
+          "middle": [],
+          "last": "Mnih",
+          "suffix": ""
+        },
+        {
+          "first": "Charles",
+          "middle": [],
+          "last": "Blundell",
+          "suffix": ""
+        },
+        {
+          "first": "Daan",
+          "middle": [],
+          "last": "Wierstra",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Statistical theory of extreme valuse and some practical applications",
+      "authors": [
+        {
+          "first": "Emil",
+          "middle": [],
+          "last": "Julius",
+          "suffix": ""
+        },
+        {
+          "first": "Gumbel",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 1954,
+      "venue": "Nat. Bur. Standards Appl. Math. Ser"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "DiffiT: Diffusion vision Transformers for image generation",
+      "authors": [
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Hatamizadeh",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Guilin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Kautz",
+          "suffix": ""
+        },
+        {
+          "first": "Arash",
+          "middle": [],
+          "last": "Vahdat",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Deep residual learning for image recognition",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shaoqing",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Masked autoencoders are scalable vision learners",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xinlei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Saining",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Yanghao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "GANs trained by a two time-scale update rule converge to a local nash equilibrium",
+      "authors": [
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Heusel",
+          "suffix": ""
+        },
+        {
+          "first": "Hubert",
+          "middle": [],
+          "last": "Ramsauer",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "Bernhard",
+          "middle": [],
+          "last": "Nessler",
+          "suffix": ""
+        },
+        {
+          "first": "Sepp",
+          "middle": [],
+          "last": "Hochreiter",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "NIP"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Classifier-free diffusion guidance",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Denoising diffusion probabilistic models",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Ajay",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Analyzing and improving the training dynamics of diffusion models",
+      "authors": [
+        {
+          "first": "Tero",
+          "middle": [],
+          "last": "Karras",
+          "suffix": ""
+        },
+        {
+          "first": "Miika",
+          "middle": [],
+          "last": "Aittala",
+          "suffix": ""
+        },
+        {
+          "first": "Jaakko",
+          "middle": [],
+          "last": "Lehtinen",
+          "suffix": ""
+        },
+        {
+          "first": "Janne",
+          "middle": [],
+          "last": "Hellsten",
+          "suffix": ""
+        },
+        {
+          "first": "Timo",
+          "middle": [],
+          "last": "Aila",
+          "suffix": ""
+        },
+        {
+          "first": "Samuli",
+          "middle": [],
+          "last": "Laine",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Understanding diffusion objectives as the ELBO with simple data augmentation",
+      "authors": [
+        {
+          "first": "Diederik",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "Ruiqi",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "UViM: A unified modeling approach for vision with learned guiding codes",
+      "authors": [
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "André Susano",
+          "middle": [],
+          "last": "Pinto",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Jeremiah",
+          "middle": [],
+          "last": "Harmsen",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Houlsby",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Openimages: A public dataset for large-scale multi-label and multi-class image classification",
+      "authors": [
+        {
+          "first": "Ivan",
+          "middle": [],
+          "last": "Krasin",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Duerig",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Alldrin",
+          "suffix": ""
+        },
+        {
+          "first": "Vittorio",
+          "middle": [],
+          "last": "Ferrari",
+          "suffix": ""
+        },
+        {
+          "first": "Sami",
+          "middle": [],
+          "last": "Abu-El-Haija",
+          "suffix": ""
+        },
+        {
+          "first": "Alina",
+          "middle": [],
+          "last": "Kuznetsova",
+          "suffix": ""
+        },
+        {
+          "first": "Hassan",
+          "middle": [],
+          "last": "Rom",
+          "suffix": ""
+        },
+        {
+          "first": "Jasper",
+          "middle": [],
+          "last": "Uijlings",
+          "suffix": ""
+        },
+        {
+          "first": "Stefan",
+          "middle": [],
+          "last": "Popov",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Veit",
+          "suffix": ""
+        },
+        {
+          "first": "Serge",
+          "middle": [],
+          "last": "Belongie",
+          "suffix": ""
+        },
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Gomes",
+          "suffix": ""
+        },
+        {
+          "first": "Abhinav",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Gal",
+          "middle": [],
+          "last": "Chechik",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Zheyun",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Dhyanesh",
+          "middle": [],
+          "last": "Narayanan",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Murphy",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "MAGE: Masked generative encoder to unify representation learning and image synthesis",
+      "authors": [
+        {
+          "first": "Tianhong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Huiwen",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Shlok",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Dina",
+          "middle": [],
+          "last": "Katabi",
+          "suffix": ""
+        },
+        {
+          "first": "Dilip",
+          "middle": [],
+          "last": "Krishnan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Denoising autoregressive representation learning",
+      "authors": [
+        {
+          "first": "Yazhe",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jorg",
+          "middle": [],
+          "last": "Bornschein",
+          "suffix": ""
+        },
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Decoupled weight decay regularization",
+      "authors": [
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Loshchilov",
+          "suffix": ""
+        },
+        {
+          "first": "Frank",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Finite scalar quantization: VQ-VAE made simple",
+      "authors": [
+        {
+          "first": "Fabian",
+          "middle": [],
+          "last": "Mentzer",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Minnen",
+          "suffix": ""
+        },
+        {
+          "first": "Eirikur",
+          "middle": [],
+          "last": "Agustsson",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Tschannen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Improved denoising diffusion probabilistic models",
+      "authors": [
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Quinn",
+          "suffix": ""
+        },
+        {
+          "first": "Nichol",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Octo: An open-source generalist robot policy",
+      "authors": [
+        {
+          "first": "Octo",
+          "middle": [],
+          "last": "Model Team",
+          "suffix": ""
+        },
+        {
+          "first": "Dibya",
+          "middle": [],
+          "last": "Ghosh",
+          "suffix": ""
+        },
+        {
+          "first": "Homer",
+          "middle": [],
+          "last": "Walke",
+          "suffix": ""
+        },
+        {
+          "first": "Karl",
+          "middle": [],
+          "last": "Pertsch",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Black",
+          "suffix": ""
+        },
+        {
+          "first": "Oier",
+          "middle": [],
+          "last": "Mees",
+          "suffix": ""
+        },
+        {
+          "first": "Sudeep",
+          "middle": [],
+          "last": "Dasari",
+          "suffix": ""
+        },
+        {
+          "first": "Joey",
+          "middle": [],
+          "last": "Hejna",
+          "suffix": ""
+        },
+        {
+          "first": "Charles",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianlan",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Tobias",
+          "middle": [],
+          "last": "Kreiman",
+          "suffix": ""
+        },
+        {
+          "first": "You",
+          "middle": [],
+          "last": "Liang Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Pannag",
+          "middle": [],
+          "last": "Sanketi",
+          "suffix": ""
+        },
+        {
+          "first": "Quan",
+          "middle": [],
+          "last": "Vuong",
+          "suffix": ""
+        },
+        {
+          "first": "Ted",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Dorsa",
+          "middle": [],
+          "last": "Sadigh",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Consistency Decoder",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Openai",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Image Transformer",
+      "authors": [
+        {
+          "first": "Niki",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Lukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Ku",
+          "suffix": ""
+        },
+        {
+          "first": "Dustin",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Scalable diffusion models with Transformers",
+      "authors": [
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Peebles",
+          "suffix": ""
+        },
+        {
+          "first": "Saining",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Improving language understanding by generative pre-training",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Karthik",
+          "middle": [],
+          "last": "Narasimhan",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Language models are unsupervised multitask learners",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Rewon",
+          "middle": [],
+          "last": "Child",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Luan",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Zero-shot text-to-image generation",
+      "authors": [
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Mikhail",
+          "middle": [],
+          "last": "Pavlov",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Goh",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Gray",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Voss",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Generating diverse high-fidelity images with VQ-VAE-2",
+      "authors": [
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Razavi",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Van Den Oord",
+          "suffix": ""
+        },
+        {
+          "first": "Oriol",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "High-resolution image synthesis with latent diffusion models",
+      "authors": [
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "Dominik",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "Björn",
+          "middle": [],
+          "last": "Ommer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Improved techniques for training GANs",
+      "authors": [
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "Wojciech",
+          "middle": [],
+          "last": "Zaremba",
+          "suffix": ""
+        },
+        {
+          "first": "Vicki",
+          "middle": [],
+          "last": "Cheung",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Fast Transformer decoding: One write-head is all you need",
+      "authors": [
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Deep unsupervised learning using nonequilibrium thermodynamics",
+      "authors": [
+        {
+          "first": "Jascha",
+          "middle": [],
+          "last": "Sohl-Dickstein",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Weiss",
+          "suffix": ""
+        },
+        {
+          "first": "Niru",
+          "middle": [],
+          "last": "Maheswaranathan",
+          "suffix": ""
+        },
+        {
+          "first": "Surya",
+          "middle": [],
+          "last": "Ganguli",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Generative modeling by estimating gradients of the data distribution",
+      "authors": [
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Score-based generative modeling through stochastic differential equations",
+      "authors": [
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Jascha",
+          "middle": [],
+          "last": "Sohl-Dickstein",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Diederik",
+          "suffix": ""
+        },
+        {
+          "first": "Abhishek",
+          "middle": [],
+          "last": "Kingma",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Poole",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "GIVT: Generative infinite-vocabulary Transformers",
+      "authors": [
+        {
+          "first": "Cian",
+          "middle": [],
+          "last": "Michael Tschannen",
+          "suffix": ""
+        },
+        {
+          "first": "Fabian",
+          "middle": [],
+          "last": "Eastwood",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mentzer",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Conditional image generation with PixelCNN decoders",
+      "authors": [
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Van Den Oord",
+          "suffix": ""
+        },
+        {
+          "first": "Nal",
+          "middle": [],
+          "last": "Kalchbrenner",
+          "suffix": ""
+        },
+        {
+          "first": "Lasse",
+          "middle": [],
+          "last": "Espeholt",
+          "suffix": ""
+        },
+        {
+          "first": "Oriol",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Graves",
+          "suffix": ""
+        },
+        {
+          "first": "Koray",
+          "middle": [],
+          "last": "Kavukcuoglu",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Pixel recurrent neural networks",
+      "authors": [
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Van Den Oord",
+          "suffix": ""
+        },
+        {
+          "first": "Nal",
+          "middle": [],
+          "last": "Kalchbrenner",
+          "suffix": ""
+        },
+        {
+          "first": "Koray",
+          "middle": [],
+          "last": "Kavukcuoglu",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Neural discrete representation learning",
+      "authors": [
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Van Den Oord",
+          "suffix": ""
+        },
+        {
+          "first": "Oriol",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "Koray",
+          "middle": [],
+          "last": "Kavukcuoglu",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Niki",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Llion",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Łukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Illia",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Diffusion models as masked autoencoders",
+      "authors": [
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Karttikeya",
+          "middle": [],
+          "last": "Mangalam",
+          "suffix": ""
+        },
+        {
+          "first": "Po-Yao",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Yanghao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Haoqi",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Hu",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Huiyu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Cihang",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [],
+          "last": "Yuille",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Feichtenhofer",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICCV"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "MAGVIT: Masked generative video Transformer",
+      "authors": [
+        {
+          "first": "Lijun",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Yong",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Kihyuk",
+          "middle": [],
+          "last": "Sohn",
+          "suffix": ""
+        },
+        {
+          "first": "José",
+          "middle": [],
+          "last": "Lezama",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Huiwen",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [
+            "G"
+          ],
+          "last": "Hauptmann",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Hsuan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan",
+          "middle": [],
+          "last": "Hao",
+          "suffix": ""
+        },
+        {
+          "first": "Irfan",
+          "middle": [],
+          "last": "Essa",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Language model beats diffusion-tokenizer is key to visual generation",
+      "authors": [
+        {
+          "first": "Lijun",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "José",
+          "middle": [],
+          "last": "Lezama",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Nitesh",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Gundavarapu",
+          "suffix": ""
+        },
+        {
+          "first": "Kihyuk",
+          "middle": [],
+          "last": "Versari",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Sohn",
+          "suffix": ""
+        },
+        {
+          "first": "Yong",
+          "middle": [],
+          "last": "Minnen",
+          "suffix": ""
+        },
+        {
+          "first": "Agrim",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Xiuye",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Boqing",
+          "middle": [],
+          "last": "Alexander G Hauptmann",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Hsuan",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "A"
+          ],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Ross Irfan Essa",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "The unreasonable effectiveness of deep features as a perceptual metric",
+      "authors": [
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Isola",
+          "suffix": ""
+        },
+        {
+          "first": "Alexei",
+          "middle": [
+            "A"
+          ],
+          "last": "Efros",
+          "suffix": ""
+        },
+        {
+          "first": "Eli",
+          "middle": [],
+          "last": "Shechtman",
+          "suffix": ""
+        },
+        {
+          "first": "Oliver",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "CVPR"
+    }
+  ]
+}

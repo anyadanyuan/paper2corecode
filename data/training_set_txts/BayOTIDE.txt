@@ -1,0 +1,144 @@
+### 2.1. BRIEF INTRODUCTION OF EP AND CEP
+
+The Expectation Propagation (EP) (Minka, 2001b) and Conditional EP (CEP) (Wang & Zhe, 2019) frameworks approximate complex probabilistic models with distributions in the exponential family.
+Consider a model with latent variables θ and observed data D = {y 1 , . . . , y N }. The joint probability is:
+EQUATION
+The posterior p(θ|D) is usually intractable. EP approximates each term with an exponential family distribution:
+EQUATION
+where f n (θ) ∝ exp(λ ⊤ n ϕ(θ)) are in the exponential family with natural parameters λ n and sufficient statistics ϕ(θ).
+The joint probability is approximated by: 
+Test CRPC D r = 5 D r = 10 D r = 20 D r = 30 D r = 40 D s =
+
+### 3.2. Gaussian Process (GP) and State-Space Model
+
+Gaussian Process (GP) (Rasmussen & Williams, 2006) s is a powerful Bayesian prior for functional approximation, always denoted as f ∼ GP (0, κ (x, x ′ )). As a nonparametric model, it's characterized by a mean function, here assumed to be zero, and a covariance function or kernel κ (x, x ′ ), which is a positive definite function that measures the similarity of inputs. The choice of the kernel is crucial as it determines the types of functions the GP can model. For instance, the Matérn kernel
+EQUATION
+and periodic kernel:
+EQUATION
+are versatile choices to model functions with non-linear and cyclical patterns, respectively. {σ 2 , l, ν, p} are hyperparameters determining the variance, length-scale, smoothness, and periodicity of the function. α (•, •) is the Euclidean distance, and K ν is the modified Bessel function,Γ(•) is the Gamma function.
+Despite the flexibility and capacity, full GP is a computationally expensive model with O(n 3 ) inference cost while handlining n observation data, which is not feasible in practice. To sidestep expensive kernel matrix computation, (Hartikainen & Särkkä, 2010; Särkkä, 2013) applied the spectral analysis and worked out a crucial statement: a temporal GP with a stationary kernel is equivalent to a linear time-invariant stochastic differential equation (LTI-SDE). Specifically, given f (t) ∼ GP (0, κ (t, t ′ )), we can define a vector-valued companion form:
+z(t) = f (t), df (t) dt , . . . , df m (t) dt ⊤ : t → R m+1
+, where m is the order of the derivative. Then, the GP is equivalent to the solution of the LTI-SDE with canonical form:
+EQUATION
+where F is a (m + 1) × (m + 1) matrix, L is a (m + 1) × 1 vector, and w(t) is a white noise process with spectral density q s . On arbitrary collection of timestamps {t 1 , . . . , t N }, the LTI-SDE (3) can be further discretized as the Markov model with Gaussian transition, known as the state-space model (SSM):
+EQUATION
+where
+A n = exp(F∆ n ), Q n = tn+1 tn A n LL ⊤ A ⊤ n q s dt, ∆ n = t n+1 -t n
+, and P ∞ is the steady-state covariance matrix, which can be obtained by solving the Lyapunov equation FP ∞ + P ∞ F ⊤ + LL ⊤ q s = 0 (Lancaster & Rodman, 1995) . SSM (4) can be efficiently solved with linear cost by classical methods like the Kalman filter (Kalman, 1960) . After inference over z(t), we can easily obtain f (t) by a simple projection: f (t) = [1, 0, . . . 0]z(t).
+We highlight that all the parameters of the LTI-SDE (3) and its SSM (4): {m, F, L, q s , P ∞ } are time-invariant constant and can be derived from the given stationary kernel function. In practice, stationary kernels are a common choice for GP, which requires the kernel to be a function of the distance between two inputs. For example, the Matérn and periodic kernels are stationary kernels, and we can work out their closed-form formulas of LTI-SDE and SSM. We omit the specific formulas here and refer the readers to the appendix.
+
+### 3.1. Multivariate Time Series Imputation
+
+The classical multivariate time series imputation problem is formulated as follows. A N -step multivariate time series X = {x 1 , . . . , x N } ∈ R D×N , where x n ∈ R D is the Dsize value at n-th step and x d n represents it's values at d-th channel. There is a mask matrix M ∈ {0, 1} D×N , indicating whether the series value is observed or missing. The goal is to use the observed values, where M d,n = 1, to estimate the missing values x d n , where M d,n = 0. In the above setting, the interval between two consecutive timestamps is assumed to be constant by default. (Fortuin et al., 2020) , but most deep models cannot. The diffusion-based CSDI (Tashiro et al., 2021) and CSBI (Chen et al., 2023) take timestamps as input, but the model is trained with discretized time embedding.
+more challenging and the exact timestamps {t 1 , . . . , t N } should be considered in the imputation model. In this paper, we aimed to learn a general function X(t) : t → R D to impute the missing values at any time t ∈ [t 1 , t N ].
+
+### 5.2. Real-world Applications
+
+Datasets We evaluate BayOTIDE on three real-world datasets, Traffic-Guangzhou(Chen et al.): traffic speed records in Guangzhou with 214 channels and 500 timestamps. Solar-Power(https://www.nrel.gov/ grid/solar-power-data.html) : 137 channels and 52560 timestamps, which records the solar power generation of 137 PV plants. Uber-Move(https:// movement.uber.com/): 7489 channels and 744 timestamps, recording the average movement of Uber cars along with the road segments in London, Jan 2020. For each dataset, we randomly sample {70%, 50%} of the available data points as observations for model training, and the rest for evaluation. The data process and split strategy are aligned with TIDER (LIU et al., 2023) .
+Baselines and Settings To the best of our knowledge, there are no online algorithms for multivariate time series imputation. Thus, we set several popular deterministic and probabilistic offline imputation approaches as baselines. The deterministic group includes: (1) SimpleMean (Acuna & Rodriguez, 2004) , impute with column-wise mean values.
+(2) BRITS (Cao et al., 2018) , the RNN-based model for imputation with time decay (3) NAOMI (Liu et al., 2019) , a Bidirectional RNN model build with adversarial training (4) SAITS (Du et al., 2023) , a transformer-based model which adopts the self-attention mechanism. (5) TIDER (LIU et al., 2023) . State of art deterministic imputation model based on disentangled temporal representations.
+The probabilistic group includes: (1) Multi-Task GP (Bonilla et al., 2008) , the classical multi-output Gaussian process model (2) GP-VAE (Fortuin et al., 2020) , a deep generative model which combines Gaussian Processes(GP) and variational autoencoder(VAE) for imputation (3) CSDI (Tashiro et al., 2021) Famous probabilistic approach which apply conditional diffusion model to capture the temporal dependency. (4)CSBI Advanced diffusion method that models the imputation task as a conditional Schrödinger Bridge(SB) (Chen et al., 2023) . We also set BayOTIDE-fix-wight by fixing all weight values as one and BayOTIDE-trend-only, and only using trend factor, respectively for BayOTIDE .
+For most baselines, we use the released implementation provided by the authors. We partially use the results of deterministic methods reported in TIDER (LIU et al., 2023) , as the setting is aligned. To avoid the out-of-memory problem of diffusion-based and deep-based baselines, we follow the preprocess of original papers, which split the whole sequence into small patches and subsample the channels for those methods.
+For BayOTIDE , we implemented it by Pytorch and finetuned the D s , D r , and the kernel hyperparameters to obtain optimal results. Detailed information on hyperparameter settings is provided at Table 5 in the appendix. For the metrics, we use the mean absolute error (MAE) and the root mean squared error (RMSE) as the deterministic evaluation metrics for all methods. We adopt the continuous ranked probability score (CRPS) and the negative log-likelihood (NLLK), for BayOTIDE and all probabilistic baselines. We use 50 samples from the posterior to compute CRPS and NLLK. We repeat all the experiments 5 times and report the average results. For the CEP step at each timestamp in BayOTIDE , we use the damping trick (Minka, 2001a) in several inner epochs to avoid numerical instability. For the online imputation, we use the online update equations to obtain the imputation results and run RTS smoother at every evaluation timestamp.
+Deterministic and Probabilistic performance Table 2 and table 3 show the RMSE, MAE, and CRPS scores of imputation on three datasets with observed ratio = 50% and = 70% respectively. We can see that BayOTIDE , an online method that only processes data once, beats the offline baselines and performs best in most cases. TIDER is the sub-optimal method for most cases. Table 3: RMSE, MAE and CRPS scores of imputation results of all methods on three datasets with observed ratio = 70%.
+formance, but are costly in memory and need to split the long sequence into small patches for training. BayOTIDEfix-wight is with poor performance, which indicates that the weighted bases mechanism is crucial. BayOTIDE-trendonly is slightly worse than BayOTIDE , showing the modeling of periodic factor is necessary. The results of NLLK score over three datasets can be found at table 6 in the appendix.
+
+## 2. Related Work
+
+Disentangled representations of time series. The most classical framework of decomposing time series into disentangled representations is the seasonal-trend decomposition(STL) (Cleveland et al., 1990) along with its following work (Wen et al., 2019; Abdollahi, 2020; Bandara et al., 2021) , which are non-parametric method to decompose the univariate series into seasonal, trend and residual components. (Qiu et al., 2018 ) proposed the structural design to extend decomposition into multivariate and probabilistic cases. Recently, CoST (Woo et al., 2022) and TIDER (LIU et al., 2023) show the disentangled representations of multivariate series could get significant performance improvement in forecasting and imputation tasks, respectively, with bonus of interpretability. However, they are not flexible enough to handle the continuous time field and observation noise. Benavoli & Corani (2021) propose a similar idea to directly utilize the state-space GPs with mixture kernels to estimate the seasonal-trend factors, but is restricted in univariate series. Besides the imputation and forecasting, learning the disentangled representation of time series is a crucial tool for estimating causal-related latent variables in sequential data (Yao et al., 2021; 2022) . A series of recent works on tensor-valued time series analysis (Fang et al., 2022; 2024; Wang et al., 2024) also apply the idea of disentangled representations to learn temporal dynamics in latent spaces.
+With the canonical form of LTI-SDE (22)and state space prior(23) and above derivation, we can work out the closedform of LTI-SDE and state space prior for Matérn kernel and periodic kernel. We present the results in the following.
+For Matérn kernel with m = 0, indicating the smoothness is ν = 0 + 1 2 , it becomes the exponential covariance function:
+EQUATION
+)
+Then the parameters of the LTI-SDE and state space prior are: {m = 0, F = -1/l, L = 1, q s = 2σ 2 /l, P ∞ = σ 2 } For Matérn kernel with m = 1, indicating the smoothness is ν = 1 + 1 2 = 3/2, the kernel becomes the Matérn 3/2 covariance function:
+EQUATION
+and the parameters of the LTI-SDE and state space prior are: m = 1,
+F = 0 1 -λ 2 -2λ ,L = 0 1 , P ∞ = σ 2 0 0 λ 2 σ 2 , q s = 4λ 3 σ 2 , where λ = √ 3/ℓ.
+For the periodic kernel:
+EQUATION
+with preset periodicity p, (Solin & Särkkä, 2014) construct corresponding SDE by a sum of n two-dimensional SDE models(m=1) of the following parameters:
+EQUATION
+P ∞,j = q 2 j I 2 , where q 2 j = 2I j ℓ -2 / exp ℓ -2 , for j = 1, 2, . . . , n and q 2 0 = I 0 ℓ -2 / exp ℓ -2 (Solin et al., 2016) .2. Derivative of online update equations by conditional moment matching .
+
+### 4.3. Online Inference
+
+With the joint probability (9), we further propose an online inference algorithm to estimate the running posterior of Θ.
+We denote all observations up to time t n as D tn , i.e. D tn = {y 1 , . . . , y n }. When a new observation y n+1 arrives at t n+1 , we aimed to update the posterior distribution p(Θ | D tn ∪ y n+1 ) without reusing the previous observations D tn .
+The general principle for online inference is the incremental version of Bayes'rule, which is:
+EQUATION
+However, the exact posterior is not tractable. Thus, we first apply the mean-field factorization to approximate the posterior. Specifically, we approximate the exact posterior as:
+EQUATION
+where
+q(u d | D tn ) = N (m d n , V d n ) and q(τ | D tn ) = Gamma(τ | a n , b n ) are
+the approx. distributions for U and τ at time t n respectively. For Z(t), we design the approxi-
+mated posterior as q(Z(t) | D tn ) = n i=1 q(Z(t i )), where q(Z(t i )) are the concatenation of q(z(t i )) = N (µ i , S i ) across all factors. {{m d n , V d n }, {µ i , S i }, a n , b n , }
+are the variational parameters of the approximated posterior to be estimated.
+With mean-field approximation, (10) is still not feasible. It's because the multiple factors and weights interweave in the likelihood, and R.H.S of (10) is unnormalized. To solve it, we propose a novel online approach to update q(Θ | D tn ) with a closed form by adopting conditional Expectation Propagation(CEP) (Wang & Zhe, 2019) and chain structure of Z(t). Specifically, with current q(Θ | D tn ) and prior p(Θ), we can approximate each likelihood term of the newarriving observation y n+1 as several messages factors:
+EQUATION
+)
+where Z is the normalization constant,
+f d n+1 (u d ) = N (u d | md n+1 , Vd n+1 ) and f d n+1 (τ ) = Gamma(τ | ân+1 , bn+1 ), f d n+1 (Z(t n+1 )) = concat[N (μ i , Ŝi )]
+are the approximated message factors of u d , τ , and Z(t n+1 ) respectively.
+Then, we merge all the message factors of U and τ and follow the variational form of (10), and will obtain the update equations:
+EQUATION
+EQUATION
+The message approximation (12) and the message merging procedure (13)(14) are based on the conditional momentmatching technique, which can be done in parallel for all channels with closed-form update. We omit the derivation and exact formulas and refer the readers to the appendix.
+Then, we present the online update of Z(t). With the chain structure of q(Z(t) | D tn ) and p(Z(t)), we found the update can be conducted sequentially. Specifically:
+EQUATION
+)
+where p(Z(t n+1 )|Z(t n )) is the concatenation of all factors' transition given in (4). If we treat d f d n+1 (Z(t n+1 )) as the observation of the state space, (15) is the Kalman filter model (Kalman, 1960) . Thus, we can obtain the closedform update of q(Z(t)| | D tn ), which is the running posterior q(Z n |y 1:n ). After going through all observations, we run Rauch-Tung-Striebel (RTS) smoother (Rauch et al., 1965) to efficiently compute the full posterior of each state q(Z n |y 1:N ) from backward.
+The online algorithm is summarized in Algorithm table 1: we go through all the timestamps, approximate the message factors with moment-matching, and run Kalman filter and message merging and update sequentially. For each timestamp, we can run moment-matching and posterior update steps iteratively several times with damping trick (Minka, 2001a) for better approximation. The algorithm is very efficient as the message approximation (12) can be parallel for different channels, and all the updates are closed-form. The Algorithm 1 BayOTIDE
+Input: observation Y = {y n } N n=1 over {t n } N n=1 , D s , D r , the kernel hyperparameters. Initialize q(τ ), q(W), {q(Z(t n ))} N n=1 . for t = 1 to N do
+Approximate messages by (12) for all observed channels in parallel. Update posterior of τ and U by ( 13) and ( 14) for all observed channels in parallel. Update posteriors of Z(t) using Kalman filter by ( 15). end for Run RTS smoother to obtain the full posterior of Z(t).
+Return: q(τ ), q(W), {q(Z(t n ))} N n=1 algorithm is with time cost O(N (D s + D r )) and space cost O( Dr+Ds k=1 N (m k + m 2 k ) + D(D s + D r ))
+where N is the number of timestamps, D is the number of channel of original time series, D r , D s are number of trends and seasonality factors respectively, m k is the order of the companion form of k-th factor's GP prior determined by the kernel types.
+
+### 5.1. Synthetic data
+
+We first evaluate BayOTIDE on a synthetic task. We first set four temporal functions and a weight matrix, defined as follows:
+U =     1 1 -2 -2 0.4 1 2 -1 -0.3 2 1 -1 -1 1 1 0.5     , V(t) =     10t, sin(20πt), cos(40πt), sin(60πt)     .
+Then, the four-channel time series is defined as X(t) = UV(t), and each channel is a mixture of multiscale trend and seasonality factors. We collected 2000 data points over the 500 irregularly sampled timestamps from [0, 1]. We randomly set only 20% of the data as observed values, and the rest as missing for evaluation. We further add Gaussian noise with a standard deviation 0.1 to the observed data. We use the Matérn kernel with ν = 3/2 as the trend kernel and the periodic kernel with period 20π as the seasonality kernel. We set D r = 1, D s = 3. We highlight that evaluation could be taken on the timestamps that never appear in the training set, known as the all-channel-missing imputation, but we can apply (16) to handle such hard cases easily.
+The imputation results are shown in Figure 1a . We can see that BayOTIDE recovers the series well, and the estimated uncertainty is reasonable. We also show the channel-wise estimated factors in Figure 1b ,1c,1d, and 1e. We can see that the estimated factors are close to the real factors, which indicates that BayOTIDE can capture the underlying multiscale patterns of the data.
+
+### 4.1. Functional Decomposition of Time Series
+
+The motivation of BayOTIDE is based on the fact that the different channels of real-world multivariate time series are always correlated, and there may exist shared patterns across channels. Thus, we propose to decompose the series into a set of functional basis (factors) and channel-wise weights. Inspired by the classic seasonal-trend decomposition (Cleveland et al., 1990) and TIDER (LIU et al., 2023) , we assume there are two groups of factors representing different temporal patterns. The first group of factors is supposed to capture the nonlinear and long-term patterns, and the second represents the periodic parts, namely, trends and seasonalities. Thus, we decompose the function X(t) : t → R D as the weighted combination of two groups of functional factors. Specifically, assume there are D r trend factors and D s seasonality factors, then we have the following decomposition:
+EQUATION
+where U = [U trend ∈ R D×Dr , U season ∈ R D×Ds ] are the weights of the combination. The trends factor group v season (t) : t → R Ds , and seasonality factor groups v trend (t) : t → R Dr are the concatenation of independent temporal factors over each dimension:
+EQUATION
+where v i trend (t), v j season (t) are the 1-d temporal function factor, aimed to model the i-th trend and j-th seasonality latent pattern respectively.
+For the imputation task, if we can estimate the U and V(t) well, we can impute the missing values of X(t) by UV(t) for any t. As TIDER (LIU et al., 2023) proposed a lowrank decomposition similar to ( 5), our model can be seen as a generalization of TIDER to the continuous-time and functional field with the Bayesian framework.
+
+### 4.2. GP Prior and Joint Probability of Our Model
+
+We assume X(t) is partially observed with missing values and noise on timestamps {t 1 , . . . t N }. We denote the observed values as Y = {y n } N n=1 , where y n ∈ R D , and its value at d-th channel is denoted as y d n . M ∈ {0, 1} D×N is the mask matrix, where 1 for observed values and 0 for missing values. The noise level is assumed to be the same for all the channels. Thus, we set the Gaussian likelihood for the observed values as:
+EQUATION
+)
+where τ is the inverse of the noise level. Ω is the collection of observed values' location, namely
+Ω = {(d, n) | M d,n = 1}. u d ∈ R 1×(Dr+Ds) is the d-th row of U, and v(t n ) ∈ R (Dr+Ds)×1 is the concatenation of v trend (t n ) and v season (t n ).
+As v season (t) and v trend (t) are supposed to capture different temporal patterns, we adopt Gaussian Processes (GPs) with different kernels to model them. Specifically, we use the Matérn kernel to model the trend factors, and the periodic kernel to model the seasonality factors:
+EQUATION
+We further assume that Gaussian prior for u d and Gamma prior for τ . Then, the joint probability model is:
+EQUATION
+where Θ = {U, V(t), τ } denotes all model random variables for compactness. As each GP prior term corresponds to a companion form z(t) (see section(3.2)), we define the concatenation of all factors' companion forms as Z(t) and we have
+p(V(t)) = p(Z(t)) = P (Z(t 1 )) N -1 i=1 P (Z(t n+1 )|Z(t n )).
+
+### 4.4. Probabilistic Imputation at Arbitrary Timestamp
+
+With the current posterior {q(z(t 1 )) . . . q(z(t N ))} over the observed timestamps, the functional and chain property of GP priors allow us to infer the prediction distribution, namely do probabilistic interpolation at arbitrary time stamps. Specifically, for a never-seen timestamp t ⋆ ∈ (t 1 , t N ), we can identify the closest neighbor of t ⋆ observed in training, i.e, t k < t ⋆ < t k+1 , where t k , t k+1 ∈ {t 1 . . . t N }. Then the predictive distribution at t ⋆ is given by q(z(t
+EQUATION
+where m k , m k+1 are the predictive mean of q(z(t k )), q(z(t k+1 )), {A 1 , A 2 , Q 1 , Q 2 } are transition matrices and covariance matrices based on the forwardbackward transitions p(z(t ⋆ )|z(t k )), p(z(t k+1 )|z(t ⋆ )) respectively. Eq.( 16) offers continuous modeling of the time series. We give a detailed derivation in the appendix.
+
+## 1. Introduction
+
+Multivariate time series data are ubiquitous and generated quickly in many real-world applications (Jin et al., 2023) , such as traffic (Li et al., 2015) and energy (Zhu et al., 2023) . However, the collected data are often incomplete and noisy due to sensor failures, communication errors, or other reasons. The missing values in the time series data can lead to inaccurate downstream analysis. Therefore, it is essential to impute the missing values in the time series data in an efficient way.
+Most early methods for time series imputation (Acuna & Rodriguez, 2004; Van Buuren & Groothuis-Oudshoorn, 2011; Durbin & Koopman, 2012) are based on statistical models. DNN-based imputation methods have gotten boosted attention (Fang & Wang, 2020) in recent years, for their ability to capture complex non-linear patterns. Another remarkable direction is to apply diffusion models (Song et al., 2020; Ho et al., 2020) to handle probabilistic imputation, where filling the missing value can be modeled as a denoising process. Most recent work TIDER (LIU et al., 2023) proposed another imputation direction to apply the matrix factorization and decompose the series into disentangled representations.
+Despite the success of the proposed methods, they are limited in several aspects. First, most DNN-based and diffusionbased methods are trained by splitting the long sequence into small patches. This local horizon can fail to capture the crucial global patterns (Alcaraz & Strodthoff, 2022; Woo et al., 2022) , such as trends and periodicity, leading to less interpretability. Second, many methods assume the observations are sampled at regular time stamps, and always under-utilize or ignore the real timestamps. Thus, those models can only impute on fixed-step and discretized time points, instead of the arbitrary time stamps at the whole continuous field. Lastly, in real-world applications such as electricity load monitoring, massive time series data are generated quickly and collected in a streaming manner (Liu et al., 2023) . It is extremely costly or even impossible to retrain the model from scratch when new data arrives. Thus, to align with streaming data, the imputation model should work and update in an efficient online manner. However, to the best of our knowledge, all prior imputation methods are designed and optimized in an offline manner, i.e., go through all collected data several epochs for training, which is not suitable for streaming data scenarios.
+To handle those limitations, we propose BayOTIDE : Bayesian Online multivariate Time series Imputation with functional DEcomposition. BayOTIDE treats the observed values of multivariate time series as the noisy samples from a continuous temporal function. Then, we decompose the function into groups of weighted functional factors, and each factor is aimed to capture a dynamic pattern. We apply Gaussian Processes (GPs) with smooth and periodic kernels as functional priors to fit the factors. Employing the SDE representation of GPs and moment-matching techniques, we develop an online algorithm to infer the running posterior of weights and factors efficiently. As it is a Bayesian model, BayOTIDE can offer uncertainty quantification and robustness against noise. The learned functional factors can provide not only interpretability but also imputation over arbitrary timestamps. We list the comparison of BayOTIDE and other main-stream imputation methods in Table 1 . In summary, we highlight our contributions as follows:
+• We propose BayOTIDE , a novel Bayesian method for multivariate time series imputation. BayOTIDE can explicitly learn the function factors representing various global patterns, which offer interpretability and uncertainty quantification. As BayOTIDE is a continuous model, it can utilize the irregularly sampled timestamps and impute over arbitrary timestamps naturally.
+• To the best of our knowledge, BayOTIDE is the first online probabilistic imputation method of multivariate time series that could fit streaming data well. Furthermore, we develop a scalable inference algorithm with closed-form update and linear cost via momentmatching techniques.
+• We extensively evaluate our method on synthetic and real-world datasets, and the results show that Bay-OTIDE outperforms the state-of-the-art methods in terms of accuracy and efficiency.
+
+## 6. Conclusion
+
+We proposed BayOTIDE , a novel Bayesian model for online multivariate time series imputations. We decompose the multivariate time series into a temporal function basis and channel-wise weights, and apply a group of GPs to fit the temporal function basis. An efficient online inference algorithm is developed based on the SDE representation of GPs and moment-matching techniques. Results on both synthetic and real-world datasets show that BayOTIDE outperforms the state-of-the-art methods in terms of both imputation accuracy and uncertainty quantification. We also evaluated the scalability and robustness of BayOTIDE on large-scale real-world datasets with different settings of hyperparameters and missing patterns. . In the future, we plan to extend BayOTIDE to handle more complex patterns and more challenging tasks, such as long-term forecasting with non-stationary patterns.

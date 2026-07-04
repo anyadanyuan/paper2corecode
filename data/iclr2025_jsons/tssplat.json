@@ -1,0 +1,4070 @@
+{
+  "paper_id": "tssplat",
+  "title": "TETSPHERE SPLATTING: REPRESENTING HIGH-QUALITY GEOMETRY WITH LAGRANGIAN VOLUMETRIC MESHES",
+  "authors": [
+    {
+      "first": "Minghao",
+      "middle": [],
+      "last": "Guo",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "MIT CSAIL",
+        "location": {}
+      }
+    },
+    {
+      "first": "Bohan",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "MIT CSAIL",
+        "location": {}
+      }
+    },
+    {
+      "first": "Kaiming",
+      "middle": [],
+      "last": "He",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "MIT CSAIL",
+        "location": {}
+      }
+    },
+    {
+      "first": "Wojciech",
+      "middle": [],
+      "last": "Matusik",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "MIT CSAIL",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Reconstructed Shape\nReconstructed Shape \"A bear dressed in medieval armor\" \"A recliner chair\" (a) (b) (c) (d) Figure 1: (a) Eulerian vs. Lagrangian geometry representations: Compared to Eulerian methods that rely on a fixed grid, TetSphere splatting, a Lagrangian method, uses a set of volumetric tetrahedral spheres that deform to represent the geometry. TetSphere splatting supports applications such as reconstruction, image-to-3D, and text-to-3D generation (b-d).",
+  "body": {
+    "1_INTRODUCTION": "Accurate 3D shape modeling is critical for many real-world applications. Recent advancements in reconstruction (Mildenhall et al., 2020; Wang et al., 2021b; Kerbl et al., 2023) , generative modeling (Poole et al., 2022; Liu et al., 2023b; c; Long et al., 2023) , and inverse rendering (Mehta et al., 2022; Nicolet et al., 2021; Palfinger, 2022) have significantly improved the geometric precision and visual quality of 3D shapes, pushing the boundaries of automatic digital asset generation. (Mildenhall et al., 2020) , FlexiCubes (Shen et al., 2023b ) (Eulerian), DMesh (Son et al., 2024) , and Gaussian Splatting (Huang et al., 2024 ) (Lagrangian). These methods exhibit mesh quality issues, such as irregular or degenerated triangles, non-manifoldness, and floating artifacts.\nOur method demonstrates uniform surface triangles, improved mesh quality, and structure integrity.\nCentral to these advancements are geometry representations, which can be broadly categorized into two types: Eulerian and Lagrangian representations. Eulerian representations describe a geometry on a set of pre-defined, fixed coordinates in 3D world space, where each coordinate position is associated with properties, such as occupancy within the volume or distance from the surface. Widely used Eulerian representations include neural networks that take continuous spatial coordinates as input to model density fields (Mildenhall et al., 2020) or signed distance functions (Wang et al., 2021b; Mehta et al., 2022) , as well as deformable grids that use discrete coordinates, with signed distance values defined at grid vertices (Shen et al., 2021; Gao et al., 2022; Shen et al., 2023b) . Despite their popularity, Eulerian representations face a trade-off between computational complexity and geometry quality: Capturing intricate geometric details of the shape requires either a high-capacity neural network or a high-resolution grid, both of which are computationally expensive to optimize in terms of time and memory. This trade-off often limits Eulerian representations when modeling thin, slender structures, as their pre-defined resolution is often insufficient to capture fine details.\nRecently, there has been a growing shift in the community towards Lagrangian representations, which are typically more computationally efficient than Eulerian methods (Kerbl et al., 2023; Guédon & Lepetit, 2024; Huang et al., 2024; Son et al., 2024; Chen et al., 2024) . Lagrangian representations describe a 3D shape by tracking the movement of a set of geometry primitives in 3D world space. These geometry primitives can be adaptively positioned based on the local geometry of the shape, typically requiring fewer computational resources than Eulerian methods, especially when modeling shapes with fine geometric details. An illustrative comparison between Eulerian and Lagrangian geometry representation is shown in Fig. 1 ( a) . Two of the most commonly used Lagrangian primitives are 3D Gaussians (Kerbl et al., 2023) , which represent geometry using point clouds, and surface triangles (Son et al., 2024; Chen et al., 2024) , which are coupled with their connectivity to form surface meshes. While these Lagrangian representations are favored for their computational efficiency, they often struggle with poor mesh quality due to their reliance on tracking individual points or triangles, which can lack overall structural coherence. For instance, Gaussian point clouds can move freely in space, often resulting in noisy meshes, while surface triangles, when coupled with connectivity, can form non-manifold surfaces or irregular, and sometimes degenerated, triangles. The resulting geometry, exhibiting these geometric issues, is unsuitable for downstream tasks such as rendering and simulation, where high-quality meshes are crucial for high fidelity.\nTo address these challenges, we propose a novel Lagrangian geometry representation, TetSphere Splatting, designed to construct geometry with an emphasis on producing high-quality meshes. Our key insights stem from the fact that existing Lagrangian primitives are too fine-grained to ensure high-quality meshes. Mesh quality depends not only on individual primitives but also on their interactions: For example, the absence of irregular or degenerated triangles relies on the proper alignment of primitives, while manifoldness depends on how well they are connected. Our representation uses volumetric tetrahedral spheres, termed TetSphere, as geometric primitives. Unlike existing primitives that are individual points or triangles, each TetSphere is a volumetric sphere composed of a set of points connected through tetrahedralization. Initialized as a uniform sphere, each TetSphere can be deformed into complex shapes. Together, a collection of these deformed TetSpheres represents a 3D shape, which is in line with the Lagrangian approach. This more structured primitive allows geometric regularization and constraints to be imposed among points within each TetSphere, ensuring mesh quality is maintained throughout deformation. The volumetric nature of TetSpheres also establishes a cohesive arrangement of points throughout the volume, ensuring structural integrity and effectively reducing common surface mesh issues such as irregular triangles or non-manifoldness.\nWe further present a computational framework for TetSphere splatting. Similar to Gaussian splatting (Kerbl et al., 2023) , our method \"splats\" TetSpheres to conform to the target shape. We formulate the deformation of TetSphere as a geometric energy optimization problem, consisting of differentiable rendering loss, bi-harmonic energy of the deformation gradient field, and non-inversion constraints, all effectively solvable via gradient descent. For evaluation, we conduct quantitative comparisons on two tasks to assess the geometry quality: multi-view and single-view reconstruction. In addition to the commonly used metrics for evaluating reconstruction accuracy, we introduce three metrics to evaluate mesh quality, focusing on key aspects of 3D model usability: surface triangles uniformity, manifoldness, and structural integrity. Compared to state-of-the-art methods, TetSphere splatting demonstrates superior mesh quality while maintaining competitive performance on other metrics. Furthermore, as demonstrations of its versatility, we showcase TetSphere splatting's utility in downstream applications of 3D shape generation from both single images and text.",
+    "2_RELATED_WORK": "Eulerian and Lagrangian geometry representations. The differentiation between Eulerian and Lagrangian representations originates from computational fluid dynamics (Chung, 2002) but extends more broadly into computational geometry and physics. Using fluid simulation as an analogy, an Eulerian view would analyze fluid presence at fixed points in space, whereas a Lagrangian perspective follows specific fluid particles. Neural implicit representations, such as DeepSDF (Park et al., 2019) and NeRF (Mildenhall et al., 2021) are modern adaptations of Eulerian concepts, processing 3D positions as inputs to neural networks. These methods theoretically allow for infinite resolution through NN-based parameterization but can result in slow optimization speeds due to NN training. Explicit or hybrid Eulerian representations, such as DMTet (Shen et al., 2021) and TetGAN (Yang et al., 2019) , incorporate explicit irregular grids but can still cause substantial memory usage for high-resolution shapes. Mosaic SDF (Yariv et al., 2024) uses Lagrangian volumetric grids that move in space but are designed for 3D generation tasks only where ground-truth shapes are required. Gaussian splatting (Tang et al., 2023a) exemplifies a Lagrangian approach by moving Gaussian point clouds in space. Surface triangles (Son et al., 2024; Chen et al., 2024) are another example of a Lagrangian approach, where the surface is discretized into a collection of connected triangular elements tracked individually. Our TetSphere can be viewed as introducing constraints among points due to tetrahedral meshing, with enhanced mesh quality.",
+    "3_TETSPHERE_SPLATTING": {
+      "3.1_TETRAHEDRAL_SPHERE_PRIMITIVE": "The primitive of TetSphere splatting is a tetrahedralized sphere, called TetSphere, with N vertices and T tetrahedra. By applying principles from the Finite Element Method (FEM) (Sifakis & Barbic, 2012) , the mesh of each sphere is composed of tetrahedral elements, with each tetrahedron constituting a 3D discrete piecewise linear volumetric entity. We denote the position vector of all vertices of the i-th deformed sphere mesh as x i ∈ R 3N . The deformation gradient of the j-th tetrahedron in the i-th sphere is denoted as F (i,j) x ∈ R 3×3 , which quantitatively describes how each tetrahedron's shape transforms (Sifakis & Barbic, 2012) . Essentially, the deformation gradient F (i,j) x serves as a measure of the spatial changes a tetrahedron undergoes from its original configuration to its deformed state. Refer to Fig. 3 for a visual explanation and Appendix F for an in-depth derivation.\nRather than using a single sphere, our representation employs a collection of spheres to accurately represent arbitrary shapes. Consequently, the complete shape is the union of all spheres. By adopting multiple spheres, this approach ensures that each local region of a shape is detailed independently, enabling a highly accurate representation. Moreover, it allows for the representation of shapes with arbitrary topologies. Such a claim is theoretically guaranteed by the paracompactness property of manifold shapes (James, 2000) .\nUsing tetrahedral spheres offers several technical benefits compared with prevalent representations for object reconstruction, as demonstrated in Fig. 2: • Compared to neural representations (e.g., NeRF), our tetrahedral representation does not rely on neural networks, thus inherently accelerating the optimization process.\n• Compared to Eulerian representations (such as DMTet), our approach entirely avoids the need for iso-surface extraction -an operation that often degrades mesh quality owing to the predetermined resolution of the grid space.\n• Compared to other Lagrangian representations, such as Gaussian point clouds and triangle meshes, our method offers a volumetric representation through the use of tetrahedral meshes. Each tetrahedron imposes constraints among vertices, leading to superior mesh quality.",
+      "3.2_TETSPHERE_SPLATTING_AS_SHAPE_DEFORMATION": "To reconstruct the geometry of the target object, we deform the initial TetSpheres by changing their vertex positions. Two primary goals govern this process: ensuring the deformed TetSpheres align with the input multi-view images and maintaining high mesh quality that adheres to necessary geometry constraints. Fig. 4 illustrates the iterative process of TetSphere splatting.\nTo maintain the mesh quality, we leverage bi-harmonic energy -defined in the literature on geometry processing (Botsch & Sorkine, 2007) as an energy quantifying smoothness throughout a field -to the deformation gradient field. This geometric regularization ensures the smoothness of the deformation gradient field across the deformation process, thus preventing irregular mesh or bumpy surfaces. It is important to highlight that this bi-harmonic regularization does not lead to over-smoothness of the final result. This is because the energy targets the deformation gradient field, which measures the relative changes in vertex positions, rather than the absolute positions themselves. Such an approach allows for the preservation of sharp local geometric details, akin to techniques used in physical simulations (Wen et al., 2023) . Furthermore, we introduce a geometric constraint to guarantee local injectivity in all deformed elements (Schüller et al., 2013) . This ensures that the elements maintain their orientation during the deformation, avoiding inversions or inside-out configurations. This constraint can be mathematically expressed as det(F\n(i,j) x\n) > 0. Importantly, these two terms -bi-harmonic energy for smoothness and local injectivity for element orientation -are universally applicable to any tetrahedral meshes, stemming from their fundamental basis in geometry processing (Baerentzen et al., 2012) . More details are discussed in Appendix L. Let x = [x 1 , ..., x M ] ∈ R 3N M denote the positions of vertices across all M TetSpheres, and\nF x ∈ R 9M T = [vec(F (1,1) x ), ..., vec(F (M,T ) x\n)] denote the flattened deformation gradient fields of all TetSpheres, where N and T denote the number of vertices and tetrahedra within each TetSphere, respectively. In the bi-harmonic energy, the Laplacian matrix is defined based on the connectivity of the tetrahedron faces, denoted as L ∈ R 9M T ×9M T . This matrix is block symmetric, where each block L pq ∈ R 9×9 , p ̸ = q is set to a negative identity matrix -I if the p-th and q-th tetrahedron shares a common triangle; or kI for L pp , where k is the number of neighbors of the p-th tetrahedron. The deformation of the TetSpheres is formulated as an optimization problem:\nEQUATION\nwhere R(•) is the rendering function, Φ(•) is the rendering loss matching the union of deformed tetrahedral spheres with the input images. The second term regulates the bi-harmonic energy across the deformation gradient field. The non-inversion constraint ensures that tetrahedra maintain their orientation. To manage this constrained optimization, we reformulate it by incorporating the noninversion hard constraint as a soft penalty term into the objective,\nEQUATION\nallowing for optimization via standard gradient descent solvers.\nIn the proposed optimization framework, three considerations have been outlined. 1) The adaptive loss function Φ(•), designed to be flexible, supports a variety of metrics, including l 1 for color images, MSE for depth images, and cosine embedding loss for normal images. These losses can all be optimized using gradients provided by differentiable renderers, such as mesh rasterizers (Laine et al., 2020) .. 2) Given that the tetrahedron is a linear element, the deformation gradient\nF (i,j) x\nis a linear function of x, making the bi-harmonic energy a quadratic term.\n3) The weights w 1 and w 2 are dynamically adjusted using a cosine scheduler. We provide details of the scheduler's hyperparameters in Appendix I.",
+      "_text": "We use tetrahedral spheres as our primitive of choice. Unlike point clouds, tetrahedral meshes enforce structured local connectivity between points owing to tetrahedralization. This preserves the geometric integrity of the 3D shape and also enhances the surface quality by imposing geometric regularization across the entire mesh interior. We formulate the reconstruction of shapes through Tet-Sphere splatting as a deformation of tetrahedron spheres. Starting from a set of tetrahedral spheres, we adjust the positions of their vertices to align the rendered images of these meshes with the corresponding target multi-view images. Vertex movement is constrained by two geometric regularizations on the tetrahedral meshes, derived from the field of geometry processing (Baerentzen et al., 2012) . These regularizations, which penalize the non-smooth deformation (via bi-harmonic energy) and prevent the inversion of mesh elements (via local injectivity), have proven effective in ensuring that the resulting tetrahedral meshes are of superior quality and maintain structural integrity. Fig. 3 illustrates the overall pipeline."
+    },
+    "4_TETSPHERE_INITIALIZATION_AND_TEXTURE_OPTIMIZATION": "TetSphere initialization. Given multi-view images as inputs, we select feature points to initialize the 3D center positions of the TetSpheres. We aim to achieve a uniform distribution of these TetSpheres, ensuring comprehensive coverage of the silhouette depicted in the multi-view images.\nWe introduce an algorithm, silhouette coverage, inspired by Coverage Axis (Dou et al., 2022) to select initial centers of TetSpheres for an arbitrary shape automatically. This process begins with constructing a coarse voxel grid and initially assigning a zero value to each voxel. By projecting these voxels into the image spaces using the same camera poses as the input multi-view images, voxels within the foreground of all images are marked with a value of 1. These voxel positions are identified as candidate positions of TetSphere centers. From these marked positions, the objective is to pick a minimal subset of candidates to ensure that all candidates are fully encapsulated by Tet-Spheres and centered on these points. This involves placing uniform spheres with varying radius values at all candidate points and choosing a minimal subset that collectively covers all the candidate points. We formulate a linear programming problem to perform the selection efficiently. The detailed formulation is provided in Appendix G. In our implementation, with a voxel grid resolution 300 × 300 and M = 20, the whole TetSphere initialization completes in ∼1 minute on average.",
+    "5_EXPERIMENTS_AND_RESULTS": {
+      "5.1_IMPLEMENTATION_DETAILS": "Our implementation of the TetSphere initialization algorithm is developed in C++ and uses the Gurobi linear programming solver. The optimization of geometric energies is implemented using CUDA as a PyTorch extension to enhance computational efficiency. 1) For multi-view reconstruction, we render multi-view RGBA and depth images of the ground truth shape as the input of Tet-Sphere splatting. The optimization objective Φ(•) includes both rendering loss (MSE on the alpha mask) and depth loss, following Son et al. (2024) . 2) For single-view reconstruction, we use Won-der3d (Long et al., 2023) to generate six multi-view images with predefined camera poses. The optimization objective Φ(•) includes rendering loss l 1 norm on tone-mapped color and MSE on the alpha mask) and normal loss (cosine loss on normals), following Munkberg et al. (2022) . The implementation details for the two applications are described in Appendix I. To enhance robustness and efficiency, we apply a cosine scheduler to scale the coefficients of the geometry loss, formulated as η = 4 sin( tπ 2n ) , where t denotes the current iteration and T represents the total number of iterations.",
+      "5.2_BASELINES_AND_EVALUATION_PROTOCOL": "Baselines. For multi-view reconstruction, we quantitatively compare our method with state-ofthe-art geometry representations: Neural Implicit Evolution (NIE) (Mehta et al., 2022) , Flexi-Cubes (Shen et al., 2023b) , 2DGS (Huang et al., 2024) , and DMesh (Son et al., 2024) . The first two are Eulerian representations, whereas the latter two are Lagrangian representations. For single-view reconstruction, we quantitatively compare with several state-of-the-art methods: Magic123 (Qian et al., 2023) , One-2-3-45 (Liu et al., 2023a) , SyncDreamer (Liu et al., 2023c) , Wonder3d (Long et al., 2023) , Open-LRM (Hong et al., 2023b; He & Wang, 2023) , and DreamGaussian (Tang et al., 2023a) . DreamGaussian is the only Lagrangian representation, as the field of single-view reconstruction is largely dominated by Eulerian methods. For all baselines, we follow their original implementations and use their publicly available codebase to get the results in this paper.\nEvaluation datasets. For multi-view reconstruction, we follow Son et al. (2024) and use four closed-surface models from the Thingi32 dataset (Zhou & Jacobson, 2016) , four open-surface models from the DeepFashion3D dataset (Heming et al., 2020) , and two additional models with both closed and open surfaces from the Objaverse dataset (Deitke et al., 2023) . We also add the challenging sorter shape from Google Scanned Objects (GSO) dataset (Downs et al., 2022) as it features slender structures. For single-view reconstruction, following prior research (Liu et al., 2023c; Long et al., 2023) , we use the GSO dataset for our evaluation, which covers a broad range of everyday objects. The evaluation dataset aligns with those used by SyncDreamer and Wonder3D, featuring 30 diverse objects ranging from household items to animals.",
+      "5.4_ANALYSIS": "Applications to generative modeling. TetSphere splatting is a versatile approach that can be effectively applied to generative modeling tasks. We showcase two applications: image-to-3D and textto-3D generation. Fig. 12 in Appendix E.3 illustrate the results on image-to-3D generation. Our approach outperforms Magic123 and DreamCraft3D regarding mesh quality, achieving smoother surfaces for broad regions, such as animal bodies while retaining local sharp details in areas like eyes and noses. Magic123 tends to produce overly smooth surfaces that sometimes deviate from the correct geometry. DreamCraft3D suffers from noisy and bumpy surface meshes, indicating lower mesh quality. Fig. 7 and Fig. 13 in Appendix E.4 shows comparison results on text-to-3D generation. Our TetSphere splatting can produce slender structures such as the dragon's head and the goblet. Furthermore, the results demonstrate that using TetSphere splatting with SDS enhances the geometric detail of the generated shapes, resulting in both diverse and high-quality textures.",
+      "_text": "We provide detailed quantitative evaluations on 3D reconstruction from both multi-view and singleview images to demonstrate the effectiveness of TetSphere. Additionally, we showcase TetSphere's versatility through case studies on image-to-3D and text-to-3D shape generation. We further analyze the effect of energy coefficients and offer a comparative study on computational costs, particularly focusing on GPU requirements and memory usage for image-to-3D generation with SDS loss, where existing methods struggle with high computational demands."
+    },
+    "6_CONCLUSION": "We introduced TetSphere splatting, a Lagrangian geometry representation for high-quality 3D shape modeling. Our computational framework leverages geometric energy optimization and differentiable rendering to deform TetSpheres into complex shapes, producing results that demonstrate superior mesh quality compared to state-of-the-art methods.\nLimitations. TetSphere splatting has limitations, including the generation of piecewise meshes rather than a globally consistent tetrahedral mesh and the lack of strong topological guarantees. More details are discussed in Appendix K. Future work could extend TetSphere splatting to leverage direct 3D supervision with volumetric data, eliminating the need for rendering to images. The current TetSphere splatting cannot guarantee topology preservation due to the union of all tetrahedral spheres. This highlights the need for future development in shape generation that can better adhere to topology constraints. (Nicolet et al., 2021; Palfinger, 2022) ."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Optimal step nonrigid icp algorithms for surface registration",
+      "authors": [
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Amberg",
+          "suffix": ""
+        },
+        {
+          "first": "Sami",
+          "middle": [],
+          "last": "Romdhani",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Vetter",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Re-imagine the negative prompt algorithm: Transform 2D diffusion into 3d, alleviate janus problem and beyond",
+      "authors": [
+        {
+          "first": "Mohammadreza",
+          "middle": [],
+          "last": "Armandpour",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Sadeghian",
+          "suffix": ""
+        },
+        {
+          "first": "Huangjie",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Amir",
+          "middle": [],
+          "last": "Sadeghian",
+          "suffix": ""
+        },
+        {
+          "first": "Mingyuan",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Guide to computational geometry processing: foundations, algorithms, and methods",
+      "authors": [
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Baerentzen",
+          "suffix": ""
+        },
+        {
+          "first": "Jens",
+          "middle": [],
+          "last": "Gravesen",
+          "suffix": ""
+        },
+        {
+          "first": "Henrik",
+          "middle": [],
+          "last": "Franc ¸ois Anton",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Aanaes",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Ray-onet: Efficient 3d reconstruction from a single rgb image",
+      "authors": [
+        {
+          "first": "Wenjing",
+          "middle": [],
+          "last": "Bian",
+          "suffix": ""
+        },
+        {
+          "first": "Zirui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Kejie",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Adrian",
+          "middle": [],
+          "last": "Victor",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Prisacariu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "BMVC"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "On linear variational surface deformation methods",
+      "authors": [
+        {
+          "first": "Mario",
+          "middle": [],
+          "last": "Botsch",
+          "suffix": ""
+        },
+        {
+          "first": "Olga",
+          "middle": [],
+          "last": "Sorkine",
+          "suffix": ""
+        }
+      ],
+      "year": 2007,
+      "venue": "IEEE transactions on visualization and computer graphics"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Physically-based shading at disney",
+      "authors": [
+        {
+          "first": "Brent",
+          "middle": [],
+          "last": "Burley",
+          "suffix": ""
+        },
+        {
+          "first": "Walt",
+          "middle": [],
+          "last": "Disney",
+          "suffix": ""
+        },
+        {
+          "first": "Animation",
+          "middle": [],
+          "last": "Studios",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Acm Siggraph"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Fantasia3d: Disentangling geometry and appearance for high-quality text-to-3d content creation",
+      "authors": [
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yongwei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Ningxin",
+          "middle": [],
+          "last": "Jiao",
+          "suffix": ""
+        },
+        {
+          "first": "Kui",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Meshanything: Artist-created mesh generation with autoregressive transformers",
+      "authors": [
+        {
+          "first": "Yiwen",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Di",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Weicai",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Sijin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaxiang",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Zhongang",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Gang",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Learning implicit fields for generative shape modeling",
+      "authors": [
+        {
+          "first": "Zhiqin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Computational fluid dynamics",
+      "authors": [
+        {
+          "first": "T J",
+          "middle": [],
+          "last": "Chung",
+          "suffix": ""
+        }
+      ],
+      "year": 2002,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Objaverse: A universe of annotated 3d objects",
+      "authors": [
+        {
+          "first": "Matt",
+          "middle": [],
+          "last": "Deitke",
+          "suffix": ""
+        },
+        {
+          "first": "Dustin",
+          "middle": [],
+          "last": "Schwenk",
+          "suffix": ""
+        },
+        {
+          "first": "Jordi",
+          "middle": [],
+          "last": "Salvador",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Weihs",
+          "suffix": ""
+        },
+        {
+          "first": "Oscar",
+          "middle": [],
+          "last": "Michel",
+          "suffix": ""
+        },
+        {
+          "first": "Eli",
+          "middle": [],
+          "last": "Vanderbilt",
+          "suffix": ""
+        },
+        {
+          "first": "Ludwig",
+          "middle": [],
+          "last": "Schmidt",
+          "suffix": ""
+        },
+        {
+          "first": "Kiana",
+          "middle": [],
+          "last": "Ehsani",
+          "suffix": ""
+        },
+        {
+          "first": "Aniruddha",
+          "middle": [],
+          "last": "Kembhavi",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "NeRDi: Single-View NeRF synthesis with Language-Guided diffusion as general image priors",
+      "authors": [
+        {
+          "first": "Congyue",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "\"",
+          "middle": [],
+          "last": "Chiyu",
+          "suffix": ""
+        },
+        {
+          "first": "Charles",
+          "middle": [
+            "R"
+          ],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinchen",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Yin",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Leonidas",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Dragomir",
+          "middle": [],
+          "last": "Guibas",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Anguelov",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Coverage axis: Inner point selection for 3d shape skeletonization",
+      "authors": [
+        {
+          "first": "Zhiyang",
+          "middle": [],
+          "last": "Dou",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Shiqing",
+          "middle": [],
+          "last": "Xin",
+          "suffix": ""
+        },
+        {
+          "first": "Taku",
+          "middle": [],
+          "last": "Komura",
+          "suffix": ""
+        },
+        {
+          "first": "Wenping",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Computer Graphics Forum"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Google scanned objects: A High-Quality dataset of 3D scanned household items",
+      "authors": [
+        {
+          "first": "Laura",
+          "middle": [],
+          "last": "Downs",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Francis",
+          "suffix": ""
+        },
+        {
+          "first": "Nate",
+          "middle": [],
+          "last": "Koenig",
+          "suffix": ""
+        },
+        {
+          "first": "Brandon",
+          "middle": [],
+          "last": "Kinman",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Hickman",
+          "suffix": ""
+        },
+        {
+          "first": "Krista",
+          "middle": [],
+          "last": "Reymann",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [
+            "B"
+          ],
+          "last": "Mchugh",
+          "suffix": ""
+        },
+        {
+          "first": "Vincent",
+          "middle": [],
+          "last": "Vanhoucke",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Single-view 3d reconstruction: A survey of deep learning methods",
+      "authors": [
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Fahim",
+          "suffix": ""
+        },
+        {
+          "first": "Khalid",
+          "middle": [],
+          "last": "Amin",
+          "suffix": ""
+        },
+        {
+          "first": "Sameh",
+          "middle": [],
+          "last": "Zarif",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Computers & Graphics"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Surface mesh quality evaluation",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Pascal",
+          "suffix": ""
+        },
+        {
+          "first": "Houman",
+          "middle": [],
+          "last": "Frey",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Borouchaki",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": "International journal for numerical methods in engineering"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Single image 3d object reconstruction based on deep learning: A review",
+      "authors": [
+        {
+          "first": "Kui",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiansheng",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Qiwen",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Hanxiao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Multimedia Tools and Applications"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Tetgan: A convolutional neural network for tetrahedral mesh generation",
+      "authors": [
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "April",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Gal",
+          "middle": [],
+          "last": "Metzer",
+          "suffix": ""
+        },
+        {
+          "first": "Raymond",
+          "middle": [
+            "A"
+          ],
+          "last": "Yeh",
+          "suffix": ""
+        },
+        {
+          "first": "Rana",
+          "middle": [],
+          "last": "Hanocka",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Mesh r-cnn",
+      "authors": [
+        {
+          "first": "Georgia",
+          "middle": [],
+          "last": "Gkioxari",
+          "suffix": ""
+        },
+        {
+          "first": "Jitendra",
+          "middle": [],
+          "last": "Malik",
+          "suffix": ""
+        },
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Johnson",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the IEEE/CVF international conference on computer vision"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Measurement of areas on a sphere using fibonacci and latitude-longitude lattices",
+      "authors": [
+        {
+          "first": "Álvaro",
+          "middle": [],
+          "last": "González",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "Mathematical Geosciences"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "AtlasNet: A Papier-Mâché approach to learning 3D surface generation",
+      "authors": [
+        {
+          "first": "Thibault",
+          "middle": [],
+          "last": "Groueix",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Fisher",
+          "suffix": ""
+        },
+        {
+          "first": "Vladimir",
+          "middle": [
+            "G"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Bryan",
+          "middle": [
+            "C"
+          ],
+          "last": "Russell",
+          "suffix": ""
+        },
+        {
+          "first": "Mathieu",
+          "middle": [],
+          "last": "Aubry",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Nerfdiff: Single-image view synthesis with nerf-guided distillation from 3d-aware diffusion",
+      "authors": [
+        {
+          "first": "Jiatao",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Trevithick",
+          "suffix": ""
+        },
+        {
+          "first": "Kai-En",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Josh",
+          "middle": [],
+          "last": "Susskind",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Theobalt",
+          "suffix": ""
+        },
+        {
+          "first": "Lingjie",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Ravi",
+          "middle": [],
+          "last": "Ramamoorthi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Sugar: Surface-aligned gaussian splatting for efficient 3d mesh reconstruction and high-quality mesh rendering",
+      "authors": [
+        {
+          "first": "Antoine",
+          "middle": [],
+          "last": "Guédon",
+          "suffix": ""
+        },
+        {
+          "first": "Vincent",
+          "middle": [],
+          "last": "Lepetit",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Openlrm: Open-source large reconstruction models",
+      "authors": [
+        {
+          "first": "Zexin",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Tengfei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Deep fashion3d: A dataset and benchmark for 3d garment reconstruction from single images",
+      "authors": [
+        {
+          "first": "Zhu",
+          "middle": [],
+          "last": "Heming",
+          "suffix": ""
+        },
+        {
+          "first": "Cao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Jin",
+          "middle": [],
+          "last": "Hang",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Weikai",
+          "suffix": ""
+        },
+        {
+          "first": "Du",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Wang",
+          "middle": [],
+          "last": "Zhangye",
+          "suffix": ""
+        },
+        {
+          "first": "Cui",
+          "middle": [],
+          "last": "Shuguang",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Xiaoguang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Computer Vision -ECCV 2020"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Debiasing scores and prompts of 2D diffusion for view-consistent Text-to-3D generation",
+      "authors": [
+        {
+          "first": "Susung",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Donghoon",
+          "middle": [],
+          "last": "Ahn",
+          "suffix": ""
+        },
+        {
+          "first": "Seungryong",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "LRM: Large reconstruction model for single image to 3D",
+      "authors": [
+        {
+          "first": "Yicong",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiuxiang",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Sai",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Difan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Kalyan",
+          "middle": [],
+          "last": "Sunkavalli",
+          "suffix": ""
+        },
+        {
+          "first": "Trung",
+          "middle": [],
+          "last": "Bui",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "2d gaussian splatting for geometrically accurate radiance fields",
+      "authors": [
+        {
+          "first": "Binbin",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zehao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Anpei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Geiger",
+          "suffix": ""
+        },
+        {
+          "first": "Shenghua",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "ACM SIGGRAPH 2024 Conference Papers"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "DreamTime: An improved optimization strategy for Text-to-3D content creation",
+      "authors": [
+        {
+          "first": "Yukun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Jianan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yukai",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Xianbiao",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng-Jun",
+          "middle": [],
+          "last": "Zha",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Libigl: Prototyping geometry processing research in c++",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Jacobson",
+          "suffix": ""
+        },
+        {
+          "first": "Daniele",
+          "middle": [],
+          "last": "Panozzo",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "SIGGRAPH Asia 2017 courses"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Zero-shot text-guided object generation with dream fields",
+      "authors": [
+        {
+          "first": "Ajay",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Mildenhall",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [
+            "T"
+          ],
+          "last": "Barron",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Poole",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Topology. Prentic Hall of India Private Limited",
+      "authors": [
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Munkres",
+          "suffix": ""
+        }
+      ],
+      "year": 2000,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "CodeNeRF: Disentangled neural radiance fields for object categories",
+      "authors": [
+        {
+          "first": "Wonbong",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "Lourdes",
+          "middle": [],
+          "last": "Agapito",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "3d gaussian splatting for real-time radiance field rendering",
+      "authors": [
+        {
+          "first": "Bernhard",
+          "middle": [],
+          "last": "Kerbl",
+          "suffix": ""
+        },
+        {
+          "first": "Georgios",
+          "middle": [],
+          "last": "Kopanas",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Leimkühler",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Drettakis",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ACM Transactions on Graphics"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Clip-mesh: Generating textured meshes from text using pretrained image-text models",
+      "authors": [
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Nasir",
+          "suffix": ""
+        },
+        {
+          "first": "Tianhao",
+          "middle": [],
+          "last": "Khalid",
+          "suffix": ""
+        },
+        {
+          "first": "Eugene",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Popa",
+          "middle": [],
+          "last": "Belilovsky",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Tiberiu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "SIGGRAPH Asia 2022 Conference Papers"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Modular primitives for high-performance differentiable rendering",
+      "authors": [
+        {
+          "first": "Samuli",
+          "middle": [],
+          "last": "Laine",
+          "suffix": ""
+        },
+        {
+          "first": "Janne",
+          "middle": [],
+          "last": "Hellsten",
+          "suffix": ""
+        },
+        {
+          "first": "Tero",
+          "middle": [],
+          "last": "Karras",
+          "suffix": ""
+        },
+        {
+          "first": "Yeongho",
+          "middle": [],
+          "last": "Seol",
+          "suffix": ""
+        },
+        {
+          "first": "Jaakko",
+          "middle": [],
+          "last": "Lehtinen",
+          "suffix": ""
+        },
+        {
+          "first": "Timo",
+          "middle": [],
+          "last": "Aila",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ACM Transactions on Graphics"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "SweetDreamer: Aligning geometric priors in 2D diffusion for consistent Text-to-3D",
+      "authors": [
+        {
+          "first": "Weiyu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xuelin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Ping",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Magic3d: High-resolution text-to-3d content creation",
+      "authors": [
+        {
+          "first": "Chen-Hsuan",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Luming",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Towaki",
+          "middle": [],
+          "last": "Takikawa",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohui",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Xun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Karsten",
+          "middle": [],
+          "last": "Kreis",
+          "suffix": ""
+        },
+        {
+          "first": "Sanja",
+          "middle": [],
+          "last": "Fidler",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Yu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Tsung-Yi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "One-2-3-45: Any single image to 3D mesh in 45 seconds without Per-Shape optimization",
+      "authors": [
+        {
+          "first": "Minghua",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Haian",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Linghao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Varma",
+          "suffix": ""
+        },
+        {
+          "first": "Zexiang",
+          "middle": [],
+          "last": "Mukund",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Zero-1-to-3: Zero-shot one image to 3d object",
+      "authors": [
+        {
+          "first": "Ruoshi",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Rundi",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Basile",
+          "middle": [],
+          "last": "Van Hoorick",
+          "suffix": ""
+        },
+        {
+          "first": "Pavel",
+          "middle": [],
+          "last": "Tokmakov",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Zakharov",
+          "suffix": ""
+        },
+        {
+          "first": "Carl",
+          "middle": [],
+          "last": "Vondrick",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Syncdreamer: Learning to generate multiview-consistent images from a single-view image",
+      "authors": [
+        {
+          "first": "Yuan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Zijiao",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoxiao",
+          "middle": [],
+          "last": "Long",
+          "suffix": ""
+        },
+        {
+          "first": "Lingjie",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Taku",
+          "middle": [],
+          "last": "Komura",
+          "suffix": ""
+        },
+        {
+          "first": "Wenping",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Wonder3D: Single image to 3D using Cross-Domain diffusion",
+      "authors": [
+        {
+          "first": "Xiaoxiao",
+          "middle": [],
+          "last": "Long",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Yuan-Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiyang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Lingjie",
+          "middle": [],
+          "last": "Dou",
+          "suffix": ""
+        },
+        {
+          "first": "Yuexin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Song-Hai",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Habermann",
+          "suffix": ""
+        },
+        {
+          "first": "Wenping",
+          "middle": [],
+          "last": "Theobalt",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "3D-LMNet: Latent embedding matching for accurate and diverse 3D point cloud reconstruction from a single image",
+      "authors": [
+        {
+          "first": "Priyanka",
+          "middle": [],
+          "last": "Mandikal",
+          "suffix": ""
+        },
+        {
+          "first": "K L",
+          "middle": [],
+          "last": "Navaneet",
+          "suffix": ""
+        },
+        {
+          "first": "Mayank",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Venkatesh",
+          "suffix": ""
+        },
+        {
+          "first": "Babu",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "A level set theory for neural implicit evolution under explicit flows",
+      "authors": [
+        {
+          "first": "Ishit",
+          "middle": [],
+          "last": "Mehta",
+          "suffix": ""
+        },
+        {
+          "first": "Manmohan",
+          "middle": [],
+          "last": "Chandraker",
+          "suffix": ""
+        },
+        {
+          "first": "Ravi",
+          "middle": [],
+          "last": "Ramamoorthi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "European Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "RealFusion: 360°reconstruction of any object from a single image",
+      "authors": [
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Melas-Kyriazi",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Rupprecht",
+          "suffix": ""
+        },
+        {
+          "first": "Iro",
+          "middle": [],
+          "last": "Laina",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [],
+          "last": "Vedaldi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Occupancy networks: Learning 3d reconstruction in function space",
+      "authors": [
+        {
+          "first": "Lars",
+          "middle": [],
+          "last": "Mescheder",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Oechsle",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Niemeyer",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Nowozin",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Geiger",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Nerf: Representing scenes as neural radiance fields for view synthesis",
+      "authors": [
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Mildenhall",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Pratul",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Srinivasan",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [
+            "T"
+          ],
+          "last": "Tancik",
+          "suffix": ""
+        },
+        {
+          "first": "Ravi",
+          "middle": [],
+          "last": "Barron",
+          "suffix": ""
+        },
+        {
+          "first": "Ren",
+          "middle": [],
+          "last": "Ramamoorthi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ng",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "ECCV"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Nerf: Representing scenes as neural radiance fields for view synthesis",
+      "authors": [
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Mildenhall",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Pratul",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Srinivasan",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [
+            "T"
+          ],
+          "last": "Tancik",
+          "suffix": ""
+        },
+        {
+          "first": "Ravi",
+          "middle": [],
+          "last": "Barron",
+          "suffix": ""
+        },
+        {
+          "first": "Ren",
+          "middle": [],
+          "last": "Ramamoorthi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ng",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Communications of the ACM"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Autosdf: Shape priors for 3d completion, reconstruction and generation",
+      "authors": [
+        {
+          "first": "Paritosh",
+          "middle": [],
+          "last": "Mittal",
+          "suffix": ""
+        },
+        {
+          "first": "Yen-Chi",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Maneesh",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "Shubham",
+          "middle": [],
+          "last": "Tulsiani",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Autorf: Learning 3d object radiance fields from single view observations",
+      "authors": [
+        {
+          "first": "Norman",
+          "middle": [],
+          "last": "Müller",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [],
+          "last": "Simonelli",
+          "suffix": ""
+        },
+        {
+          "first": "Lorenzo",
+          "middle": [],
+          "last": "Porzi",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [
+            "Rota"
+          ],
+          "last": "Bulo",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Nießner",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Kontschieder",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Extracting Triangular 3D Models, Materials, and Lighting From Images",
+      "authors": [
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Munkberg",
+          "suffix": ""
+        },
+        {
+          "first": "Jon",
+          "middle": [],
+          "last": "Hasselgren",
+          "suffix": ""
+        },
+        {
+          "first": "Tianchang",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Wenzheng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Evans",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Müller",
+          "suffix": ""
+        },
+        {
+          "first": "Sanja",
+          "middle": [],
+          "last": "Fidler",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Large steps in inverse rendering of geometry",
+      "authors": [
+        {
+          "first": "Baptiste",
+          "middle": [],
+          "last": "Nicolet",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Jacobson",
+          "suffix": ""
+        },
+        {
+          "first": "Wenzel",
+          "middle": [],
+          "last": "Jakob",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ACM Transactions on Graphics (TOG)"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Continuous remeshing for inverse rendering",
+      "authors": [
+        {
+          "first": "Werner",
+          "middle": [],
+          "last": "Palfinger",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Computer Animation and Virtual Worlds"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Deepsdf: Learning continuous signed distance functions for shape representation",
+      "authors": [
+        {
+          "first": "Jeong Joon",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Florence",
+          "suffix": ""
+        },
+        {
+          "first": "Julian",
+          "middle": [],
+          "last": "Straub",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Newcombe",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Lovegrove",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Dreamfusion: Text-to-3d using 2d diffusion",
+      "authors": [
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Poole",
+          "suffix": ""
+        },
+        {
+          "first": "Ajay",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [
+            "T"
+          ],
+          "last": "Barron",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Mildenhall",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Magic123: One image to high-quality 3d object generation using both 2d and 3d diffusion priors",
+      "authors": [
+        {
+          "first": "Guocheng",
+          "middle": [],
+          "last": "Qian",
+          "suffix": ""
+        },
+        {
+          "first": "Jinjie",
+          "middle": [],
+          "last": "Mai",
+          "suffix": ""
+        },
+        {
+          "first": "Abdullah",
+          "middle": [],
+          "last": "Hamdi",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Aliaksandr",
+          "middle": [],
+          "last": "Siarohin",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Hsin-Ying",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Ivan",
+          "middle": [],
+          "last": "Skorokhodov",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Wonka",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Tulyakov",
+          "suffix": ""
+        },
+        {
+          "first": "Bernard",
+          "middle": [],
+          "last": "Ghanem",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF56",
+      "title": "RichDreamer: A generalizable Normal-Depth diffusion model for detail richness in Text-to-3D",
+      "authors": [
+        {
+          "first": "Lingteng",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        },
+        {
+          "first": "Guanying",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaodong",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Zuo",
+          "suffix": ""
+        },
+        {
+          "first": "Mutian",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Yushuang",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Weihao",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Zilong",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Liefeng",
+          "middle": [],
+          "last": "Bo",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoguang",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Learning transferable visual models from natural language supervision",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Jong",
+          "middle": [
+            "Wook"
+          ],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Hallacy",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Goh",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Highresolution image synthesis with latent diffusion models",
+      "authors": [
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "Dominik",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "Björn",
+          "middle": [],
+          "last": "Ommer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Photorealistic text-to-image diffusion models with deep language understanding",
+      "authors": [
+        {
+          "first": "Chitwan",
+          "middle": [],
+          "last": "Saharia",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "Saurabh",
+          "middle": [],
+          "last": "Saxena",
+          "suffix": ""
+        },
+        {
+          "first": "Lala",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jay",
+          "middle": [],
+          "last": "Whang",
+          "suffix": ""
+        },
+        {
+          "first": "Emily",
+          "middle": [
+            "L"
+          ],
+          "last": "Denton",
+          "suffix": ""
+        },
+        {
+          "first": "Kamyar",
+          "middle": [],
+          "last": "Ghasemipour",
+          "suffix": ""
+        },
+        {
+          "first": "Raphael",
+          "middle": [
+            "Gontijo"
+          ],
+          "last": "Lopes",
+          "suffix": ""
+        },
+        {
+          "first": "Burcu",
+          "middle": [],
+          "last": "Karagol Ayan",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Locally injective mappings",
+      "authors": [
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Schüller",
+          "suffix": ""
+        },
+        {
+          "first": "Ladislav",
+          "middle": [],
+          "last": "Kavan",
+          "suffix": ""
+        },
+        {
+          "first": "Daniele",
+          "middle": [],
+          "last": "Panozzo",
+          "suffix": ""
+        },
+        {
+          "first": "Olga",
+          "middle": [],
+          "last": "Sorkine-Hornung",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Computer Graphics Forum"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Anything-3D: Towards single-view anything reconstruction in the wild",
+      "authors": [
+        {
+          "first": "Qiuhong",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Xingyi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinchao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Deep marching tetrahedra: a hybrid representation for high-resolution 3d shape synthesis",
+      "authors": [
+        {
+          "first": "Tianchang",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Kangxue",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Yu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Sanja",
+          "middle": [],
+          "last": "Fidler",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Flexible isosurface extraction for gradientbased mesh optimization",
+      "authors": [
+        {
+          "first": "Tianchang",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Munkberg",
+          "suffix": ""
+        },
+        {
+          "first": "Jon",
+          "middle": [],
+          "last": "Hasselgren",
+          "suffix": ""
+        },
+        {
+          "first": "Kangxue",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Zian",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenzheng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Zan",
+          "middle": [],
+          "last": "Gojcic",
+          "suffix": ""
+        },
+        {
+          "first": "Sanja",
+          "middle": [],
+          "last": "Fidler",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Sharp",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ACM Trans. Graph"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "MVDream: Multi-view diffusion for 3D generation",
+      "authors": [
+        {
+          "first": "Yichun",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jianglong",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Mai",
+          "middle": [],
+          "last": "Long",
+          "suffix": ""
+        },
+        {
+          "first": "Kejie",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xiao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Fem simulation of 3d deformable solids: a practitioner's guide to theory, discretization and model reduction",
+      "authors": [
+        {
+          "first": "Eftychios",
+          "middle": [],
+          "last": "Sifakis",
+          "suffix": ""
+        },
+        {
+          "first": "Jernej",
+          "middle": [],
+          "last": "Barbic",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Acm siggraph 2012 courses"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Dmesh: A differentiable representation for general meshes",
+      "authors": [
+        {
+          "first": "Sanghyun",
+          "middle": [],
+          "last": "Son",
+          "suffix": ""
+        },
+        {
+          "first": "Matheus",
+          "middle": [],
+          "last": "Gadelha",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Zexiang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Ming",
+          "middle": [
+            "C"
+          ],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Deformation transfer for triangle meshes",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Robert",
+          "suffix": ""
+        },
+        {
+          "first": "Jovan",
+          "middle": [],
+          "last": "Sumner",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Popović",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": "ACM Transactions on graphics (TOG)"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Dream-Craft3D: Hierarchical 3D generation with bootstrapped diffusion prior",
+      "authors": [
+        {
+          "first": "Jingxiang",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ruizhi",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        },
+        {
+          "first": "Lizhen",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Wen",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenda",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Yebin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Dreamgaussian: Generative gaussian splatting for efficient 3d content creation",
+      "authors": [
+        {
+          "first": "Jiaxiang",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiawei",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Hang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Ziwei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Gang",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF70",
+      "title": "LGM: Large Multi-View gaussian model for High-Resolution 3D content creation",
+      "authors": [
+        {
+          "first": "Jiaxiang",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaoxi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaokang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Tengfei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Gang",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Ziwei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF71",
+      "title": "Make-it-3d: High-fidelity 3d creation from a single image with diffusion prior",
+      "authors": [
+        {
+          "first": "Junshu",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Tengfei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ran",
+          "middle": [],
+          "last": "Yi",
+          "suffix": ""
+        },
+        {
+          "first": "Lizhuang",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Dong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF72",
+      "title": "Triposr: Fast 3d object reconstruction from a single image",
+      "authors": [
+        {
+          "first": "Dmitry",
+          "middle": [],
+          "last": "Tochilkin",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Pankratz",
+          "suffix": ""
+        },
+        {
+          "first": "Zexiang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Zixuan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Letts",
+          "suffix": ""
+        },
+        {
+          "first": "Yangguang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Ding",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Laforte",
+          "suffix": ""
+        },
+        {
+          "first": "Varun",
+          "middle": [],
+          "last": "Jampani",
+          "suffix": ""
+        },
+        {
+          "first": "Yan-Pei",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF73",
+      "title": "TextMesh: Generation of realistic 3D meshes from text prompts",
+      "authors": [
+        {
+          "first": "Christina",
+          "middle": [],
+          "last": "Tsalicoglou",
+          "suffix": ""
+        },
+        {
+          "first": "Fabian",
+          "middle": [],
+          "last": "Manhardt",
+          "suffix": ""
+        },
+        {
+          "first": "Alessio",
+          "middle": [],
+          "last": "Tonioni",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Niemeyer",
+          "suffix": ""
+        },
+        {
+          "first": "Federico",
+          "middle": [],
+          "last": "Tombari",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF74",
+      "title": "Differentiable signed distance function rendering",
+      "authors": [
+        {
+          "first": "Delio",
+          "middle": [],
+          "last": "Vicini",
+          "suffix": ""
+        },
+        {
+          "first": "Sébastien",
+          "middle": [],
+          "last": "Speierer",
+          "suffix": ""
+        },
+        {
+          "first": "Wenzel",
+          "middle": [],
+          "last": "Jakob",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ACM Transactions on Graphics (TOG)"
+    },
+    {
+      "id": "BIBREF75",
+      "title": "Modeling of personalized anatomy using plastic strains",
+      "authors": [
+        {
+          "first": "Bohan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Matcuk",
+          "suffix": ""
+        },
+        {
+          "first": "Jernej",
+          "middle": [],
+          "last": "Barbič",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ACM Transactions on Graphics (TOG)"
+    },
+    {
+      "id": "BIBREF76",
+      "title": "Score jacobian chaining: Lifting pretrained 2d diffusion models for 3d generation",
+      "authors": [
+        {
+          "first": "Haochen",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaodan",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Jiahao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Raymond",
+          "middle": [
+            "A"
+          ],
+          "last": "Yeh",
+          "suffix": ""
+        },
+        {
+          "first": "Greg",
+          "middle": [],
+          "last": "Shakhnarovich",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF77",
+      "title": "Pixel2mesh: Generating 3d mesh models from single rgb images",
+      "authors": [
+        {
+          "first": "Nanyang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yinda",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuwen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yanwei",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yu-Gang",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the European conference on computer vision (ECCV)"
+    },
+    {
+      "id": "BIBREF78",
+      "title": "NeuS: Learning neural implicit surfaces by volume rendering for multi-view reconstruction",
+      "authors": [
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Lingjie",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Theobalt",
+          "suffix": ""
+        },
+        {
+          "first": "Taku",
+          "middle": [],
+          "last": "Komura",
+          "suffix": ""
+        },
+        {
+          "first": "Wenping",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF79",
+      "title": "PF-LRM: Pose-Free large reconstruction model for joint pose and shape prediction",
+      "authors": [
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Sai",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        },
+        {
+          "first": "Yinghao",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Fujun",
+          "middle": [],
+          "last": "Luan",
+          "suffix": ""
+        },
+        {
+          "first": "Kalyan",
+          "middle": [],
+          "last": "Sunkavalli",
+          "suffix": ""
+        },
+        {
+          "first": "Wenping",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zexiang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF80",
+      "title": "Prolificdreamer: High-fidelity and diverse text-to-3d generation with variational score distillation",
+      "authors": [
+        {
+          "first": "Zhengyi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Yikai",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Chongxuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Hang",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF81",
+      "title": "Meshlrm: Large reconstruction model for high-quality mesh",
+      "authors": [
+        {
+          "first": "Xinyue",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sai",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Fujun",
+          "middle": [],
+          "last": "Luan",
+          "suffix": ""
+        },
+        {
+          "first": "Valentin",
+          "middle": [],
+          "last": "Deschaintre",
+          "suffix": ""
+        },
+        {
+          "first": "Kalyan",
+          "middle": [],
+          "last": "Sunkavalli",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Zexiang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF82",
+      "title": "Large-strain surface modeling using plasticity",
+      "authors": [
+        {
+          "first": "Jiahao",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        },
+        {
+          "first": "Bohan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jernej",
+          "middle": [],
+          "last": "Barbic",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE Transactions on Visualization and Computer Graphics"
+    },
+    {
+      "id": "BIBREF83",
+      "title": "Single-View 3D human digitalization with large reconstruction models",
+      "authors": [
+        {
+          "first": "Zhenzhen",
+          "middle": [],
+          "last": "Weng",
+          "suffix": ""
+        },
+        {
+          "first": "Jingyuan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Zhan",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Serena",
+          "middle": [],
+          "last": "Yeung-Levy",
+          "suffix": ""
+        },
+        {
+          "first": "Jimei",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF84",
+      "title": "Multi-view mesh reconstruction with neural deferred shading",
+      "authors": [
+        {
+          "first": "Markus",
+          "middle": [],
+          "last": "Worchel",
+          "suffix": ""
+        },
+        {
+          "first": "Rodrigo",
+          "middle": [],
+          "last": "Diaz",
+          "suffix": ""
+        },
+        {
+          "first": "Weiwen",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Oliver",
+          "middle": [],
+          "last": "Schreer",
+          "suffix": ""
+        },
+        {
+          "first": "Ingo",
+          "middle": [],
+          "last": "Feldmann",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Eisert",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF85",
+      "title": "Pix2Vox: Context-aware 3D reconstruction from single and multi-view images",
+      "authors": [
+        {
+          "first": "Haozhe",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Hongxun",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoshuai",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Shangchen",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Shengping",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF86",
+      "title": "Pix2Vox++: Multi-scale context-aware 3D object reconstruction from single and multiple images",
+      "authors": [
+        {
+          "first": "Haozhe",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Hongxun",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Shengping",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shangchen",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Wenxiu",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Int. J. Comput. Vis"
+    },
+    {
+      "id": "BIBREF87",
+      "title": "NeuralLift-360: Lifting an in-the-wild 2D photo to a 3D object with 360°views",
+      "authors": [
+        {
+          "first": "Dejia",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Yifan",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Peihao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiwen",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhangyang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF88",
+      "title": "DISN: Deep implicit surface network for high-quality single-view 3D reconstruction",
+      "authors": [
+        {
+          "first": "Qiangeng",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Weiyue",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Duygu",
+          "middle": [],
+          "last": "Ceylan",
+          "suffix": ""
+        },
+        {
+          "first": "Radomir",
+          "middle": [],
+          "last": "Mech",
+          "suffix": ""
+        },
+        {
+          "first": "Ulrich",
+          "middle": [],
+          "last": "Neumann",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF89",
+      "title": "Cwf: Consolidating weak features in highquality mesh simplification",
+      "authors": [
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Longdu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Ningna",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuangmin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Shiqing",
+          "middle": [],
+          "last": "Xin",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohu",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Zichun",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Taku",
+          "middle": [],
+          "last": "Komura",
+          "suffix": ""
+        },
+        {
+          "first": "Wenping",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Changhe",
+          "middle": [],
+          "last": "Tu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "ACM Transactions on Graphics (TOG)"
+    },
+    {
+      "id": "BIBREF90",
+      "title": "DMV3D: Denoising Multi-View diffusion using 3D large reconstruction model",
+      "authors": [
+        {
+          "first": "Yinghao",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Fujun",
+          "middle": [],
+          "last": "Luan",
+          "suffix": ""
+        },
+        {
+          "first": "Sai",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        },
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiahao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zifan",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Kalyan",
+          "middle": [],
+          "last": "Sunkavalli",
+          "suffix": ""
+        },
+        {
+          "first": "Gordon",
+          "middle": [],
+          "last": "Wetzstein",
+          "suffix": ""
+        },
+        {
+          "first": "Zexiang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF91",
+      "title": "Grm: Large gaussian reconstruction model for efficient 3d reconstruction and generation",
+      "authors": [
+        {
+          "first": "Yinghao",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Zifan",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Wang",
+          "middle": [],
+          "last": "Yifan",
+          "suffix": ""
+        },
+        {
+          "first": "Hansheng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Ceyuan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Sida",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Yujun",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Gordon",
+          "middle": [],
+          "last": "Wetzstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF92",
+      "title": "Tet-gan: Text effects transfer via stylization and destylization",
+      "authors": [
+        {
+          "first": "Shuai",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaying",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Wenjing",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zongming",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF93",
+      "title": "Mosaic-sdf for 3d generative models",
+      "authors": [
+        {
+          "first": "Lior",
+          "middle": [],
+          "last": "Yariv",
+          "suffix": ""
+        },
+        {
+          "first": "Omri",
+          "middle": [],
+          "last": "Puny",
+          "suffix": ""
+        },
+        {
+          "first": "Oran",
+          "middle": [],
+          "last": "Gafni",
+          "suffix": ""
+        },
+        {
+          "first": "Yaron",
+          "middle": [],
+          "last": "Lipman",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF94",
+      "title": "pixelNeRF: Neural radiance fields from one or few images",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Vickie",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Tancik",
+          "suffix": ""
+        },
+        {
+          "first": "Angjoo",
+          "middle": [],
+          "last": "Kanazawa",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF95",
+      "title": "Gs-lrm: Large reconstruction model for 3d gaussian splatting",
+      "authors": [
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sai",
+          "middle": [],
+          "last": "Bi",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanbo",
+          "middle": [],
+          "last": "Xiangli",
+          "suffix": ""
+        },
+        {
+          "first": "Nanxuan",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Kalyan",
+          "middle": [],
+          "last": "Sunkavalli",
+          "suffix": ""
+        },
+        {
+          "first": "Zexiang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF96",
+      "title": "Thingi10k: A dataset of 10,000 3d-printing models",
+      "authors": [
+        {
+          "first": "Qingnan",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Jacobson",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    }
+  ]
+}

@@ -1,0 +1,2211 @@
+{
+  "paper_id": "ST-MEM",
+  "title": "GUIDING MASKED REPRESENTATION LEARNING TO CAPTURE SPATIO-TEMPORAL RELATIONSHIP OF ELECTROCARDIOGRAM",
+  "authors": [
+    {
+      "first": "Yeongyeon",
+      "middle": [],
+      "last": "Na",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "VUNO Inc",
+        "location": {}
+      }
+    },
+    {
+      "first": "Minje",
+      "middle": [],
+      "last": "Park",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "VUNO Inc",
+        "location": {}
+      }
+    },
+    {
+      "first": "Yunwon",
+      "middle": [],
+      "last": "Tae",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "VUNO Inc",
+        "location": {}
+      }
+    },
+    {
+      "first": "Sunghoon",
+      "middle": [],
+      "last": "Joo",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "VUNO Inc",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Electrocardiograms (ECG) are widely employed as a diagnostic tool for monitoring electrical signals originating from a heart. Recent machine learning research efforts have focused on the application of screening various diseases using ECG signals. However, adapting to the application of screening disease is challenging in that labeled ECG data are limited. Achieving general representation through self-supervised learning (SSL) is a well-known approach to overcome the scarcity of labeled data; however, a naive application of SSL to ECG data, without considering the spatial-temporal relationships inherent in ECG signals, may yield suboptimal results. In this paper, we introduce ST-MEM (Spatio-Temporal Masked Electrocardiogram Modeling), designed to learn spatiotemporal features by reconstructing masked 12-lead ECG data. ST-MEM outperforms other SSL baseline methods in various experimental settings for arrhythmia classification tasks. Moreover, we demonstrate that ST-MEM is adaptable to various lead combinations. Through quantitative and qualitative analysis, we show a spatio-temporal relationship within ECG data. Our code is available at https",
+  "body": {
+    "1_INTRODUCTION": "The electrocardiogram (ECG) is a non-invasive heart measurement to monitor the electrical activity over time and diagnose diseases. Several supervised learning models have been developed to detect various heart diseases through ECG (Siontis et al., 2021) . However, since the types of heart disease are diverse and the experienced cardiologists who can provide labels are limited, learning the ECG representation for each application (i.e., detecting various heart diseases) is challenging. Recently, self-supervised learning (SSL) for general representation has emerged in natural language processing (Kenton & Toutanova, 2019; Brown et al., 2020) and computer vision (Chen et al., 2020; Grill et al., 2020; He et al., 2020; Caron et al., 2021) since it can be leveraged for numerous tasks, such as translation, sentence classification, image classification, and image generation. In ECG-based diagnosis, there were also similar efforts to learn general representation through SSL to overcome the limited resources and detect various heart diseases.\nECG-based representation learning through SSL is usually considered in two different learning methods: contrastive and generative learning (Jing & Tian, 2020) . Contrastive learning (Sarkar & Etemad, 2020; Le et al., 2023; Gopal et al., 2021; Soltanieh et al., 2022; Kiyasseh et al., 2021; Wei et al., 2022) is a method to ensure similarity in the context before and after data augmentation. These data are usually defined by numerous augmentation methods (e.g., cropping, flipping, and shifting); however, despite a simple augmentation, the information on the semantic meaning of ECG signals can change drastically (Lan et al., 2023) . Generative learning is a method of learning the representation of data by reconstructing all or part of the input, such as a simple framework for masked image modeling (Xie et al., 2022) or Masked Autoencoder (MAE) (He et al., 2022) . In the case of ECG, there are variants of MAE that reconstruct input ECG signals (Zhang et al., 2022 ; Sawano et al., 2022; Hu et al., 2023) . Generative learning is often augmentation-free or involves simpler data transformations that are more suitable for preserving the integrity of ECG data. This approach ensures that the context and meaningful information in ECG signals are retained. In ECG-based representation learning, exploiting both spatial and temporal information in ECG is significant. For instance, if we have an L-lead ECG, it means that cardiac activity is obtained over a duration with L views. Therefore, we can understand a heart complementary when its ECG is gained not only spatially or temporally but spatio-temporally. The most common setting is standard 12-lead ECG (i.e., a heart is observed in 12 views) as shown in Figure 1 , and for some cases, ECG in which its leads are a subset of 12-lead (i.e., reduced lead ECG) is acquired.\nIn this work, we leverage ECG to learn general representations by introducing a simple but effective self-supervised learning framework using MAE architecture. Throughout this process, both temporal and spatial information present in the ECG is utilized. The approach involves applying spatio-temporal patchifying to ECG data, as illustrated in Figure 2 (c), with lead indicators such as lead-wise shared decoder, learnable lead embeddings, and separation embedding, as depicted in Figure 3 . Moreover, we show that our model can be structurally fine-tuned for reduced lead ECG, demonstrating excellent performance not only in the standard 12-lead setting but also in limb leads and single leads. Finally, through quantitative and qualitative analysis, we demonstrated that spatial and temporal features were effectively learned.\nOur contributions are the following.\n(1) We propose the simple but effective ECG-specific generative self-supervised learning framework, named ST-MEM (Spatio-Temporal Masked Electrocardiogram Modeling). (2) ST-MEM can learn general representation by capturing spatio-temporal relationship of ECGs. We show this relationship by quantitative and qualitative analysis. (3) Through extensive experiments, ST-MEM demonstrates comparable performance to other contrastive and generative learning methods, which are widely used in ECG representation learning. We validate that ST-MEM excels in both fine-tuning and linear evaluation for the arrhythmia classification task. This robust performance extends across various scenarios, such as scarcity of labeled data and reduced lead settings. 2 BACKGROUNDS: ECG The ECG is a non-invasive heart measurement to observe the electrical signals over time and diagnose diseases. A standard 12-lead ECG, interpreted as a multivariate time series, is the most Encoder Shared Decoder (Lead-12) Shared Decoder (Lead-2) Shared Decoder (Lead-1) Masking random patches Patchfying Lead embeddings Encoded representations Reconstructed patches Position embeddings Position embeddings common measurement setting that provides spatial and temporal information regarding the heart. As shown in Figure 1 , the 12 leads are I, II, III, aVR, aVL, aVF, V1, V2, V3, V4, V5, and V6, respectively, which are electrical signals measured at different locations of the heart.\nAs we mentioned above, ECG captures both spatio-temporal information. Initially, it provides temporal insights by monitoring the electrical activity of the heart continuously. This is achieved through the detection of voltage fluctuations within the cardiac muscle during each cardiac cycle, which are then represented as waveforms over time. Consequently, it displays multiple cycles of heart electrical activity spanning from one beat to the next. Moreover, ECG is not just a single measurement but rather involves multiple leads. Leads are like different views of the heart's electrical activity from different angles. In a standard 12-lead ECG, there are 12 different leads, each offering a distinct spatial perspective of cardiac electrical activity. The limb leads (I, II, III, aVR, aVL, and aVF) are placed on the arms and legs, providing frontal plane views, and the precordial leads (V1 to V6) are placed on the chest, giving anterior-posterior(or horizontal plane) views.\nAlthough the standard 12-lead ECG remains significant, the utilization of its reduced lead sets should be considered as well. The advancement of mobile devices, such as smartwatches that are capable of ECG measurements, has led to a substantial increase in limb leads and single lead data. Obtaining reduced lead sets like limb leads or a single lead is often preferred. Therefore, in this work, we demonstrate our ECG representation not only on the 12-lead setting but also on reduced lead settings.",
+    "3.1_SELF-SUPERVISED_PRE-TRAINING_WITH_SPATIO-TEMPORAL_MASKED_AUTO-ENCODER": "In this section, we present ST-MEM, a self-supervision framework for general representation learning for ECG. This incorporates the spatio-temporal relationship, which leads to providing enhanced representation. An overview of our proposed method is depicted in Figure 3 .\nMasked auto-encoder with spatio-temporal patchifying. We consider a pre-text task to reconstruct a randomly masked portion of the data. In particular, we adopt an auto-encoder-based reconstruction task, called MAE (He et al., 2022) . It consists of a vision transformer (ViT) encoder (Dosovitskiy et al., 2020) and a decoder with additional transformer blocks.\nConsidering an ECG signal denoted as X ∈ R L×T with L leads and length T , each lth lead signal, represented as X l , is divided into non-overlapping patches defined as P atch l = {P atch l 1 , ..., P atch l n } ∈ R n×p . Here, n is determined by T /p, and p represents the size of each patch. We independently split each lead signal into spatio-temporal patches, as depicted in Figure 2 (c), resulting in a total of L × n patches for a single 12-lead ECG signal.\nPublished as a conference paper at ICLR 2024\nThe patches undergo linear projection to form patch embeddings of dimension D. They are added with a positional embedding, P os ∈ R D , to create a embedding sequence as Z = {Z 1 , ..., Z Ln } ∈ R L×n×D . This embedding sequence becomes the input for the encoder. Since self-attention operations are executed among temporal patches across different leads, the encoder explicitly learns the spatio-temporal relationship within the ECG data. In the pre-training phase, we randomly select indices of embeddings, which are denoted as a masked index set M. After masking the corresponding embeddings, the encoder only receives unmasked embeddings, {Z i } i̸ ∈M , where the number of unmasked embeddings is determined as Ln(1 -m) with a masking proportion m. We set the masking ratio to a value in [0, 1] .\nThe encoded embeddings are fed to the decoder along with a learnable shared mask embedding, defined by M asked ∈ R D . This embedding is employed to reconstruct the patches of the M. The training objective is to minimize the discrepancy between the original raw signal values of the masked patches, {P atch i } i∈M ∈ R L×(nm)×p , and their corresponding reconstructions, { P atch i } i∈M . The loss function is defined as L SSL = 1 Lnm i∈M P atch i -P atch i .\nLead-wise shared decoder. Although spatio-temporal patchifying can have benefits in ECG representation learning, it can be detrimental without careful consideration, especially within the MAE framework. One drawback of spatio-temporal patchifying is that it simplifies the reconstruction task, allowing the decoder to access unmasked embeddings from different leads with identical temporal information. This ease of reconstruction can negatively impact the training of the encoder.\nTo address this issue, we employ a straightforward approach by limiting the decoder to operate on only one lead. We configure the decoder to process the embedding sequence of each lead independently, ensuring that it does not make explicit use of embeddings from other leads during reconstruction. This intentional design choice introduces complexity to the task, motivating the encoders to effectively learn spatio-temporal representations. Additionally, we promote training efficiency by having patch embeddings of each lead share a single decoder.\nLead indicating modules. Merely increasing the difficulty of the reconstruction task may not be sufficient to enable our encoders to learn spatial representations effectively. Specifically, our encoder and decoder may face challenges in differentiating the lead from which the embedding originates. To address this, we introduce additional modules aimed at enhancing the ability to distinguish between leads effectively.\nFirst, we add a lead-specific embedding, denoted as Lead ∈ R D , for every patch embedding. This lead embedding is a function of the originating lead of the patch embedding, ensuring that all patch embeddings originating from the same lead have the same lead embedding. Next, we insert an additional shared embedding, denoted as [SEP ] ∈ R D , which is added before and after each patch embedding sequence. These modules support the model to distinguish between patch embeddings from different leads (i.e., leading the model to learn the relationships between the different leads).",
+    "3.2_DOWNSTREAM_FINE-TUNING": "After pre-training through SSL, we utilize only the encoder for downstream tasks and discard the decoder. We augment the encoder with a basic linear layer, which serves as the classifier head. Subsequently, the encoder, along with the classifier head, is fine-tuned to optimize performance on downstream data across various scenarios.\nECG classification. For a multi-class arrhythmia diagnosis problem with K classes, our model takes the ECG input, encodes it with the encoder, and passes it through the classifier head to calculate logits. The model makes class predictions, ŷ = {ŷ 1 , ..., ŷK }, by applying the softmax function to the logits. These predictions are then compared with the actual one-hot class label y = {y 1 , ..., y K } to minimize the loss function defined as\nL CE = 1 K K c=1 (-y c log(ŷ c )).\nFine-tuning in reduced lead setting. Our model demonstrates robust adaptability, even when there is a discrepancy in the number of leads between datasets used for pre-training and fine-tuning. Firstly, the shape of the input patch fed into our model remains unaffected by the number of leads, making our model agnostic to the number of leads in the input ECG. Additionally, our model learns distinctive characteristics of different leads through the lead-indicating module. As a result, our model is well-suited for reduced lead scenarios such as pre-training on a 12-lead dataset to learn general representations and subsequently fine-tuning on a dataset with fewer leads.",
+    "4_EXPERIMENTAL_SETTINGS": {
+      "4.1_DATASETS": "There are three 12-lead ECG datasets designated for pre-training, along with three other ECG datasets intended for downstream tasks. In the context of pre-training, we leverage the combined power of all three datasets. These datasets consist of Chapman (Zheng et al., 2020b) , Ningbo (Zheng et al., 2020a), and CODE-15 (Ribeiro et al., 2021) . As for the downstream datasets, we used PTB-XL (Wagner et al., 2020) , CPSC2018 (Liu et al., 2018 ), and PhysioNet2017 (Clifford et al., 2017) datasets, where PhysioNet2017 is a single-lead dataset (i.e., lead I dataset) and others are 12-lead ECG datasets. For consistency, we resampled all ECGs, including pre-training and downstream datasets, to 250Hz.\nPre-training datasets. Chapman dataset comprises 10,646 12-lead ECG recordings, each lasting 10 seconds with a sample rate of 500 Hz. Similarly, the Ningbo dataset contains 34,905 12-lead ECG recordings, also 10 seconds in duration and sampled at 500Hz. On the other hand, CODE-15 encompasses 345,779 12-lead ECG recordings from 233,770 patients, with a sample rate of 400 Hz. Within the 345,779 ECGs, 143,328 are 10-second recordings, with the remainder being 7 seconds, and we and we exclusively utilized the 10-second ECGs. In alignment with the PhysioNet 2021 challenge (Reyna et al., 2021) , we removed 399 ECGs from the Chapman dataset. We proceeded to merge these three datasets into a unified dataset for pre-training. This pre-training dataset comprises a total of 188,480 ECGs. Note that, during pre-training, we use all ECGs without focusing on specific labels. Downstream datasets. PTB-XL comprises 21,837 12-lead ECG recordings collected from 18,885 patients, each lasting 10 seconds and sampled at a rate of 500 Hz. This dataset has five distinct labels, including cardiac arrhythmia and myocardial infarction. In the case of CPSC2018, it contains 6,877 12-lead ECG recordings, ranging from 6 seconds to 60 seconds in duration, with a sample rate of 500 Hz. This dataset is characterized by nine different labels associated with cardiac arrhythmia. Lastly, PhysioNet2017 consists of 8,528 ECGs recorded from lead I, with durations spanning from 9 to 60 seconds and sampled at a rate of 200 Hz. This dataset has four cardiac arrhythmia categories. ECGs shorter than 10 seconds are omitted, and for the remaining records, each is cropped into a consistent length of disjointed 10 seconds. These cropped ECG segments are considered individual data points and evaluated independently.",
+      "4.2_BASELINES": "All backbones are fixed as ViT-B (Dosovitskiy et al., 2020) with different patch projection layers corresponding to the patchifying way. We compared our pre-training method to networks initialized randomly (i.e., Supervised) and pre-trained models that learn representation by contrastive learning and generative learning methods. In the realm of contrastive learning, we evaluated both MoCo v3 (Chen et al., 2021) and Contrastive Multi-segment Coding (CMSC) from CLOCS (Kiyasseh et al., 2021) . MoCo v3 encourages the similarity between representations of instances and their augmented counterparts, while CMSC divides an ECG into two temporal segments and encourages the similarity of representations for these segments.\nAdditionally, we examined generative learning methods, specifically Masked Time Autoencoder (MTAE) and Masked Lead Autoencoder (MLAE) from MaeFE (Zhang et al., 2022) . MTAE constructs representations by reconstructing temporal patches as depicted in Figure 2 (a), while MLAE does by reconstructing spatial patches, illustrated in Figure 2 (b ). These models do not have leadindicating modules (e.g., lead-wise decoder, SEP, and lead embeddings) and differ in their approach to patchifying input ECGs. Furthermore, to enhance robustness and adaptation to reduced lead sets, we introduce augmentation Random Lead Masking (RLM) (Oh et al., 2022) to MTAE, resulting in MTAE+RLM.",
+      "_text": "This section provides a brief overview of the datasets utilized in our experiments, as well as the baselines against which our proposed method will be compared. More detailed information regarding the datasets, baselines, and implementation can be found in Appendix A."
+    },
+    "5_EXPERIMENTS_AND_RESULTS": {
+      "5.1_EXPERIMENTAL_RESULTS": "As shown in Table 1 , we evaluate the general ECG representation obtained from each SSL method by conducting both linear evaluation and fine-tuning experiments on unseen datasets (i.e., not used during a pre-training stage). PTB-XL is a task of classifying both myocardial infarction (MI) and cardiac arrhythmia, while CPSC2018 consists of only cardiac arrhythmiafoot_0 . Our proposed method, ST-MEM, shows outperforming performance against other baseline methods. In particular, we achieve a non-trivial margin with others on accuracy, F1, and AUROC scores in the linear evaluation. For instance, the F1 score is increased in the range of 0.064 to 0.366 and 0.292 to 0.561 on both PTB-XL and CPSC2018 datasets. This demonstrates that ST-MEM learns general ECG representation compared to others by explicitly considering both spatial and temporal information for ECG signals. Moreover, we present the applicability of ST-MEM by adapting to each different heart disease task. Although the baseline methods are pre-trained from large ECG datasets, their performance is similar to the supervised learning method, only used with downstream datasets, PTB-XL and CPSC2018. The CMSC pre-training method is even lower than the supervised learning method when we fine-tune the encoder. However, ST-MEM shows consistent outperforming performance on task adaptation, which is fine-tuning on downstream datasets.",
+      "5.2_EFFECTIVENESS_OF_GENERAL_ECG_REPRESENTATION_IN_A_LOW-RESOURCE_SETTING": "The diversity of heart diseases and few experienced cardiologists prevent obtaining abundant labeled ECG data; thus, relying only on supervised learning methods is not a suitable solution for the low-resource problem. We conduct low-resource experiments to demonstrate that general ECG representation can mitigate the scarcity of labeled data. As shown in Table 2 , we first randomly sampled 1% and 5% of data from each dataset. Then, we fine-tune the model for each task. Although the performance of a supervised learning method drops drastically compared to 100% of data, other SSL methods still show comparable performance, which shows the need for general ECG representation learning. However, our proposed method, ST-MEM, surpasses other representation learning methods from all 1% and 5%. Moreover, in CPSC2018, only with 5% of the data, we could achieve a similar performance against 100% of the data result.",
+      "5.3_PERFORMANCE_IN_REDUCED_LEAD_SETTINGS": "12-lead ECG is a standard measurement that provides whole spatial and temporal information regarding the heart. However, measuring precordial leads (i.e., V1 to V6) requires expertise, while limb leads (i.e., I, II, III, aVR, aVL, and aVF) are easily accessible through smart devices such as a smartwatch. Therefore, we need a generally applicable ECG representation that is robust not only for 12 leads but also for any lead combinations. Simple representation learning methods, such as MoCo v3, CMSC, and MTAE, do not consider the robustness of the lead combination; thus, the model requires 12 lead signals during a fine-tuning stage. On the other hand, the random lead masking (RLM) method is one of the approaches to handle any lead combinations since the model can learn the robustness of leads by masking the random leads during the pre-training stage. Our proposed method, ST-MEM, also addresses the lead combination through spatio-temporal patchifying with explicit lead embeddings. Table 3 compares ST-MEM with RLM and MLAE methods on 1lead (I), 6-lead (I, II, III, aVR, aVL, and aVF), and 12-lead. The results demonstrate that ST-MEM is robust to any lead combinations, even in a PhysioNet2017 dataset.",
+      "5.4_ANALYSIS_OF_GENERAL_ECG_REPRESENTATION_LEARNED_FROM_ST-MEM": "Incorporating spatial information in the ECG representation is significant for ECG signals. As shown in Figure 1 , the ECG signals are spatially separated by frontal and horizontal planes; the former indicates the limb leads, while the latter represents the precordial leads. To validate the spatial information for the representation learned from ST-MEM, we visualize the embedding space using t-SNE (Van der Maaten & Hinton, 2008) as depicted in Figure 4 . Each circle indicates the representation of one ECG sample in a particular lead. We utilize the Gaussian mixture model (GMM) (Rasmussen, 1999) to cluster those representations learned from ST-MEM. Interestingly, the samples assigned to a blue cluster are mostly limb leads, I and II, whereas the orange cluster is formed with precordial leads, V2 and V3. This phenomenon demonstrates that the representation learned from ST-MEM incorporates the spatial information of ECG signals. In addition, in Table 4 , we quantitatively measure the inclusiveness of spatial relationships. We first define the samples, Table 5 shows the importance of the lead indication module for ST-MEM. We conduct the linear evaluation in both PTB-XL and CPSC2018 datasets and compute the AU-ROC score. Applying only spatio-temporal patchifying without considering the lead type yields the lowest performance. However, when we include lead-wise shared encoder and each lead indication module (e.g., SEP embedding, and lead embedding), the results of linear evaluation monotonically increase in a CPSC2018 dataset. This demonstrates the effectiveness of spatial information while learning the general ECG representation.",
+      "5.6_INTERPRETATION_OF_ST-MEM_BY_ANALYZING_SELF-ATTENTIONS": "By analyzing self-attention, we could observe that ST-MEM considers the ECG signal spatially and temporally. Figure 5 is an attention map for a single lead III query patch (i.e., red dashed box). Since lead III is spatially located in a frontal plane, the attention scores are generally high for limb leads. This phenomenon explains why the ECG representation is clustered in the frontal or horizontal plane. Moreover, from a temporal perspective, the patches show high attention scores if the signal shape is similar to the query patch in that the ECG signal contains a periodic rhythm. Overall, we could observe that ST-MEM incorporates both a spatial and temporal relationship of ECG signals.\nIn addition, instead of patchifying temporally or spatially, the spatio-temporal patchifying can also benefit the cardiologist in diagnosing heart disease by analyzing the spatio-temporal self-attentions.",
+      "_text": "In this section, we examine the results of our experiments, evaluating them both quantitatively and qualitatively to verify the effectiveness of ST-MEM. Additional experimental results are reported in Appendix B."
+    },
+    "6_RELATED_WORKS": "Our work is closely related to the recent work on self-supervised learning, such as contrastive and generative learning, used widely in computer vision and natural language processing.\nECG on self-supervised learning. Recently, research employing deep learning for ECG analysis has extended to a wide range of tasks, including the diagnosis of cardiac diseases such as arrhythmia classification (Ribeiro et al., 2020; Hu et al., 2022; Jun et al., 2018; Strodthoff et al., 2020) , emotion recognition (Sarkar & Etemad, 2020) , and patient identification (Oh et al., 2022; Li et al., 2020) . Furthermore, self-supervised learning is utilized to learn general representations, with some studies focusing on contrastive learning methods. In contrastive learning, some papers apply concepts such as semantic preservation after data augmentation (Chen et al., 2020; He et al., 2020) , to ECG data (Lai et al., 2023) . Additionally, there is a study on the utilization of temporal invariance and spatial invariance within a single ECG data to preserve semantics (Kiyasseh et al., 2021) . Some research combines CNN and transformer architectures to learn local and global features from ECG data (Oh et al., 2022) . In terms of generative learning, MaeFE (Zhang et al., 2022) applies MAE (He et al., 2022) , which patchifies temporally or spatially for analysis of ECG. Moreover, some studies (Sawano et al., 2022) were conducted by applying spatio-temporal patchifying, shown in Figure 2 (c), to acquire general ECG representation, but without lead-indicating modules, it is challenging to learn the spatial relationship between leads. Challenging on reduced lead ECG. Obtaining a standard 12-lead ECG, however, can be excessive and often requires high-level clinical knowledge (Giannetta et al., 2020 ) that may not be readily available. Therefore, recent advancements in ECG technologies have resulted in the creation of smaller and portable devices that can obtain the reduced lead set of 12lead ECG. This advancement promotes the research to apply a machine learning technique to a reduced lead ECG setting (Kiyasseh et al., 2021; Hannun et al., 2019; Urtnasan et al., 2022; Mathews et al., 2018) . It is worth noting that the reduced-lead ECG dataset is less abundant compared to 12-lead ECG, and there is research dedicated to addressing this limitation. In the context of self-supervised learning, RLM (Oh et al., 2022) was introduced to acquire robust representation to input ECG lead combinations. On the other hand, in Knowledge Distillation approaches, there is a work that utilizes a model pre-trained on 12-lead ECG as a teacher model and introduces a student model that takes a single lead as input (Qin et al., 2023) . This student model leverages the representation from the 12-lead ECG teacher model.",
+    "7_CONCLUSION": "In this work, we propose ST-MEM, Spatio-Temporal Masked Electrocardiogram Modeling, to learn the general ECG representation, generally applicable to diverse ECG problems by incorporating the spatial and temporal relationship of ECG signal. Through extensive experiments, we first demonstrate that ECG representation learned from ST-MEM can exhibit spatial relationships. Since limb leads are measured in the frontal plane, while precordial leads are in the horizontal plane, each representation from ST-MEM reflects that spatial information. Second, we observe the temporal relationship through an attention map. Third, we evaluate the general ECG representation in various experiments, such as reduced lead and low-resource settings. We believe that our work, providing general ECG representation encapsulating the spatio-temporal relationship, can benefit the recent healthcare industry. As part of our future work, we aim to explore the application of ST-MEM to general multivariate time-series datasets. Our experimental results on the human activity recognition (Anguita et al., 2013) task can be found in Appendix C. Moreover, we will explore the various transfer learning approaches (e.g., partially fine-tuning the pre-trained model (He et al., 2022) ) to adapt to downstream tasks using general ECG representation instead of naively fine-tuning the model.\nOur code encompasses the implementation of ST-MEM and several other baselines written in Python. Furthermore, we furnish the pre-trained model parameters to facilitate others in fine-tuning the model and achieving reproducible results. Moreover, comprehensive details on training hyperparameters, schemes, and hardware specifications are provided. While we provide just one downstream dataset, PTB-XL, already preprocessed and partitioned into train, validation, and test sets, we ensure access to all additional datasets via provided links.\n8.1 CODES The codes will be available at https://github.com/bakqui/ST-MEM. Please read the 'README.md' file and follow the instructions. 8.2 HYPERPARAMETERS All details in pre-training, fine-tuning, and linear evaluation can be found in Appendix A.1. It includes basic hyperparameters such as epochs, batch size, and optimizer. 8.3 DATASETS In Secion 4.1, there is all the information of datasets including the number of ECGs, the number of patients, sample rate, and its duration.\nMoreover, all ECG data are resampled to 250 Hz, and additional information can be found in Appendix A.2. Moreover, one of the downstream datasets, PTB-XL, separated into the train, valid, and test datasets, can be downloaded from the link in our codes (README.md).\nAlthough only preprocessed PTB-XL is given, all raw data can be downloaded from the below links:\n• PTB-XL, Chapman, Ningbo and CPSC2018 : https://physionet.org/content/ challenge-2021/1.0.3/ • CODE-15 : https://zenodo.org/record/4916206#.YUG9MStxeUl \n• PhysioNet2017 : https://physionet.org/content/challenge-2017/1. 0.0/ Ningbo and Chapman can be downloaded together in PhysioNet Challenge 2021 (45,152 ECG recordings). For CODE-15, as we mentioned in Secion 4.1, ECGs with a duration of less than 10 seconds should be dropped out, and there are some zero padding at the start and end of the recordings, these zero-paddings should be stripped out. to an ECG may introduce distortion, altering the original morphology of the signal. Consequently, these changes can lead to the misinterpretation of the ECG, potentially affecting the accuracy of diagnoses and analyses. In terms of contrastive learning, the distortion of semantic information makes it inappropriate to define positive or negative pairs. Therefore, we pre-train MoCo v3 using the remaining four augmentations (erase, drop, cutout, and partial noise) and compared the results with experiments using the original eight augmentations. After pre-training on the same 12-lead dataset as outlined in the paper, we fine-tune the model on 12-lead ECGs from PTB-XL and CPSC2018, with the results presented in Table 14 . Using all eight augmentations performed better than using only four augmentations for all settings except for fine-tuning the model on PTB-XL. A critical point emphasized here is the challenge of selecting augmentations when working with ECG signals. This complexity highlights our preference for generative learning (masking and reconstructing) over contrastive learning which needs to select and use proper augmentations."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "A public domain dataset for human activity recognition using smartphones",
+      "authors": [
+        {
+          "first": "Davide",
+          "middle": [],
+          "last": "Anguita",
+          "suffix": ""
+        },
+        {
+          "first": "Alessandro",
+          "middle": [],
+          "last": "Ghio",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Oneto",
+          "suffix": ""
+        },
+        {
+          "first": "Xavier",
+          "middle": [],
+          "last": "Parra",
+          "suffix": ""
+        },
+        {
+          "first": "Jorge",
+          "middle": [],
+          "last": "Luis Reyes-Ortiz",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Esann"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Language models are few-shot learners",
+      "authors": [
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Nick",
+          "middle": [],
+          "last": "Ryder",
+          "suffix": ""
+        },
+        {
+          "first": "Melanie",
+          "middle": [],
+          "last": "Subbiah",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [
+            "D"
+          ],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Arvind",
+          "middle": [],
+          "last": "Neelakantan",
+          "suffix": ""
+        },
+        {
+          "first": "Pranav",
+          "middle": [],
+          "last": "Shyam",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proc. of the Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Emerging properties in self-supervised vision transformers",
+      "authors": [
+        {
+          "first": "Mathilde",
+          "middle": [],
+          "last": "Caron",
+          "suffix": ""
+        },
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Ishan",
+          "middle": [],
+          "last": "Misra",
+          "suffix": ""
+        },
+        {
+          "first": "Hervé",
+          "middle": [],
+          "last": "Jégou",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Mairal",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Bojanowski",
+          "suffix": ""
+        },
+        {
+          "first": "Armand",
+          "middle": [],
+          "last": "Joulin",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proc. of the IEEE conference on computer vision and pattern recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "A simple framework for contrastive learning of visual representations",
+      "authors": [
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Kornblith",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Norouzi",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proc. of the International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "An empirical study of training self-supervised vision transformers",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proc. of the IEEE international conference on computer vision (ICCV)"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Af classification from a short single lead ecg recording: The physionet/computing in cardiology challenge",
+      "authors": [
+        {
+          "first": "Chengyu",
+          "middle": [],
+          "last": "Gari D Clifford",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Moody",
+          "suffix": ""
+        },
+        {
+          "first": "Ikaro",
+          "middle": [],
+          "last": "Lehman Li-Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Qiao",
+          "middle": [],
+          "last": "Silva",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Roger",
+          "middle": [
+            "G"
+          ],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mark",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Computing in Cardiology (CinC)"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "An image is worth 16x16 words: Transformers for image recognition at scale",
+      "authors": [
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Dosovitskiy",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Kolesnikov",
+          "suffix": ""
+        },
+        {
+          "first": "Dirk",
+          "middle": [],
+          "last": "Weissenborn",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Zhai",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "Mostafa",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Minderer",
+          "suffix": ""
+        },
+        {
+          "first": "Georg",
+          "middle": [],
+          "last": "Heigold",
+          "suffix": ""
+        },
+        {
+          "first": "Sylvain",
+          "middle": [],
+          "last": "Gelly",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proc. of the International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Accuracy and knowledge in 12-lead ecg placement among nursing students and nurses: A web-based italian study",
+      "authors": [
+        {
+          "first": "Noemi",
+          "middle": [],
+          "last": "Giannetta",
+          "suffix": ""
+        },
+        {
+          "first": "Giuseppe",
+          "middle": [],
+          "last": "Campagna",
+          "suffix": ""
+        },
+        {
+          "first": "Flavio",
+          "middle": [],
+          "last": "Di Muzio",
+          "suffix": ""
+        },
+        {
+          "first": "Emanuele",
+          "middle": [],
+          "last": "Di Simone",
+          "suffix": ""
+        },
+        {
+          "first": "Sara",
+          "middle": [],
+          "last": "Dionisi",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [
+            "Di"
+          ],
+          "last": "Muzio",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Acta Bio Medica: Atenei Parmensis"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "3kg: Contrastive learning of 12-lead electrocardiograms using physiologically-inspired augmentations",
+      "authors": [
+        {
+          "first": "Bryan",
+          "middle": [],
+          "last": "Gopal",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Gautham",
+          "middle": [],
+          "last": "Raghupathi",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Ng",
+          "suffix": ""
+        },
+        {
+          "first": "Geoff",
+          "middle": [],
+          "last": "Tison",
+          "suffix": ""
+        },
+        {
+          "first": "Pranav",
+          "middle": [],
+          "last": "Rajpurkar",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Machine Learning for Health"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Bootstrap your own latent-a new approach to self-supervised learning",
+      "authors": [
+        {
+          "first": "Jean-Bastien",
+          "middle": [],
+          "last": "Grill",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Strub",
+          "suffix": ""
+        },
+        {
+          "first": "Florent",
+          "middle": [],
+          "last": "Altché",
+          "suffix": ""
+        },
+        {
+          "first": "Corentin",
+          "middle": [],
+          "last": "Tallec",
+          "suffix": ""
+        },
+        {
+          "first": "Pierre",
+          "middle": [],
+          "last": "Richemond",
+          "suffix": ""
+        },
+        {
+          "first": "Elena",
+          "middle": [],
+          "last": "Buchatskaya",
+          "suffix": ""
+        },
+        {
+          "first": "Carl",
+          "middle": [],
+          "last": "Doersch",
+          "suffix": ""
+        },
+        {
+          "first": "Bernardo",
+          "middle": [],
+          "last": "Avila Pires",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaohan",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Gheshlaghi Azar",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proc. of the Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Automated detection of acute myocardial infarction using asynchronous electrocardiogram signals-preview of implementing artificial intelligence with multichannel electrocardiographs obtained from smartwatches: retrospective study",
+      "authors": [
+        {
+          "first": "Changho",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Youngjae",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Hong-Seok",
+          "middle": [],
+          "last": "Lim",
+          "suffix": ""
+        },
+        {
+          "first": "Yunwon",
+          "middle": [],
+          "last": "Tae",
+          "suffix": ""
+        },
+        {
+          "first": "Jong-Hwan",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "Byeong",
+          "middle": [],
+          "last": "Tak Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Yeha",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Woong",
+          "middle": [],
+          "last": "Bae",
+          "suffix": ""
+        },
+        {
+          "first": "Dukyong",
+          "middle": [],
+          "last": "Yoon",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Journal of Medical Internet Research"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Cardiologist-level arrhythmia detection and classification in ambulatory electrocardiograms using a deep neural network",
+      "authors": [
+        {
+          "first": "Pranav",
+          "middle": [],
+          "last": "Awni Y Hannun",
+          "suffix": ""
+        },
+        {
+          "first": "Masoumeh",
+          "middle": [],
+          "last": "Rajpurkar",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "H"
+          ],
+          "last": "Haghpanahi",
+          "suffix": ""
+        },
+        {
+          "first": "Codie",
+          "middle": [],
+          "last": "Tison",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bourn",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Mintu",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "Y"
+          ],
+          "last": "Turakhia",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ng",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Nature Medicine"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Momentum contrast for unsupervised visual representation learning",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Haoqi",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxin",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Saining",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proc. of the IEEE conference on computer vision and pattern recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Masked autoencoders are scalable vision learners",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xinlei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Saining",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Yanghao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Girshick",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proc. of the IEEE conference on computer vision and pattern recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "A transformer-based deep neural network for arrhythmia detection using continuous ecg signals",
+      "authors": [
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Computers in Biology and Medicine"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Spatiotemporal self-supervised representation learning from multilead ecg signals",
+      "authors": [
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Biomedical Signal Processing and Control"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Self-supervised visual feature learning with deep neural networks: A survey",
+      "authors": [
+        {
+          "first": "Longlong",
+          "middle": [],
+          "last": "Jing",
+          "suffix": ""
+        },
+        {
+          "first": "Yingli",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Ecg arrhythmia classification using a 2-d convolutional neural network",
+      "authors": [
+        {
+          "first": "Tae",
+          "middle": [],
+          "last": "Joon",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Hoang",
+          "suffix": ""
+        },
+        {
+          "first": "Minh",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "Daeyoun",
+          "middle": [],
+          "last": "Kang",
+          "suffix": ""
+        },
+        {
+          "first": "Dohyeun",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Daeyoung",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Young-Hak",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Bert: Pre-training of deep bidirectional transformers for language understanding",
+      "authors": [
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Devlin",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Wei",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Kenton",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Lee",
+          "middle": [],
+          "last": "Kristina",
+          "suffix": ""
+        },
+        {
+          "first": "Toutanova",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proc. of The Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL)"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Clocs: Contrastive learning of cardiac signals across space, time, and patients",
+      "authors": [
+        {
+          "first": "Dani",
+          "middle": [],
+          "last": "Kiyasseh",
+          "suffix": ""
+        },
+        {
+          "first": "Tingting",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "A"
+          ],
+          "last": "Clifton",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proc. of the International Conference on Machine Learning (ICML)"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Practical intelligent diagnostic algorithm for wearable 12-lead ecg via self-supervised learning on large-scale dataset",
+      "authors": [
+        {
+          "first": "Jiewei",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "Huixin",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Jinliang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Baoshi",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Yajun",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Qianjin",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Nature Communications"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Intra-inter subject self-supervised learning for multivariate cardiac signals",
+      "authors": [
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Lan",
+          "suffix": ""
+        },
+        {
+          "first": "Dianwen",
+          "middle": [],
+          "last": "Ng",
+          "suffix": ""
+        },
+        {
+          "first": "Shenda",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Mengling",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proc. of the AAAI Conference on Artificial Intelligence (AAAI)"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Towards better time series contrastive learning: A dynamic bad pair mining approach",
+      "authors": [
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Lan",
+          "suffix": ""
+        },
+        {
+          "first": "Hanshu",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Shenda",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Mengling",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "scl-st: Supervised contrastive learning with semantic transformations for multiple lead ecg arrhythmia classification",
+      "authors": [
+        {
+          "first": "Duc",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "Sang",
+          "middle": [],
+          "last": "Truong",
+          "suffix": ""
+        },
+        {
+          "first": "Patel",
+          "middle": [],
+          "last": "Brijesh",
+          "suffix": ""
+        },
+        {
+          "first": "Donald",
+          "middle": [],
+          "last": "Adjeroh",
+          "suffix": ""
+        },
+        {
+          "first": "Ngan",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE Journal of Biomedical and Health Informatics"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Using the apple watch to record multiple-lead electrocardiograms in detecting myocardial infarction: Where are we now?",
+      "authors": [
+        {
+          "first": "Ke",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Abdelmotagaly",
+          "middle": [],
+          "last": "Elgalad",
+          "suffix": ""
+        },
+        {
+          "first": "Cristiano",
+          "middle": [],
+          "last": "Cardoso",
+          "suffix": ""
+        },
+        {
+          "first": "Emerson",
+          "middle": [
+            "C"
+          ],
+          "last": "Perin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Texas Heart Institute Journal"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Toward improving ecg biometric identification using cascaded convolutional neural networks",
+      "authors": [
+        {
+          "first": "Yazhao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yanwei",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "Kongqiao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xuelong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Neurocomputing"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "An open access database for evaluating the algorithms of electrocardiogram rhythm and morphology abnormality detection",
+      "authors": [
+        {
+          "first": "Feifei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Chengyu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Lina",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoling",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoyan",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Yulin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Caiyun",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Shoushui",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiqiang",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Journal of Medical Imaging and Health Informatics"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "A novel application of deep learning for single-lead ecg classification",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Sherin",
+          "suffix": ""
+        },
+        {
+          "first": "Chandra",
+          "middle": [],
+          "last": "Mathews",
+          "suffix": ""
+        },
+        {
+          "first": "Kenneth",
+          "middle": [
+            "E"
+          ],
+          "last": "Kambhamettu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Barner",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Computers in Biology and Medicine"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Self-supervised representation learning from 12-lead ecg data",
+      "authors": [
+        {
+          "first": "Temesgen",
+          "middle": [],
+          "last": "Mehari",
+          "suffix": ""
+        },
+        {
+          "first": "Nils",
+          "middle": [],
+          "last": "Strodthoff",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Computers in Biology and Medicine"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Data augmentation for electrocardiogram classification with deep neural network",
+      "authors": [
+        {
+          "first": "Naoki",
+          "middle": [],
+          "last": "Nonaka",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Seita",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Leadagnostic self-supervised learning for local and global representations of electrocardiogram",
+      "authors": [
+        {
+          "first": "Jungwoo",
+          "middle": [],
+          "last": "Oh",
+          "suffix": ""
+        },
+        {
+          "first": "Hyunseung",
+          "middle": [],
+          "last": "Chung",
+          "suffix": ""
+        },
+        {
+          "first": "Joon-Myoung",
+          "middle": [],
+          "last": "Kwon",
+          "suffix": ""
+        },
+        {
+          "first": "Dong-Gyun",
+          "middle": [],
+          "last": "Hong",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proc. of Conference on Health, Inference, and Learning (CHIL)"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Representation learning with contrastive predictive coding",
+      "authors": [
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Van Den Oord",
+          "suffix": ""
+        },
+        {
+          "first": "Yazhe",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Oriol",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "What do selfsupervised vision transformers learn?",
+      "authors": [
+        {
+          "first": "Namuk",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Wonjae",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Byeongho",
+          "middle": [],
+          "last": "Heo",
+          "suffix": ""
+        },
+        {
+          "first": "Taekyung",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Sangdoo",
+          "middle": [],
+          "last": "Yun",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proc. of the International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Mvkt-ecg: Efficient single-lead ecg classification on multi-label arrhythmia by multi-view knowledge transferring",
+      "authors": [
+        {
+          "first": "Yuzhen",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Hui",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Wei-Qiang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenming",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Jintao",
+          "middle": [],
+          "last": "Fei",
+          "suffix": ""
+        },
+        {
+          "first": "Guijin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "The infinite gaussian mixture model",
+      "authors": [
+        {
+          "first": "Carl",
+          "middle": [],
+          "last": "Rasmussen",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": "Proc. of the Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Will two do? varying dimensions in electrocardiography: the physionet/computing in cardiology challenge 2021",
+      "authors": [
+        {
+          "first": "Nadi",
+          "middle": [],
+          "last": "Matthew A Reyna",
+          "suffix": ""
+        },
+        {
+          "first": "Erick",
+          "middle": [
+            "A"
+          ],
+          "last": "Sadr",
+          "suffix": ""
+        },
+        {
+          "first": "Annie",
+          "middle": [],
+          "last": "Perez Alday",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Amit",
+          "suffix": ""
+        },
+        {
+          "first": "Chad",
+          "middle": [],
+          "last": "Shah",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Robichaux",
+          "suffix": ""
+        },
+        {
+          "first": "Andoni",
+          "middle": [],
+          "last": "Bahrami Rad",
+          "suffix": ""
+        },
+        {
+          "first": "Salman",
+          "middle": [],
+          "last": "Elola",
+          "suffix": ""
+        },
+        {
+          "first": "Sardar",
+          "middle": [],
+          "last": "Seyedi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ansari",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Computing in Cardiology (CinC)"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Code-15%: A large scale annotated dataset of 12-lead ecgs",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [
+            "M"
+          ],
+          "last": "Ah Ribeiro",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "M"
+          ],
+          "last": "Paixao",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Lima",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Zenodo"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Automatic diagnosis of the 12-lead ecg using a deep neural network",
+      "authors": [
+        {
+          "first": "Manoel",
+          "middle": [],
+          "last": "Antônio H Ribeiro",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriela",
+          "middle": [
+            "Mm"
+          ],
+          "last": "Horta Ribeiro",
+          "suffix": ""
+        },
+        {
+          "first": "Derick",
+          "middle": [
+            "M"
+          ],
+          "last": "Paixão",
+          "suffix": ""
+        },
+        {
+          "first": "Paulo",
+          "middle": [
+            "R"
+          ],
+          "last": "Oliveira",
+          "suffix": ""
+        },
+        {
+          "first": "Jéssica",
+          "middle": [
+            "A"
+          ],
+          "last": "Gomes",
+          "suffix": ""
+        },
+        {
+          "first": "Milton Ps",
+          "middle": [],
+          "last": "Canazart",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ferreira",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "W"
+          ],
+          "last": "Carl R Andersson",
+          "suffix": ""
+        },
+        {
+          "first": "Wagner",
+          "middle": [],
+          "last": "Macfarlane",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Meira",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature Communications"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Self-supervised ecg representation learning for emotion recognition",
+      "authors": [
+        {
+          "first": "Pritam",
+          "middle": [],
+          "last": "Sarkar",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Etemad",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE Transactions on Affective Computing (TAC)"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Masked autoencoder-based self-supervised learning for electrocardiograms to detect left ventricular systolic dysfunction",
+      "authors": [
+        {
+          "first": "Shinnosuke",
+          "middle": [],
+          "last": "Sawano",
+          "suffix": ""
+        },
+        {
+          "first": "Satoshi",
+          "middle": [],
+          "last": "Kodera",
+          "suffix": ""
+        },
+        {
+          "first": "Hirotoshi",
+          "middle": [],
+          "last": "Takeuchi",
+          "suffix": ""
+        },
+        {
+          "first": "Issei",
+          "middle": [],
+          "last": "Sukeda",
+          "suffix": ""
+        },
+        {
+          "first": "Susumu",
+          "middle": [],
+          "last": "Katsushika",
+          "suffix": ""
+        },
+        {
+          "first": "Issei",
+          "middle": [],
+          "last": "Komuro",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "NeurIPS 2022 Workshop on Learning from Time Series for Health"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Artificial intelligence-enhanced electrocardiography in cardiovascular disease management",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Konstantinos",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "A"
+          ],
+          "last": "Siontis",
+          "suffix": ""
+        },
+        {
+          "first": "Zachi",
+          "middle": [
+            "I"
+          ],
+          "last": "Noseworthy",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [
+            "A"
+          ],
+          "last": "Attia",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Friedman",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Nature Reviews Cardiology"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Analysis of augmentations for contrastive ecg representation learning",
+      "authors": [
+        {
+          "first": "Sahar",
+          "middle": [],
+          "last": "Soltanieh",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Etemad",
+          "suffix": ""
+        },
+        {
+          "first": "Javad",
+          "middle": [],
+          "last": "Hashemi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proc. of International Joint Conference on Neural Networks (IJCNN)"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Deep learning for ecg analysis: Benchmarks and insights from ptb-xl",
+      "authors": [
+        {
+          "first": "Nils",
+          "middle": [],
+          "last": "Strodthoff",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Wagner",
+          "suffix": ""
+        },
+        {
+          "first": "Tobias",
+          "middle": [],
+          "last": "Schaeffter",
+          "suffix": ""
+        },
+        {
+          "first": "Wojciech",
+          "middle": [],
+          "last": "Samek",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE Journal of Biomedical and Health Informatics (JBHI)"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Deep learning for automatic detection of periodic limb movement disorder based on electrocardiogram signals",
+      "authors": [
+        {
+          "first": "Erdenebayar",
+          "middle": [],
+          "last": "Urtnasan",
+          "suffix": ""
+        },
+        {
+          "first": "Jong-Uk",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Jung-Hun",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Sang-Baek",
+          "middle": [],
+          "last": "Koh",
+          "suffix": ""
+        },
+        {
+          "first": "Kyoung-Joung",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Diagnostics"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Visualizing data using t-sne",
+      "authors": [
+        {
+          "first": "Laurens",
+          "middle": [],
+          "last": "Van Der Maaten",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Journal of Machine Learning Research (JMLR)"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Ptb-xl, a large publicly available electrocardiography dataset",
+      "authors": [
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Wagner",
+          "suffix": ""
+        },
+        {
+          "first": "Nils",
+          "middle": [],
+          "last": "Strodthoff",
+          "suffix": ""
+        },
+        {
+          "first": "Ralf-Dieter",
+          "middle": [],
+          "last": "Bousseljot",
+          "suffix": ""
+        },
+        {
+          "first": "Dieter",
+          "middle": [],
+          "last": "Kreiseler",
+          "suffix": ""
+        },
+        {
+          "first": "Fatima",
+          "middle": [
+            "I"
+          ],
+          "last": "Lunze",
+          "suffix": ""
+        },
+        {
+          "first": "Wojciech",
+          "middle": [],
+          "last": "Samek",
+          "suffix": ""
+        },
+        {
+          "first": "Tobias",
+          "middle": [],
+          "last": "Schaeffter",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Scientific Data"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Contrastive heartbeats: Contrastive learning for self-supervised ecg representation and phenotyping",
+      "authors": [
+        {
+          "first": "Crystal T",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-En",
+          "middle": [],
+          "last": "Hsieh",
+          "suffix": ""
+        },
+        {
+          "first": "Chien-Liang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Vincent",
+          "middle": [
+            "S"
+          ],
+          "last": "Tseng",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proc. of International Conference on Acoustics, Speech, and Signal Processing (ICASSP)"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Simmim: A simple framework for masked image modeling",
+      "authors": [
+        {
+          "first": "Zhenda",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yue",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Yutong",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Jianmin",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhuliang",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proc. of the IEEE conference on computer vision and pattern recognition (CVPR)"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Maefe: Masked autoencoders family of electrocardiogram for self-supervised pretraining and transfer learning",
+      "authors": [
+        {
+          "first": "Huaicheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenhan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiguang",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Sheng",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jin",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Qijun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE Transactions on Instrumentation and Measurement (TIM)"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Optimal multi-stage arrhythmia classification approach",
+      "authors": [
+        {
+          "first": "Jianwei",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Huimin",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "Daniele",
+          "middle": [],
+          "last": "Struppa",
+          "suffix": ""
+        },
+        {
+          "first": "Jianming",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sir",
+          "middle": [],
+          "last": "Magdi Yacoub",
+          "suffix": ""
+        },
+        {
+          "first": "Hesham",
+          "middle": [],
+          "last": "El-Askary",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Louis",
+          "middle": [],
+          "last": "Ehwerhemuepha",
+          "suffix": ""
+        },
+        {
+          "first": "Islam",
+          "middle": [],
+          "last": "Abudayyeh",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Barrett",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Scientific Reports"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "A 12-lead electrocardiogram database for arrhythmia research covering more than 10,000 patients",
+      "authors": [
+        {
+          "first": "Jianwei",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Jianming",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sidy",
+          "middle": [],
+          "last": "Danioko",
+          "suffix": ""
+        },
+        {
+          "first": "Hai",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Hangyuan",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Cyril",
+          "middle": [],
+          "last": "Rakovski",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Scientific Data"
+    }
+  ]
+}

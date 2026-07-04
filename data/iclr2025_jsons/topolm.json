@@ -1,0 +1,2245 @@
+{
+  "paper_id": "topolm",
+  "title": "TOPOLM: BRAIN-LIKE SPATIO-FUNCTIONAL ORGANI-ZATION IN A TOPOGRAPHIC LANGUAGE MODEL",
+  "authors": [
+    {
+      "first": "Neil",
+      "middle": [],
+      "last": "Rathi",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Stanford University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Johannes",
+      "middle": [],
+      "last": "Mehrer",
+      "affiliation": {}
+    },
+    {
+      "first": "Badr",
+      "middle": [],
+      "last": "Alkhamissi",
+      "affiliation": {}
+    },
+    {
+      "first": "Taha",
+      "middle": [],
+      "last": "Binhuraib",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Georgia Institute of Technology",
+        "location": {}
+      }
+    },
+    {
+      "first": "Nicholas",
+      "middle": [
+        "M"
+      ],
+      "last": "Blauch",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Harvard University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Martin",
+      "middle": [],
+      "last": "Schrimpf",
+      "affiliation": {}
+    },
+    {
+      "first": "",
+      "middle": [],
+      "last": "Epfl",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "Neurons in the brain are spatially organized such that neighbors on tissue often exhibit similar response profiles. In the human language system, experimental studies have observed clusters for syntactic and semantic categories, but the mechanisms underlying this functional organization remain unclear. Here, building on work from the vision literature, we develop TopoLM, a transformer language model with an explicit two-dimensional spatial representation of model units. By combining a next-token prediction objective with a spatial smoothness loss, representations in this model assemble into clusters that correspond to semantically interpretable groupings of text and closely match the functional organization in the brain's language system. TopoLM successfully predicts the emergence of a spatially organized cortical language system as well as the organization of functional clusters selective for fine-grained linguistic features empirically observed in human cortex. Our results suggest that the functional organization of the human language system is driven by a unified spatial objective, and provide a functionally and spatially aligned model of language processing in the brain.",
+  "body": {
+    "1_INTRODUCTION": "Artificial neural network (ANN) models of language have recently been shown to accurately predict neural activity in the human language system (Schrimpf et al., 2021; Caucheteux & King, 2022; Goldstein et al., 2022) . When presented with the same text input, the unit activity at internal layers of especially transformer-based models (Vaswani et al., 2017; Radford et al., 2019) is strikingly similar to the internal activity measured experimentally in human cortex. The most powerful models predict even close to 100% of the explainable variance of neural responses to sentences in some brain datasets (Schrimpf et al., 2021) . However, while there is a strong alignment to the brain's functional responses, a crucial element of cortex is entirely lacking from today's language models: the spatial arrangement of neurons on the cortical surface.\nIn recent models of the visual system, the introduction of topography has led to ANNs that begin to match brain activity functionally as well as spatially (Lee et al., 2020; Margalit et al., 2024; Keller et al., 2021; Blauch et al., 2022; Lu et al., 2023) . These models provide a principle for understanding the development of spatial organization in the brain, in the form of minimizing wiring cost, such that neurons with similar response profiles tend to cluster together. These clusters resemble the spatiofunctional organization in the early cortex with orientation preferences such as pinwheels (Hubel & Wiesel, 1962; 1968; Maunsell & Newsome, 1987; Felleman & Van Essen, 1991) , and in higher-level visual regions with category-selective regions such as face patches (Kanwisher et al., 1997; Haxby et al., 2001; Tsao et al., 2003; 2006; 2008; Freiwald et al., 2009) .\nThe topography of the human language system on the other hand lacks a comprehensive computational explanation. Neuroscience experiments suggest both a macro-organization at the level of a distributed cortical network that selectively responds to linguistic processing (Fedorenko et al., 2010; 2011; 2024; Blank et al., 2014) , as well as a micro-organization into clusters that correspond At each forward pass, we randomly select five neighborhoods in each layer (of which we here only show 3 for clearity) and compute the pairwise correlation of unit activations within each neighborhood. The spatial loss is computed by comparing these correlations to the inverse distances between associated unit pairs, with the final loss averaged across units pairs and neighborhoods. Computing the loss on cortical neighborhoods is an efficient approximation of the spatial loss. (c) We use a FWHM filter to simulate the fMRI sampling process such that a simulated voxel's response ('fMRI-like signal') is composed of a combination of responses from neighboring units (Kriegeskorte et al., 2010) . We simulate the response as a Gaussian random variable, with FWHM 2.0 mm, assuming unit distances of 1.0 mm.\nto syntactic and semantic categories such as verbs, nouns, and concrete words (Shapiro et al., 2006; Moseley & Pulvermüller, 2014; Hauptman et al., 2024) . What are the mechanisms underlying this spatio-functional organization of the language system in the brain?\nHere, we develop TopoLM, a neural network model for brain-like topographic language processing. TopoLM is based on the transformer architecture but incorporates an explicit spatial arrangement of units. We train the model via a combined task and spatial loss, which optimizes the model to perform autoregressive language modeling while encouraging local correlation, similarly to a recent approach used in vision (Lee et al., 2020; Margalit et al., 2024) . The spatio-functional organization that emerges in this model is semantically interpretable and aligned with clusters that have been observed experimentally in brain recordings. Comparing TopoLM with a non-topographic baseline model (i.e. one trained without spatial loss) on a series of benchmarks, we show that while TopoLM achieves slightly lower scores on some behavioral tasks (BLiMP), its performance on other downstream tasks (GLUE) and on brain alignment benchmarks (using the Brain-Score platform) is on par with the non-topographic control.\nImportantly, this spatio-functional organization arises purely as a result of the combined task and spatial loss, as the model is trained solely on naturalistic text without fitting to brain data. This work thus extends the principle of cortical response smoothness proposed in vision (Margalit et al., 2024 ) into the language system, providing a unified explanation for understanding the functional organization of cortex.",
+    "3_MODEL_DESIGN_AND_VISUALIZATION": "Instead of the convolutional neural network architecture used in topographic vision models (Margalit et al., 2024) , we use the Transformer architecture (Vaswani et al., 2017) which is dominant in language modeling. We augment the objective function with a spatial correlation loss, in addition to the cross-entropy task loss. This loss function measures spatial smoothness, which serves as an efficiently computable proxy for neural wiring length: neurons located close to one another should have similar response profiles-i.e. their activations should be correlated (Lee et al., 2020) .\nTo introduce a notion of 'space' in the model, we bijectively map the units of each attention layer and MLP to a square grid. We randomly permute these positions for each layer such that each layer has a unique spatial encoding. 2 On each forward pass, we first compute the pairwise Pearson's correlation vector r k between unit activations on the input batch for each layer k (see Figure 1B ). If a layer has N units, r is of dimension nCr(N, 2). Then, the spatial loss for layer k is given by\nEQUATION\nwhere d k is a vector of pairwise inverse distances between units, based on their spatial encoding, and corr is Pearson's r. This means that nearby units (i.e. high inverse distance) should have highly correlated activations on the same inputs, and that distant units should be less correlated; this gives us a notion of spatial smoothness. We scale by a factor of 0.5 to ensure that SL ∈ [0, 1].\nWe compute this spatial loss for every attention and MLP layer in a Transformer, prior to normalization and addition into the residual stream. Rather than computing the spatial loss for the entire layer, as in Margalit et al. (2024) we approximate the loss using small neighborhoods, ensuring that the model optimizes for local, rather than global 'long-distance' constraints. 3 For each batch of inputs, the model is then optimized subject to the loss criterion\nEQUATION\nwhere TL is the task loss and α k is the relative weight of the spatial loss associated with layer k. This combined loss metric encourages the model to learn representations that are both spatially organized and useful (and, in the case of self-supervised cross-entropy task loss, task-general).",
+    "4_SPATIO-FUNCTIONAL_ORGANIZATION_OF_THE_CORE_LANGUAGE_SYSTEM": "Language processing in the brain engages a set of left-lateralized frontal and temporal brain regions. These areas are typically referred to as the 'core language system' (Fedorenko et al., 2010) and respond selectively to linguistic input in contrast to non-linguistic stimuli (see Fedorenko et al., 2024 , for an overview). Due to anatomical differences between individuals, the language system is defined via a functional localizer that contrasts syntactically and semantically valid sentences against a perceptually matched control, such as strings of nonwords (Fedorenko et al., 2011) .\nWithin individuals, the core language system shows clear spatio-functional organization, wherein language selective neurons cluster together across multiple cortical lobes. Anatomically distinct subregions of this system exhibit highly consistent response profiles to stimuli, suggesting that the system operates as a network (e.g. Fedorenko et al., 2011; Tuckute et al., 2024) (Figure 2B ).\nPrior work on neural alignment in language models typically compares neural responses across the entire core language system of the brain to model activations. The topographic organization of our model enables us to test for the emergence of a brain-like spatially organized core language system in silico. A successful spatio-functional alignment between brain and model would mean that (1) distinct language-selective clusters emerge in the model, (2) these clusters all have consistent response profiles similar to consistent response profiles across sub-regions of the 'core language system' in humansfoot_5 , and (3) the response profiles match the activity profiles in the brain (sentences > {unconnected words, jabberwocky} > nonwords; AlKhamissi et al., 2024).",
+    "5_SPATIO-FUNCTIONAL_ORGANIZATION_OF_SEMANTIC_CLUSTERS": {
+      "5.1_CLUSTERS_SELECTIVE_FOR_VERBS_AND_NOUNS": "Neuroimaging Study. Using fMRI data from Hauptman et al. (2024) (Appendix B), we find verband noun-selective clusters in the left hemisphere (Figure 3A and Appendix Figure 7 ), thus replicating their results. To quantify the 'degree' of clustering in these maps, we use Moran's I with In all the presented cases, spatial autocorrelation is computed on un-thresholded maps (for all layers, see Figure 11 ). Following neuroimaging conventions on defining category-selective cortical clusters, we show model maps thresholded at p(FDR) < 0.05.\nQueen contiguity (i.e. ℓ ∞ radius, following the distance metric used to train TopoLM), a common measure of spatial autocorrelation, ranging from -1 to 1 (see Appendix A for details). The group level effects indicate strong clustering (I = 0.96, p < 0.001).",
+      "5.2_CLUSTERS_SELECTIVE_FOR_CONCRETE,_BUT_NOT_ABSTRACT_VERB-NOUN_CONTRASTS": "Neuroimaging Study. Moseley & Pulvermüller (2014) focus on how cortical noun-verb selectivity relates to semantics, in particular focusing on concreteness. Examining specific anatomically defined brain regions in fMRI, this study finds evidence for selectivity between concrete verbs and concrete nouns; yet, critically, there is no evidence for responses to abstract words from the same categories. Here, we investigate whether TopoLM replicates these findings-both the existence of spatially organized noun-verb selectivity in response to concrete words and the nonexistence of this selectivity in response to abstract words (Figure 4 ).",
+      "_text": "Beyond selectivity for language in general, experimental evidence supports the existence of cortical noun-and verb-selective clusters across human subjects during processing of verbal and nominal stimuli in auditory (Elli et al., 2019; Hauptman et al., 2024) , visual (Moseley & Pulvermüller, 2014) , and speech production (Shapiro et al., 2006) "
+    },
+    "6_DOWNSTREAM_PERFORMANCE_AND_BRAIN_ALIGNMENT": "Some topographic vision models sacrifice task performance for the sake of spatial organization, leading to diminished utility as a model of brain function (Lee et al., 2020) . As a control, we evaluate TopoLM's performance on linguistic knowledge (BLiMP), downstream task (GLUE), and brain alignment benchmarks (Brain-Score), compared to the non-topographic baseline model.\nBenchmark Description and Methods. BLiMP (Warstadt et al., 2020 ) is a multi-task linguistic benchmark consisting of minimal pairs (acceptable / unacceptable) that probe knowledge of linguistic phenomena; Models are evaluated without fine-tuning. Brain-Score Language (Schrimpf et al., 2021; 2020) is a set of benchmarks that measure how well models align with the human language system. We train a ridge regression model to predict brain activity from model representations, using the same stimuli as in the neuroimaging studies. Representations are taken from each transformer block with spatial loss (attention and MLP). For both models, we select the output layer with the best alignment across datasets. The final score is the Pearson correlation between actual and predicted brain activity, averaged over 10 cross-validation folds and over four brain-recording datasets (Blank et al., 2014; Fedorenko et al., 2016; Pereira et al., 2018; Tuckute et al., 2024, Appendix D) . GLUE (Wang et al., 2018 ) is a multi-task benchmark for downstream performance on tasks like entailment and sentiment analysis. We fine-tune models for each task. During fine-tuning, we use the same weighted combination of task loss (cross-entropy or MCC) and spatial correlation loss with α = 2.5. We set batch size 64, dropout 0.1, and learning rate 2 × 10 -5 ; all other hyperparameters are the same as during pretraining. We use early stopping after 3 successive increases in validation loss, keeping the checkpoint before this increase.\nResults. We find that introducing spatial correlation loss does not strongly affect task performance or brain alignment (Table 1 ). On BLiMP, we find slight decreases in performance between TopoLM and the non-topographic baseline across all subtasks, with a 5 point average decrease overall. On Brain-Score, we find a 2 point average decrease overall, with TopoLM outperforming the nontopographic baseline on some subtasks (see Appendix D, Figure 6 ). On GLUE, across most subtasks we see an increase in performance from TopoLM compared to the baseline model, with a 3 point average increase overall. We hypothesize this increase might be due the spatial loss term serving as additional regularization against overfitting. ",
+    "7_DISCUSSION": "Here, we presented a new topographic Transformer language model based on a spatial smoothness constraint and showed that it predicts key patterns of spatio-functional organization from the neuroimaging literature. We demonstrated that TopoLM has a spatially organized core language system exhibiting brain-like uniformity of response profiles across clusters. TopoLM also shows brain-like noun-verb selective clusters, specific to concrete over abstract words. This spatial correspondence to the human brain comes at virtually no cost to performance or functional brain alignment."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "The LLM Language Network: A Neuroscientific Approach for Identifying Causally Task-Relevant Units",
+      "authors": [
+        {
+          "first": "Badr",
+          "middle": [],
+          "last": "Alkhamissi",
+          "suffix": ""
+        },
+        {
+          "first": "Greta",
+          "middle": [],
+          "last": "Tuckute",
+          "suffix": ""
+        },
+        {
+          "first": "Antoine",
+          "middle": [],
+          "last": "Bosselut",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Schrimpf",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Controlling the False Discovery Rate: A Practical and Powerful Approach to Multiple Testing",
+      "authors": [
+        {
+          "first": "Yoav",
+          "middle": [],
+          "last": "Benjamini",
+          "suffix": ""
+        },
+        {
+          "first": "Yosef",
+          "middle": [],
+          "last": "Hochberg",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "Journal of the Royal Statistical Society Series B: Statistical Methodology"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Topoformer: Brain-like topographic organization in transformer language models through spatial querying and reweighting",
+      "authors": [
+        {
+          "first": "Taha",
+          "middle": [],
+          "last": "Binhuraib",
+          "suffix": ""
+        },
+        {
+          "first": "Greta",
+          "middle": [],
+          "last": "Tuckute",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [
+            "M"
+          ],
+          "last": "Blauch",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "ICLR 2024 Re-Align Workshop Paper"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "A functional dissociation between language and multiple-demand systems revealed in patterns of BOLD signal fluctuations",
+      "authors": [
+        {
+          "first": "Idan",
+          "middle": [],
+          "last": "Blank",
+          "suffix": ""
+        },
+        {
+          "first": "Nancy",
+          "middle": [],
+          "last": "Kanwisher",
+          "suffix": ""
+        },
+        {
+          "first": "Evelina",
+          "middle": [],
+          "last": "Fedorenko",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Journal of Neurophysiology"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "A connectivity-constrained computational account of topographic organization in primate high-level visual cortex",
+      "authors": [
+        {
+          "first": "Nicholas",
+          "middle": [
+            "M"
+          ],
+          "last": "Blauch",
+          "suffix": ""
+        },
+        {
+          "first": "Marlene",
+          "middle": [],
+          "last": "Behrmann",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "C"
+          ],
+          "last": "Plaut",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Brains and algorithms partially converge in natural language processing",
+      "authors": [
+        {
+          "first": "Charlotte",
+          "middle": [],
+          "last": "Caucheteux",
+          "suffix": ""
+        },
+        {
+          "first": "Jean-Rémi",
+          "middle": [],
+          "last": "King",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Communications Biology"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+      "authors": [
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Devlin",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Wei",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Kenton",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Kristina",
+          "middle": [],
+          "last": "Toutanova",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Cortical topographic motifs emerge in a self-organized map of object space",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Fenil",
+          "suffix": ""
+        },
+        {
+          "first": "Talia",
+          "middle": [],
+          "last": "Doshi",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Konkle",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Science Advances"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "A Double Dissociation in Sensitivity to Verb and Noun Semantics Across Cortical Networks",
+      "authors": [
+        {
+          "first": "Connor",
+          "middle": [],
+          "last": "Giulia V Elli",
+          "suffix": ""
+        },
+        {
+          "first": "Marina",
+          "middle": [],
+          "last": "Lane",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bedny",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Cerebral Cortex"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "fMRI of human visual cortex",
+      "authors": [
+        {
+          "first": "Stephen",
+          "middle": [
+            "A"
+          ],
+          "last": "Engel",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "E"
+          ],
+          "last": "Rumelhart",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [
+            "A"
+          ],
+          "last": "Wandell",
+          "suffix": ""
+        },
+        {
+          "first": "Adrian",
+          "middle": [
+            "T"
+          ],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Gary",
+          "middle": [
+            "H"
+          ],
+          "last": "Glover",
+          "suffix": ""
+        },
+        {
+          "first": "Eduardo-Jose",
+          "middle": [],
+          "last": "Chichilnisky",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "N"
+          ],
+          "last": "Shadlen",
+          "suffix": ""
+        }
+      ],
+      "year": 1994,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Retinotopic organization in human visual cortex and the spatial precision of functional MRI",
+      "authors": [
+        {
+          "first": "Stephen",
+          "middle": [
+            "A"
+          ],
+          "last": "Engel",
+          "suffix": ""
+        },
+        {
+          "first": "Gary",
+          "middle": [
+            "H"
+          ],
+          "last": "Glover",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [
+            "A"
+          ],
+          "last": "Wandell",
+          "suffix": ""
+        }
+      ],
+      "year": 1997,
+      "venue": "Cerebral Cortex"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "New Method for fMRI Investigations of Language: Defining ROIs Functionally in Individual Subjects",
+      "authors": [
+        {
+          "first": "Evelina",
+          "middle": [],
+          "last": "Fedorenko",
+          "suffix": ""
+        },
+        {
+          "first": "Po-Jang",
+          "middle": [],
+          "last": "Hsieh",
+          "suffix": ""
+        },
+        {
+          "first": "Alfonso",
+          "middle": [],
+          "last": "Nieto-Castañón",
+          "suffix": ""
+        },
+        {
+          "first": "Susan",
+          "middle": [],
+          "last": "Whitfield-Gabrieli",
+          "suffix": ""
+        },
+        {
+          "first": "Nancy",
+          "middle": [],
+          "last": "Kanwisher",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "Journal of Neurophysiology"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Functional specificity for high-level linguistic processing in the human brain",
+      "authors": [
+        {
+          "first": "Evelina",
+          "middle": [],
+          "last": "Fedorenko",
+          "suffix": ""
+        },
+        {
+          "first": "Nancy",
+          "middle": [],
+          "last": "Michael K Behr",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kanwisher",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Neural correlate of the construction of sentence meaning",
+      "authors": [
+        {
+          "first": "Evelina",
+          "middle": [],
+          "last": "Fedorenko",
+          "suffix": ""
+        },
+        {
+          "first": "Terri",
+          "middle": [
+            "L"
+          ],
+          "last": "Scott",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Brunner",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [
+            "G"
+          ],
+          "last": "Coon",
+          "suffix": ""
+        },
+        {
+          "first": "Brianna",
+          "middle": [],
+          "last": "Pritchett",
+          "suffix": ""
+        },
+        {
+          "first": "Gerwin",
+          "middle": [],
+          "last": "Schalk",
+          "suffix": ""
+        },
+        {
+          "first": "Nancy",
+          "middle": [],
+          "last": "Kanwisher",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "The language network as a natural kind within the broader landscape of the human brain",
+      "authors": [
+        {
+          "first": "Evelina",
+          "middle": [],
+          "last": "Fedorenko",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [
+            "A"
+          ],
+          "last": "Ivanova",
+          "suffix": ""
+        },
+        {
+          "first": "Tamar",
+          "middle": [
+            "I"
+          ],
+          "last": "Regev",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Nature Reviews Neuroscience"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Distributed Hierarchical Processing in the Primate Cerebral Cortex",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "J"
+          ],
+          "last": "Felleman",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "C"
+          ],
+          "last": "Van Essen",
+          "suffix": ""
+        }
+      ],
+      "year": 1991,
+      "venue": "Cerebral Cortex"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "A face feature space in the macaque temporal lobe",
+      "authors": [
+        {
+          "first": "Doris",
+          "middle": [
+            "Y"
+          ],
+          "last": "Winrich A Freiwald",
+          "suffix": ""
+        },
+        {
+          "first": "Margaret",
+          "middle": [
+            "S"
+          ],
+          "last": "Tsao",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Livingstone",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "Nature neuroscience"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Language processing is strongly left lateralized in both sexes: Evidence from functional MRI",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "A"
+          ],
+          "last": "Frost",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": "Brain"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "The Natural Stories Corpus",
+      "authors": [
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Futrell",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [],
+          "last": "Gibson",
+          "suffix": ""
+        },
+        {
+          "first": "Harry",
+          "middle": [
+            "J"
+          ],
+          "last": "Tily",
+          "suffix": ""
+        },
+        {
+          "first": "Idan",
+          "middle": [],
+          "last": "Blank",
+          "suffix": ""
+        },
+        {
+          "first": "Anastasia",
+          "middle": [],
+          "last": "Vishnevetsky",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Piantadosi",
+          "suffix": ""
+        },
+        {
+          "first": "Evelina",
+          "middle": [],
+          "last": "Fedorenko",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the Eleventh International Conference on Language Resources and Evaluation (LREC 2018)"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Shared computational principles for language processing in humans and deep language models",
+      "authors": [
+        {
+          "first": "Ariel",
+          "middle": [],
+          "last": "Goldstein",
+          "suffix": ""
+        },
+        {
+          "first": "Zaid",
+          "middle": [],
+          "last": "Zada",
+          "suffix": ""
+        },
+        {
+          "first": "Eliav",
+          "middle": [],
+          "last": "Buchnik",
+          "suffix": ""
+        },
+        {
+          "first": "Mariano",
+          "middle": [],
+          "last": "Schain",
+          "suffix": ""
+        },
+        {
+          "first": "Amy",
+          "middle": [],
+          "last": "Price",
+          "suffix": ""
+        },
+        {
+          "first": "Bobbi",
+          "middle": [],
+          "last": "Aubrey",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [
+            "A"
+          ],
+          "last": "Nastase",
+          "suffix": ""
+        },
+        {
+          "first": "Amir",
+          "middle": [],
+          "last": "Feder",
+          "suffix": ""
+        },
+        {
+          "first": "Dotan",
+          "middle": [],
+          "last": "Emanuel",
+          "suffix": ""
+        },
+        {
+          "first": "Alon",
+          "middle": [],
+          "last": "Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "Aren",
+          "middle": [],
+          "last": "Jansen",
+          "suffix": ""
+        },
+        {
+          "first": "Harshvardhan",
+          "middle": [],
+          "last": "Gazula",
+          "suffix": ""
+        },
+        {
+          "first": "Gina",
+          "middle": [],
+          "last": "Choe",
+          "suffix": ""
+        },
+        {
+          "first": "Aditi",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "Catherine",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Colton",
+          "middle": [],
+          "last": "Casto",
+          "suffix": ""
+        },
+        {
+          "first": "Lora",
+          "middle": [],
+          "last": "Fanda",
+          "suffix": ""
+        },
+        {
+          "first": "Werner",
+          "middle": [],
+          "last": "Doyle",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Friedman",
+          "suffix": ""
+        },
+        {
+          "first": "Patricia",
+          "middle": [],
+          "last": "Dugan",
+          "suffix": ""
+        },
+        {
+          "first": "Lucia",
+          "middle": [],
+          "last": "Melloni",
+          "suffix": ""
+        },
+        {
+          "first": "Roi",
+          "middle": [],
+          "last": "Reichart",
+          "suffix": ""
+        },
+        {
+          "first": "Sasha",
+          "middle": [],
+          "last": "Devore",
+          "suffix": ""
+        },
+        {
+          "first": "Adeen",
+          "middle": [],
+          "last": "Flinker",
+          "suffix": ""
+        },
+        {
+          "first": "Liat",
+          "middle": [],
+          "last": "Hasenfratz",
+          "suffix": ""
+        },
+        {
+          "first": "Omer",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        },
+        {
+          "first": "Avinatan",
+          "middle": [],
+          "last": "Hassidim",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Brenner",
+          "suffix": ""
+        },
+        {
+          "first": "Yossi",
+          "middle": [],
+          "last": "Matias",
+          "suffix": ""
+        },
+        {
+          "first": "Kenneth",
+          "middle": [
+            "A"
+          ],
+          "last": "Norman",
+          "suffix": ""
+        },
+        {
+          "first": "Orrin",
+          "middle": [],
+          "last": "Devinsky",
+          "suffix": ""
+        },
+        {
+          "first": "Uri",
+          "middle": [],
+          "last": "Hasson",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Nature Neuroscience"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Visuospatial coding as ubiquitous scaffolding for human cognition",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [
+            "A"
+          ],
+          "last": "Iris",
+          "suffix": ""
+        },
+        {
+          "first": "Tessa",
+          "middle": [
+            "M"
+          ],
+          "last": "Groen",
+          "suffix": ""
+        },
+        {
+          "first": "Tomas",
+          "middle": [],
+          "last": "Dekker",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [
+            "H"
+          ],
+          "last": "Knapen",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Silson",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Trends in Cognitive Sciences"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Neural specialization for 'visual' concepts emerges in the absence of vision",
+      "authors": [
+        {
+          "first": "Miriam",
+          "middle": [],
+          "last": "Hauptman",
+          "suffix": ""
+        },
+        {
+          "first": "Giulia",
+          "middle": [],
+          "last": "Elli",
+          "suffix": ""
+        },
+        {
+          "first": "Rashi",
+          "middle": [],
+          "last": "Pant",
+          "suffix": ""
+        },
+        {
+          "first": "Marina",
+          "middle": [],
+          "last": "Bedny",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Distributed and Overlapping Representations of Faces and Objects in Ventral Temporal Cortex",
+      "authors": [
+        {
+          "first": "James",
+          "middle": [
+            "V"
+          ],
+          "last": "Haxby",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "Ida"
+          ],
+          "last": "Gobbini",
+          "suffix": ""
+        },
+        {
+          "first": "Maura",
+          "middle": [
+            "L"
+          ],
+          "last": "Furey",
+          "suffix": ""
+        },
+        {
+          "first": "Alumit",
+          "middle": [],
+          "last": "Ishai",
+          "suffix": ""
+        },
+        {
+          "first": "Jennifer",
+          "middle": [
+            "L"
+          ],
+          "last": "Schouten",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Pietrini",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "Science"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Receptive fields, binocular interaction and functional architecture in the cat's visual cortex",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "H"
+          ],
+          "last": "Hubel",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "N"
+          ],
+          "last": "Wiesel",
+          "suffix": ""
+        }
+      ],
+      "year": 1962,
+      "venue": "The Journal of Physiology"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Receptive fields and functional architecture of monkey striate cortex",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "H"
+          ],
+          "last": "Hubel",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "N"
+          ],
+          "last": "Wiesel",
+          "suffix": ""
+        }
+      ],
+      "year": 1968,
+      "venue": "The Journal of Physiology"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "The Fusiform Face Area: A Module in Human Extrastriate Cortex Specialized for Face Perception",
+      "authors": [
+        {
+          "first": "Nancy",
+          "middle": [],
+          "last": "Kanwisher",
+          "suffix": ""
+        },
+        {
+          "first": "Josh",
+          "middle": [],
+          "last": "Mcdermott",
+          "suffix": ""
+        },
+        {
+          "first": "Marvin",
+          "middle": [
+            "M"
+          ],
+          "last": "Chun",
+          "suffix": ""
+        }
+      ],
+      "year": 1997,
+      "venue": "The Journal of Neuroscience"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Universality in the Evolution of Orientation Columns in the Visual Cortex",
+      "authors": [
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Kaschube",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Schnabel",
+          "suffix": ""
+        },
+        {
+          "first": "Siegrid",
+          "middle": [],
+          "last": "Löwel",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "M"
+          ],
+          "last": "Coppola",
+          "suffix": ""
+        },
+        {
+          "first": "Leonard",
+          "middle": [
+            "E"
+          ],
+          "last": "White",
+          "suffix": ""
+        },
+        {
+          "first": "Fred",
+          "middle": [],
+          "last": "Wolf",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "Science"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Modeling Category-Selective Cortical Regions with Topographic Variational Autoencoders",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Anderson",
+          "middle": [],
+          "last": "Keller",
+          "suffix": ""
+        },
+        {
+          "first": "Qinghe",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "High-level visual object representations are constrained by position",
+      "authors": [
+        {
+          "first": "Dwight",
+          "middle": [
+            "J"
+          ],
+          "last": "Kravitz",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolaus",
+          "middle": [],
+          "last": "Kriegeskorte",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [
+            "I"
+          ],
+          "last": "Baker",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "Cerebral Cortex"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "How does an fMRI voxel sample the neuronal activity pattern: Compact-kernel or complex spatiotemporal filter?",
+      "authors": [
+        {
+          "first": "Nikolaus",
+          "middle": [],
+          "last": "Kriegeskorte",
+          "suffix": ""
+        },
+        {
+          "first": "Rhodri",
+          "middle": [],
+          "last": "Cusack",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Bandettini",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "NeuroImage"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Two retinotopic visual areas in human lateral occipital cortex",
+      "authors": [
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Larsson",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "J"
+          ],
+          "last": "Heeger",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "The Journal of neuroscience : the official journal of the Society for Neuroscience"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Topographic deep artificial neural networks reproduce the hallmarks of the primate inferior temporal cortex face processing network",
+      "authors": [
+        {
+          "first": "Hyodong",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Eshed",
+          "middle": [],
+          "last": "Margalit",
+          "suffix": ""
+        },
+        {
+          "first": "Kamila",
+          "middle": [
+            "M"
+          ],
+          "last": "Jozwik",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "A"
+          ],
+          "last": "Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "Nancy",
+          "middle": [],
+          "last": "Kanwisher",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "K"
+          ],
+          "last": "Daniel",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [
+            "J"
+          ],
+          "last": "Yamins",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dicarlo",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Neuroscience"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "End-to-end topographic networks as models of cortical map formation and human visual behaviour: moving beyond convolutions",
+      "authors": [
+        {
+          "first": "Zejin",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Adrien",
+          "middle": [],
+          "last": "Doerig",
+          "suffix": ""
+        },
+        {
+          "first": "Victoria",
+          "middle": [],
+          "last": "Bosch",
+          "suffix": ""
+        },
+        {
+          "first": "Bas",
+          "middle": [],
+          "last": "Krahmer",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Radoslaw",
+          "middle": [
+            "M"
+          ],
+          "last": "Cichy",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [
+            "C"
+          ],
+          "last": "Kietzmann",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "A unifying framework for functional organization in early and higher ventral visual cortex",
+      "authors": [
+        {
+          "first": "Eshed",
+          "middle": [],
+          "last": "Margalit",
+          "suffix": ""
+        },
+        {
+          "first": "Hyodong",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Finzi",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [
+            "J"
+          ],
+          "last": "Dicarlo",
+          "suffix": ""
+        },
+        {
+          "first": "Kalanit",
+          "middle": [],
+          "last": "Grill-Spector",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "K"
+          ],
+          "last": "Daniel",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Yamins",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Neuron"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Visual Processing in Monkey Extrastriate Cortex",
+      "authors": [
+        {
+          "first": "J H R",
+          "middle": [],
+          "last": "Maunsell",
+          "suffix": ""
+        },
+        {
+          "first": "W T",
+          "middle": [],
+          "last": "Newsome",
+          "suffix": ""
+        }
+      ],
+      "year": 1987,
+      "venue": "Annu. Rev. Neurosci"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Nouns, verbs, objects, actions, and abstractions: Local fMRI activity indexes semantics, not lexical categories",
+      "authors": [
+        {
+          "first": "Rachel",
+          "middle": [
+            "L"
+          ],
+          "last": "Moseley",
+          "suffix": ""
+        },
+        {
+          "first": "Friedemann",
+          "middle": [],
+          "last": "Pulvermüller",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Brain and Language"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Toward a universal decoder of linguistic meaning from brain activation",
+      "authors": [
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Pereira",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Lou",
+          "suffix": ""
+        },
+        {
+          "first": "Brianna",
+          "middle": [],
+          "last": "Pritchett",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Ritter",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [
+            "J"
+          ],
+          "last": "Gershman",
+          "suffix": ""
+        },
+        {
+          "first": "Nancy",
+          "middle": [],
+          "last": "Kanwisher",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Botvinick",
+          "suffix": ""
+        },
+        {
+          "first": "Evelina",
+          "middle": [],
+          "last": "Fedorenko",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Nature Communications"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Language Models are Unsupervised Multitask Learners",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Rewon",
+          "middle": [],
+          "last": "Child",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Luan",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Integrative Benchmarking to Advance Neurally Mechanistic Models of Human Intelligence",
+      "authors": [
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Schrimpf",
+          "suffix": ""
+        },
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Kubilius",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "J"
+          ],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Apurva Ratan",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Murty",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [
+            "J"
+          ],
+          "last": "Ajemian",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dicarlo",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Neuron"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "The neural architecture of language: Integrative modeling converges on predictive processing",
+      "authors": [
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Schrimpf",
+          "suffix": ""
+        },
+        {
+          "first": "Idan",
+          "middle": [
+            "Asher"
+          ],
+          "last": "Blank",
+          "suffix": ""
+        },
+        {
+          "first": "Greta",
+          "middle": [],
+          "last": "Tuckute",
+          "suffix": ""
+        },
+        {
+          "first": "Carina",
+          "middle": [],
+          "last": "Kauf",
+          "suffix": ""
+        },
+        {
+          "first": "Eghbal",
+          "middle": [
+            "A"
+          ],
+          "last": "Hosseini",
+          "suffix": ""
+        },
+        {
+          "first": "Nancy",
+          "middle": [],
+          "last": "Kanwisher",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [
+            "B"
+          ],
+          "last": "Tenenbaum",
+          "suffix": ""
+        },
+        {
+          "first": "Evelina",
+          "middle": [],
+          "last": "Fedorenko",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "The distribution of category and location information across object-selective regions in human visual cortex",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Rebecca F Schwarzlose",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Jascha",
+          "suffix": ""
+        },
+        {
+          "first": "Sabin",
+          "middle": [],
+          "last": "Swisher",
+          "suffix": ""
+        },
+        {
+          "first": "Nancy",
+          "middle": [],
+          "last": "Dang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kanwisher",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Proceedings of the National Academy of Sciences of the United States of America"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Cortical signatures of noun and verb production",
+      "authors": [
+        {
+          "first": "Kevin",
+          "middle": [
+            "A"
+          ],
+          "last": "Shapiro",
+          "suffix": ""
+        },
+        {
+          "first": "Lauren",
+          "middle": [
+            "R"
+          ],
+          "last": "Moo",
+          "suffix": ""
+        },
+        {
+          "first": "Alfonso",
+          "middle": [],
+          "last": "Caramazza",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "fMRI study of language lateralization in children and adults",
+      "authors": [
+        {
+          "first": "Jerzy",
+          "middle": [
+            "P"
+          ],
+          "last": "Szaflarski",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [
+            "K"
+          ],
+          "last": "Holland",
+          "suffix": ""
+        },
+        {
+          "first": "Vincent",
+          "middle": [
+            "J"
+          ],
+          "last": "Schmithorst",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [
+            "W"
+          ],
+          "last": "Byars",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Human Brain Mapping"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "From retinotopy to recognition: fMRI in human visual cortex",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Tootell",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hadjikhani",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Mendola",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Marrett",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Dale",
+          "suffix": ""
+        }
+      ],
+      "year": 1998,
+      "venue": "Trends in cognitive sciences"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Faces and objects in macaque cerebral cortex",
+      "authors": [
+        {
+          "first": "Winrich",
+          "middle": [
+            "A"
+          ],
+          "last": "Doris Y Tsao",
+          "suffix": ""
+        },
+        {
+          "first": "Tamara",
+          "middle": [
+            "A"
+          ],
+          "last": "Freiwald",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [
+            "B"
+          ],
+          "last": "Knutsen",
+          "suffix": ""
+        },
+        {
+          "first": "Roger B H",
+          "middle": [],
+          "last": "Mandeville",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Tootell",
+          "suffix": ""
+        }
+      ],
+      "year": 2003,
+      "venue": "Nature Neuroscience"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "A Cortical Region Consisting Entirely of Face-Selective Cells",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Doris",
+          "suffix": ""
+        },
+        {
+          "first": "Winrich",
+          "middle": [
+            "A"
+          ],
+          "last": "Tsao",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Freiwald",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [
+            "H"
+          ],
+          "last": "Roger",
+          "suffix": ""
+        },
+        {
+          "first": "Margaret",
+          "middle": [
+            "S"
+          ],
+          "last": "Tootell",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Livingstone",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Science"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Comparing face patch systems in macaques and humans",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Doris",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Tsao",
+          "suffix": ""
+        },
+        {
+          "first": "Winrich",
+          "middle": [
+            "A"
+          ],
+          "last": "Moeller",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Freiwald",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Driving and suppressing the human language network using large language models",
+      "authors": [
+        {
+          "first": "Greta",
+          "middle": [],
+          "last": "Tuckute",
+          "suffix": ""
+        },
+        {
+          "first": "Aalok",
+          "middle": [],
+          "last": "Sathe",
+          "suffix": ""
+        },
+        {
+          "first": "Shashank",
+          "middle": [],
+          "last": "Srikant",
+          "suffix": ""
+        },
+        {
+          "first": "Maya",
+          "middle": [],
+          "last": "Taliaferro",
+          "suffix": ""
+        },
+        {
+          "first": "Mingye",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Schrimpf",
+          "suffix": ""
+        },
+        {
+          "first": "Kendrick",
+          "middle": [],
+          "last": "Kay",
+          "suffix": ""
+        },
+        {
+          "first": "Evelina",
+          "middle": [],
+          "last": "Fedorenko",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Nature Human Behaviour"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Attention is All you Need",
+      "authors": [
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Niki",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Llion",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Ł Ukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Illia",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "GLUE: A Multi-Task Benchmark and Analysis Platform for Natural Language Understanding",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Amanpreet",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "Julian",
+          "middle": [],
+          "last": "Michael",
+          "suffix": ""
+        },
+        {
+          "first": "Felix",
+          "middle": [],
+          "last": "Hill",
+          "suffix": ""
+        },
+        {
+          "first": "Omer",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Bowman",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 2018 EMNLP Workshop BlackboxNLP: Analyzing and Interpreting Neural Networks for NLP"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "BLiMP: The Benchmark of Linguistic Minimal Pairs for English",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Warstadt",
+          "suffix": ""
+        },
+        {
+          "first": "Alicia",
+          "middle": [],
+          "last": "Parrish",
+          "suffix": ""
+        },
+        {
+          "first": "Haokun",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Anhad",
+          "middle": [],
+          "last": "Mohananey",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Sheng-Fu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [
+            "R"
+          ],
+          "last": "Bowman",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Transactions of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Principles governing the topological organization of object selectivities in ventral temporal cortex",
+      "authors": [
+        {
+          "first": "Yiyuan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ke",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Pinglei",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Neuroscience"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Aligning Books and Movies: Towards Story-like Visual Explanations by Watching Movies and Reading Books",
+      "authors": [
+        {
+          "first": "Yukun",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Kiros",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Zemel",
+          "suffix": ""
+        },
+        {
+          "first": "Ruslan",
+          "middle": [],
+          "last": "Salakhutdinov",
+          "suffix": ""
+        },
+        {
+          "first": "Raquel",
+          "middle": [],
+          "last": "Urtasun",
+          "suffix": ""
+        },
+        {
+          "first": "Antonio",
+          "middle": [],
+          "last": "Torralba",
+          "suffix": ""
+        },
+        {
+          "first": "Sanja",
+          "middle": [],
+          "last": "Fidler",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    }
+  ]
+}

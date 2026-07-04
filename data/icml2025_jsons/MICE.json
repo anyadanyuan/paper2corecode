@@ -1,0 +1,1407 @@
+{
+  "paper_id": "MICE",
+  "title": "Controlling Underestimation Bias in Constrained Reinforcement Learning for Safe Exploration",
+  "authors": [
+    {
+      "first": "Shiqing",
+      "middle": [],
+      "last": "Gao",
+      "affiliation": {}
+    },
+    {
+      "first": "Jiaxin",
+      "middle": [],
+      "last": "Ding",
+      "affiliation": {}
+    },
+    {
+      "first": "Luoyi",
+      "middle": [],
+      "last": "Fu",
+      "affiliation": {}
+    },
+    {
+      "first": "Xinbing",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "Constrained Reinforcement Learning (CRL) aims to maximize cumulative rewards while satisfying constraints. However, existing CRL algorithms often encounter significant constraint violations during training, limiting their applicability in safety-critical scenarios. In this paper, we identify the underestimation of the cost value function as a key factor contributing to these violations. To address this issue, we propose the Memory-driven Intrinsic Cost Estimation (MICE) method, which introduces intrinsic costs to mitigate underestimation and control bias to promote safer exploration. Inspired by flashbulb memory, where humans vividly recall dangerous experiences to avoid risks, MICE constructs a memory module that stores previously explored unsafe states to identify high-cost regions. The intrinsic cost is formulated as the pseudo-count of the current state visiting these risk regions. Furthermore, we propose an extrinsic-intrinsic cost value function that incorporates intrinsic costs and adopts a bias correction strategy. Using this function, we formulate an optimization objective within the trust region, along with corresponding optimization methods. Theoretically, we provide convergence guarantees for the proposed cost value function and establish the worst-case constraint violation for the MICE update. Extensive experiments demonstrate that MICE significantly reduces constraint violations while preserving policy performance comparable to baselines.",
+  "body": {
+    "4.1._Underestimate_Bias_in_Cost_Value_Function": "Overestimation in RL arises from the tendency of the value function update to greedily select high value actions, resulting in estimates exceeding the optimal value (Fujimoto et al., 2018) . Conversely, the cost value function in CRL exhibits underestimation, particularly during constraint violations, due to the inherent tendency to minimize costs.\nIn methods like Q-learning, the cost value function is updated using a greedy strategy during constraint violations: Q C (s, a) ← Q C (s, a) + α[c + γ min a ′ Q C (s ′ , a ′ ) -Q C (s, a)], where α is the step size. Assuming that value estimates contain zero-mean noise ϵ, a consistent underestimation bias is induced by minimizing the noisy value estimate Q C (s ′ , a ′ ) + ϵ. The zero-mean property of noise is disrupted after minimization, resulting in the minimized value estimate being generally smaller than the true minimum (Thrun & Schwartz, 2014) :\nEQUATION\n)\nSuch noise is inherent in function approximation methods (Fujimoto et al., 2018) .\nIn actor-critic-based CRL methods, the policy learns from value estimation provided by the approximate reward critic and cost critic. When constraints are violated, the policy is updated with a policy gradient that minimizes the expected cost value estimate: arg min π∈Π θ E s∼d π ,a∼π [Q C (s, a)], where Π θ represents the policy set parameterized by θ.\nDenote the true cost value function as Q * C (s, a) and the approximate cost value function as QC (s, a). Updated from the current policy π k (•|θ) with deterministic policy gradient, let π be the policy derived from the true cost value Q * C (s, a), and π the policy derived from the approximate cost value QC (s, a). According to TD3 (Fujimoto et al., 2018) , when the approximation introduces a bias such that E[ QC (s, π(s))] ≤ E[Q * C (s, π(s))] due to unavoidable noise in the function approximation, then the cost value is underestimated under the updated policy π within a sufficiently small step size:\nEQUATION\nTo validate the presence of underestimation bias, we compare the estimated cost value for various states against their corresponding true values in both the primal method CPO (Achiam et al., 2017) and the primal-dual method PID Lagrangian (Stooke et al., 2020) . The true values are computed by averaging the cumulative discounted costs over 1, 000 episodes under the current policy. Results in Figure 2 show that cost value functions in different CRL methods are consistently and significantly underestimated across various environments during training.\nCompared to overestimation in RL, underestimation in CRL can have more detrimental impacts, as it directly leads to unsafe actions that violate constraints. When the cost critic underestimates the true cost, actions with high rewards but violating constraints are mistakenly perceived as safe, causing these unsafe actions to be selected. Then these actions are propagated through the Bellman equation, accumulating bias and generating increasingly unsafe policies. This explains the frequent constraint violations observed during training in various CRL methods. ",
+    "4.4._Theoretical_Analysis": "Theoretically, we establish an upper bound on the difference in the expected extrinsic-intrinsic constraint between two arbitrary policies. Theorem 4.3 (Extrinsic-intrinsic Constraint Bounds). For arbitrary two policies π ′ and π, the following bound for the expected extrinsic-intrinsic constraint holds:\nJ EI C (π ′ ) -J EI C (π) ≤ 1 1 -γ E s∼d π ,a∼π ′ A EI C (s, a|π) + 2γϵ EI π ′ 1 -γ D T V (π ′ ∥π)[s] (13) where ϵ EI π ′ := max s |E a∼π ′ [A EI C (s, a|π)]|, the TV- divergence D T V (π ′ ||π)[s] = (1/2) a |π ′ (a|s) -π(a|s)|.\nThe proof is provided in Appendix B.4.\nThe upper bound in Theorem 4.3 is associated with the TV divergence between π and π ′ . A larger divergence between two policies results in a larger upper bound on the constraint gap. This theorem supports the optimization objective 12 within the trust region in MICE.\nBy mitigating the underestimation, the MICE algorithm significantly reduces constraint violations during the learning process. We further establish a theoretical upper bound on the constraint violation for the updated policy within the MICE optimization framework: Theorem 4.4 (MICE Update Worst-Case Constraint Violation). Suppose π k , π k+1 are related by the optimization objective 12, an upper bound on the constraint of the updated policy π k+1 is:\nEQUATION\nwhere ϵ\nπ k+1 C := max s |E a∼π k+1 [A π k C (s, a)]|, and I = E τ |π k+1 ∞ t=0 γ t βc I t .\nA proof is provided in Appendix B.4.\nTheorem 4.4 demonstrates that our method achieves a tighter upper bound on constraint violation compared to CPO, guaranteeing that the updated policy in MICE has a lower probability of exceeding the constraint threshold.\nBased on similar assumptions as in TD3 and Double Qlearning, we give convergence guarantees of the extrinsicintrinsic cost value function.\nTheorem 4.5 (Convergence Analysis). Given following conditions:\n1. Each state-action pair is sampled an infinite number of times.\n2. The MDP is finite.\n3. γ ∈ [0, 1).\n4. Q EI C values are stored in a lookup table.\n5. Q EI C receives an infinite number of updates.\n6. The learning rates satisfy α t (s, a) ∈ [0, 1],\nt α t (s, a) = ∞, t (α t (s, a)) 2 < ∞ with proba- bility 1, α t (s, a) = 0, ∀(s, a) ̸ = (s t , a t ). 7. V ar[c E t + βc I t ] < ∞, ∀s, a.\nThe extrinsic-intrinsic Q EI C will converge to the optimal Q * C with probability 1.\nThe proof is in Appendix B.5.\nTheorem 4.5 ensures that MICE converges to the optimal solution, which guarantees policy performance while satisfying constraints. ",
+    "4.2._Intrinsic_Cost_Generated_from_Flashbulb_Memory": "Risk awareness enables humans to identify potential dangers and adopt conservative behaviors to ensure safety. Humans are impressed by previous risky experiences, which are vividly recalled to avoid danger in similar scenarios. However, CRL agents with underestimated critics often fail to recognize the consequences of unsafe actions, leading to constraint violations. Inspired by human cognitive mechanisms, we introduce a memory-driven intrinsic cost mechanism to enhance the agent's risk awareness. This intrinsic cost discourages repeated visits to unsafe states while promoting safer exploration.\nWe construct a flashbulb memory M to record high-cost regions by storing unsafe states s m with positive extrinsic costs. To reduce dimensionality while approximately preserving inter-sample distances, each state s is embedded into a lower-dimensional latent space f (s) using a random projection layer f , implemented with a Gaussian random matrix (Zhu et al., 2020) . By the Johnson-Lindenstrauss lemma (Johnson et al., 1984) , this mapping approximately maintains relative Euclidean distances in the original space. The memory, with dynamically adjusted capacity, stores unsafe samples collected by the policy from the previous iteration. By mirroring the human tendency to prioritize recent high-risk experiences, this design ensures that the memory remains aligned with the current policy.\nThe intrinsic cost c I is derived from the flashbulb memory. By comparing the current state s t with states stored in memory, smaller differences indicate higher similarity to prior unsafe experiences, signaling an increased risk of constraint violations and resulting in a higher intrinsic cost c I . Denote the flashbulb memory as M : {f (s m 0 ), • • • , f (s m i ), • • • }, where s m i is the i-th unsafe state. Inspired by theoretically-justified exploration methods that convert state-action counts into bonus rewards (Strehl & Littman, 2008) , the intrinsic cost c I t at time t is generated by comparing the current embedding state f (s t ) with those in memory M :\nEQUATION\nDrawing inspiration from NGU (Badia et al., 2020) , the sum of the similarities, computed using a kernel function K, is used to represent the pseudo-count of the current state s t visiting high-cost regions in memory. This sum is approximated by the k-nearest neighbors\nN k of f (s t ) in M .\nThe kernel function is:\nEQUATION\n)\nwhere l is the Euclidean distance, and ξ is a small constant for numerical stability (set to 10 -3 following NGU). To preserve training stability, the intrinsic cost is normalized.\nA larger visit count for s t indicates a higher probability that it resides in a high-cost region, thus resulting in a greater intrinsic cost.",
+    "3._Preliminary": "CRL can be modeled as a Constrained Markov decision process (CMDP), denoted by a tuple (S, A, R, C, P, ρ, γ), where S is the state space, A is the action space, R : S × A → R is the reward function, P : S × A → [0, 1] is the transition probability function, ρ is the initial state distri-bution, and γ ∈ (0, 1) is the discount factor. The extrinsic cost function C : S × A → R maps state-action pairs to extrinsic costs c E , which are task-specific costs provided by the environment. The intrinsic cost is denoted as c I , and d denotes the constraints threshold.\nStarting from an initial state s 0 sampled from the initial state distribution ρ, the agent perceives the state s t from the environment at each time step t, selects an action a t according to the policy π : S → A, receives the reward r t = R(s t , a t ) and extrinsic cost c E t , and transfers to the next state s t+1 based on P (s t+1 |s t , a t ). The set of all stationary policies is denoted as Π. The discounted future state visitation distribution is defined as The CRL aims to find an optimal policy by maximizing the expected discounted return over the set of feasible policies Π C := {π ∈ Π : J C (π) ≤ d}:\nd π (s) := (1 -γ) ∞ t=0 γ t P (s t = s|π). The value function for a policy π is V π R (s) := E τ ∼π [ ∞ t=0 γ t R(s t , a t )|s 0 = s],\narg max π∈Π J R (π) s.t. J C (π) ≤ d (1)",
+    "2._MICE-PIDLag": "In the MICE-PIDLag method, we write the CRL problem 20 as the first-order dynamical system:\nEQUATION\n)\nwhere η is the step size of the update, g is the gradient of reward objective in equation 20 and g EI C denotes the gradient of extrinsic-intrinsic constraint in equation 20. h denotes the control function. λ is the Lagrangian multiplier for the equation 20. We provide the updated formulas for the Lagrangian multiplier in MICE-PIDLag:\nEQUATION\n)\nwhere (•) + = max{0, •}, and: \nEQUATION\nEQUATION\nwhere Q EI C,n (s, a) is the estimate of the value function at the n-th update, α is the step size, and t n (s, a) = c E + βc I + γE s ′ [Q EI C,n (s ′ , a ′ )] -Q * C (s, a) is the target difference.\nProof. We use induction method to proof this lemma B.1.\nBase Case: m = 1 Substituting m = 1 in lemma B.1, we get:\nEQUATION\nAccording to the update equation of the extrinsic-intrinsic cost value function in MICE, we get:\nEQUATION\nwhich is equivalent to equation 31.",
+    "6._Discussion_and_Conclusion": "This paper addresses an important challenge in CRL, the underestimation of the cost value, which significantly contributes to constraint violations. To mitigate this issue, we propose the MICE algorithm, which incorporates an extrinsic-intrinsic cost value update mechanism inspired by human cognitive processes. MICE enhances the cost estimates of high-cost regions, encouraging safer exploration. Theoretically, we provide an upper bound on constraint violations and establish convergence guarantees of the MICE algorithm. Extensive experimental results demonstrate that MICE effectively reduces constraint violations while maintaining robust policy performance.\nThe MICE framework exhibits strong applicability across diverse tasks. For example, the criterion for adding states to the flashbulb memory can be flexibly adjusted. In our experiments, we adopt a rule based on whether the extrinsic cost of a state is greater than zero, where extrinsic costs are directly provided by the environment without noise. However, in real-world applications, extrinsic costs may be noisy and may not accurately reflect the true cost of a given state.\nA practical alternative is to employ the expected cumulative cost as the criterion for memory inclusion: a state is stored if its expected cumulative cost exceeds a predefined threshold. By aggregating information across multiple future timesteps, this approach effectively mitigates the influence of individual outlier values. Additionally, in domains such as autonomous driving, the expense of sampling unsafe states is prohibitively high. In these scenarios, the memory can be constructed using offline datasets to ensure safety and feasibility, with techniques such as importance resampling employed to correct for potential distributional shifts.",
+    "4._Methodology": "In this section, we introduce the MICE algorithm. We first present the underestimation in the CRL cost value function. Then we introduce the flashbulb memory mechanism for recording high-cost regions, and derive the intrinsic cost to correct underestimation. Finally, we propose an extrinsic-intrinsic update formulation for MICE and a new optimization objective with its solutions.",
+    "5._Experiment": "The experiments address the following questions: 1) Does MICE reduce constraint violations while maintaining policy performance compared to baselines? 2) Does the intrinsic cost component effectively mitigate underestimation? Baselines include the primal-dual PID Lagrangian method (Stooke et al., 2020) , the primal CUP method (Yang et al., 2022) , and state augmentation methods Saute (Sootla et al., 2022a) and Simmer (Sootla et al., 2022b) focusing on zero constraint violations. Results for additional baselines are provided in the Appendix C.3.1.\nWe implemented both MICE-CPO and MICE-PIDLag, with optimization details provided in Appendix A. All experiments followed uniform conditions to ensure fairness and reproducibility, with a total of 10 7 training time steps and a maximum trajectory length of 1000 steps. To reduce randomness, 6 random seeds were used for each method, and the results are presented as mean and variance. The algorithm process is provided in Appendix C.1, and additional experiments are presented in Appendix C.3.",
+    "4.3._Safety_Policy_Optimization_with_the_Intrinsic_Cost": "The standard cost value function Q C (s, a) in CRL is updated using only extrinsic costs c E :\nQ C (s, a) = (1 - α)Q C (s, a) + α(c E + γE s ′ [Q C (s ′ , a ′ )]\n). To mitigate underestimation, we propose an extrinsic-intrinsic cost value function Q EI C (s, a), which incorporates memory-driven intrinsic costs c I and task-driven extrinsic costs c E :\nEQUATION\n)\nwhere α is the step size, β is the intrinsic factor. Starting from the same initialization, Q EI C (s, a) ≥ Q C (s, a) for the same state-action pair, as the target\nQ T = c E + βc I + γE s ′ [Q EI C (s ′ , a ′ )]\nfor Q EI C incorporates the intrinsic cost, resulting in a larger target compared to the standard cost estimate. By augmenting the agent's memory, the extrinsicintrinsic target cost value increases the cost estimate, effectively mitigating underestimation in high-cost regions.\nOverestimation and underestimation biases in cost value are not inherently detrimental, their impact depends on the current state (Lan et al., 2020) , with detailed analysis in Appendix B.1. Generally, underestimation bias encourages exploration, while overestimation bias tends to discourage exploration. In high-cost regions with a high risk of constraint violation, overestimation bias can be beneficial by discouraging unsafe exploration, while underestimation bias may lead to over-exploration of these unsafe regions.\nIn this work, flashbulb memory is employed to identify previously explored high-cost regions, with intrinsic cost quantifying the pseudo-count of the current state visiting these regions. Higher intrinsic costs signal a greater likelihood of entering a high-cost region, potentially introducing overestimation to discourage unsafe explorations. Additionally, the propagation of overestimation through cost value updates is limited, as the policy tends to avoid actions with large cost estimates (Fujimoto et al., 2018) .\nTo avoid excessive estimate bias, we propose an adaptive bias correction mechanism. The target for the (n + 1)-th update Q Tn+1 is modified as:\nEQUATION\nwhere Q * is the optimal value, Q n is the estimate at the n-th update. When Q n -Q * < 0, the modified target Q ′ Tn+1 is adjusted upward, introducing positive bias to mitigate excessive underestimation. Conversely, when Q n -Q * > 0, Q ′ Tn+1 is adjusted downward, introducing negative bias to address excessive overestimation. Then we derive the balancing intrinsic factor β to control the estimation bias. Proposition 4.1. For a transition (s, a, c E , s ′ ) in a CMDP, where the n-th update of the extrinsic-intrinsic cost value Q n corresponds to the n-th update target Q Tn , the modified target for the (n + 1)-th update is Q ′ Tn+1 , the balancing intrinsic factor β ′ for the (n + 1)-th update is given by:\nEQUATION\n)\nwhere ϵ n = Q n -Q * is the n-th update estimation bias, γ ∈ (0, 1) is the discount factor.\nThe derivation process is provided in Appendix B.2.\nThe direction of the β update depends solely on ϵ n . When ϵ n < 0, indicating underestimation of Q n , β ′ is increased to raise the intrinsic cost and mitigate underestimation. When ϵ n > 0, indicating overestimation of Q n , β ′ is decreased, reducing the intrinsic cost to mitigate overestimation. The discount factor is used to ensure the convergence of the value function, with the convergence analysis in Theorem 4.5. By leveraging the estimated bias from the previous update, we iteratively refine the intrinsic factor to control the estimated bias of the current value function.\nIn practical implementation, since the optimal value Q * is unknown, we approximate it by computing the cumulative discounted cost along trajectories sampled by the current policy, following (Wang et al., 2021; Fujimoto et al., 2018) .\nBased on the extrinsic-intrinsic cost value function, the cumulative discounted extrinsic-intrinsic cost is defined as:\nEQUATION\nwhere C EI (s t , a t ) = c E t + βc I t is the extrinsic-intrinsic cost function. The extrinsic-intrinsic advantage function in MICE is defined as:\nA EI C (s, a) = E s ′ [c E +βc I +γV C (s ′ )- V C (s)].\nTo minimize constraint violations, we replace the standard constraint J C with the extrinsic-intrinsic constraint J EI C in the optimization objective. To facilitate optimization, we give the difference in expectation constraint between extrinsic-intrinsic J EI C (π ′ ) and extrinsic J C (π). Lemma 4.2. Given arbitrary two policies π and π ′ , the difference in expectation constraint of extrinsic-intrinsic J EI C (π ′ ) and extrinsic J C (π) is expressed as:\nEQUATION\n)\nwhere\nA EI C (s t , a t |π) = E st+1 [c E t + βc I t + γV π C (s t+1 ) - V π C (s t )].\nThe expectation is over trajectories τ , with E τ |π ′ indicating that actions are sampled from π ′ to generate τ .\nA proof is provided in Appendix B.3.\nAccording to Equation 10, we present the optimization objective of MICE:\nEQUATION\nTo ensure that the unsafe states stored in memory remain relevant to the updated policy π, we further propose a surrogate objective within the trust region:\nπ k+1 = arg max π∈Π θ E s∼d π k ,a∼π [A π k R (s, a)] s.t. J C (π k ) + 1 1 -γ E s∼d π k ,a∼π [A EI C (s, a|π k )] ≤ d, D(π∥π k ) ≤ φ (12) where D(π∥π k ) = E s∼d π k [D KL (π∥π k )[s]]\n, and D KL is the KL divergence. φ > 0 is the trust region size, and the set {π ∈ Π θ : D(π∥π k ) ≤ φ} defines the trust region.\nThe trust region constrains the updated policy π to remain close to the previously sampled policy π k . This alignment preserves the relevance of unsafe states stored in memory, ensuring that the identified high-cost regions adequately cover the sampling space of the updated policy π. Consequently, the intrinsic cost more accurately reflects the risk of the updated policy π visiting these high-cost regions, effectively mitigating underestimation and promoting safer exploration in unsafe regions.\nTo solve the optimization objective 12, we propose the MICE-CPO and MICE-PIDLag optimization methods, as detailed in Appendix A.",
+    "1._Introduction": "Constrained Reinforcement Learning (CRL) has become a powerful framework for addressing decision-making tasks 1 Shanghai Jiao Tong University, Shanghai, China. Correspondence to: Jiaxin Ding <jiaxinding@sjtu.edu.cn>.\nProceedings of the 42 nd International Conference on Machine Learning, Vancouver, Canada. PMLR 267, 2025. Copyright 2025 by the author(s).\nwith safety requirements (Stooke et al., 2020; Xu et al., 2021; Yang et al., 2022; Gao et al., 2024) , such as robotics (Tang et al., 2024) and autonomous driving (Zhang et al., 2024) , by integrating constraints into Reinforcement Learning (RL) policy optimization. However, existing CRL methods often exhibit persistent constraint violations during policy training (Sootla et al., 2022a; b) , undermining their reliability in real-world deployments.\nA key factor driving constraint violations is the underestimation of the cost value. In CRL, unsafe high-cost regions pose the risk of constraint violations, prompting policy updates to reduce the cost value. However, the inherent noise in function approximation disrupts the zero-mean assumption under a minimization objective (Thrun & Schwartz, 2014) , resulting in cost underestimation. Consequently, high-cost states may appear deceptively safe, enticing the agent to explore them for potentially high rewards. This underestimation leads to frequent constraint violations during training, even when an optimal safe policy theoretically exists.\nAlthough biases in cost estimation are generally undesirable, they are not inherently detrimental and can enhance policy learning and exploration in certain scenarios (Lan et al., 2020; Karimpanal et al., 2023) . Underestimation generally encourages exploration, while overestimation tends to discourage exploration. Specifically, in high-cost regions, overestimation can help prevent unsafe exploration to reduce risks, whereas underestimation may induce excessive exploration of unsafe states. Therefore, the key challenge is to shape cost estimation to mitigate harmful underestimation in high-cost regions while ensuring safe exploration without being overly conservative.\nTo address this challenge, we propose the Memory-driven Intrinsic Cost Estimation (MICE) algorithm, integrating extrinsic and intrinsic cost value updates to mitigate underestimation while exploiting controlled bias for safer exploration. Inspired by flashbulb memory (Conway, 2013) , where humans vividly recall significant experiences to avoid risks, we equip agents with a flashbulb memory module that stores previously explored unsafe states, enabling the identification of high-cost regions. The intrinsic cost is derived from the flashbulb memory, formulated as the pseudo-count (Badia et al., 2020) of the current state visiting high-cost regions in memory. Then we introduce an extrinsic-intrinsic cost value update that mitigates underestimation by augmenting extrinsic cost estimates in high-cost regions, with a balancing factor to correct excessive bias. Further, we propose an optimization objective within the trust region, ensuring alignment between the updated policy and the policy generating the flashbulb memory samples. We also provide corresponding solution methods for this objective. Theoretically, we establish a constraint bound for the extrinsic-intrinsic cost value function and provide a worst-case constraint violation under the MICE update, ensuring minimal constraint violations during training. Additionally, we prove convergence guarantees for the proposed cost value function. Extensive experiments demonstrate that MICE significantly reduces constraint violations while ensuring robust policy performance. Our contributions are summarized as follows:\n• We introduce a novel Flashbulb Memory mechanism that records high-cost regions, enabling the derivation of an intrinsic cost to effectively mitigate the prevalent underestimation in these regions.\n• We propose an Extrinsic-Intrinsic Cost Value Update that incorporates the intrinsic cost estimate and applies a bias correction strategy, ensuring more robust cost estimation and safer exploration in high-cost regions.\n• We provide a theoretical analysis with convergence guarantees and constraint violation bounds, along with practical optimization methods that demonstrate significant improvements in constraint satisfaction and policy performance through extensive experiments. The code for this paper is available in https://github. com/ShiqingGao/MICE.\n2. Related Work CRL methods. CRL optimization methods can be classified into primal-dual and primal approaches. Primal-dual methods (Ding et al., 2021; Ying et al., 2024) convert constrained problems into unconstrained ones via dual variables. NPG-PD (Ding et al., 2020) guarantees global convergence with sublinear rates. PID Lagrangian (Stooke et al., 2020) introduces proportional and differential control to mitigate cost overshoot and oscillations. However, primal-dual approaches are sensitive to initial parameters, limiting their application (Zhang et al., 2022) . In contrast, primal methods directly optimize constrained problems in the primal space (Zhang et al., 2020; Yu et al., 2022; Gao et al., 2024) . CPO (Achiam et al., 2017) enforces performance and constraint violation bounds within a trust region. PCPO (Yang et al., 2020) alternates between reward improvement and policy projection into feasible regions. CUP (Yang et al., 2022) provides generalized theoretical guarantees using the generalized advantage estimator (Schulman et al., 2015) . How-ever, both primal and primal-dual methods often encounter significant constraint violations during training, primarily due to the underestimation of cost value. To address this, we propose a memory-driven intrinsic cost to correct underestimation with a convergence guarantee, ensuring minimal constraint violations while maintaining performance."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Constrained policy optimization",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Achiam",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Held",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Tamar",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Never give up: Learning directed exploration strategies",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "P"
+          ],
+          "last": "Badia",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Sprechmann",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vitvitskyi",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Piot",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kapturowski",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Tieleman",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Arjovsky",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Pritzel",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bolt",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Flashbulb memories",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Conway",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Natural policy gradient primal-dual method for constrained markov decision processes",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Basar",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jovanovic",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Provably efficient safe exploration via primal-dual policy optimization",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jovanovic",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Addressing function approximation error in actor-critic methods",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Fujimoto",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Hoof",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Meger",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Exterior penalty policy optimization with penalty metric network under constraints",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the Thirty-Third International Joint Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Double q-learning",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Hasselt",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Safety gymnasium: A unified safe reinforcement learning benchmark",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Geng",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Extensions of lipschitz mappings into a hilbert space",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [
+            "B"
+          ],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lindenstrauss",
+          "suffix": ""
+        }
+      ],
+      "year": 1984,
+      "venue": "Contemporary mathematics"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Balanced q-learning: Combining the influence of optimistic and pessimistic targets",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [
+            "G"
+          ],
+          "last": "Karimpanal",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Abdolshah",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Rana",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gupta",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Tran",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Venkatesh",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Maxmin qlearning: Controlling the estimation bias of q-learning",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Lan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Fyshe",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "White",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Unsupervised reinforcement learning with contrastive intrinsic control",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Laskin",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [
+            "B"
+          ],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Yarats",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Rajeswaran",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Combating reinforcement learning's sisyphean curse with intrinsic fear",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [
+            "C"
+          ],
+          "last": "Lipton",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Azizzadenesheli",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "High-dimensional continuous control using generalized advantage estimation",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schulman",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Moritz",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Jordan",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "State entropy maximization with random encoders for efficient exploration",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Seo",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Dynamics-aware unsupervised discovery of skills",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Levine",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Hausman",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Sauté rl: Almost surely safe reinforcement learning using state augmentation",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sootla",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "I"
+          ],
+          "last": "Cowen-Rivers",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Jafferjee",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "H"
+          ],
+          "last": "Mguni",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Ammar",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Effects of safety state augmentation on safe exploration",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sootla",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "I"
+          ],
+          "last": "Cowen-Rivers",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "B"
+          ],
+          "last": "Ammar",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Responsive safety in reinforcement learning by pid lagrangian methods",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Stooke",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Achiam",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "An analysis of modelbased interval estimation for markov decision processes",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "L"
+          ],
+          "last": "Strehl",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "L"
+          ],
+          "last": "Littman",
+          "suffix": ""
+        }
+      ],
+      "year": 2008,
+      "venue": "Journal of Computer and System Sciences"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Deep reinforcement learning for robotics: A survey of real-world successes",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Abbatematteo",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Chandra",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Martín-Martín",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Annual Review of Control, Robotics, and Autonomous Systems"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Reward-only safe reinforcement learning",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [
+            "N"
+          ],
+          "last": "Tasse",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Love",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Nemecek",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "James",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Rosman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Rosarl",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Issues in using function approximation for reinforcement learning",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Thrun",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Schwartz",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Proceedings of the 1993 connectionist models summer school"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "A physics engine for model-based control",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Todorov",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Erez",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Tassa",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mujoco",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "IEEE/RSJ international conference on intelligent robots and systems"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Deep reinforcement learning with double q-learning",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Van Hasselt",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Guez",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Silver",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Adaptive ensemble qlearning: Minimizing estimation bias via error feedback",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Crpo: A new approach for safe reinforcement learning with convergence guarantee",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Lan",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Constrained update projection approach to safe policy optimization",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Projection-based constrained policy optimization",
+      "authors": [
+        {
+          "first": "T.-Y",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Rosca",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Narasimhan",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "J"
+          ],
+          "last": "Ramadge",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Scalable primal-dual actor-critic method for safe multiagent rl with general utilities",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Ying",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Koppel",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lavaei",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Towards safe reinforcement learning with a safety editor policy",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Penalized proximal policy optimization for safe reinforcement learning",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Tao",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Exploration via maximizing deviation from explored regions",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Rashidinejad",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Jiao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "E"
+          ],
+          "last": "Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Russell",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Made",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "First order constrained optimization in policy space",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Vuong",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Ross",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Safe reinforcement learning in autonomous driving with epistemic uncertainty estimation",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "IEEE Transactions on Intelligent Transportation Systems"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Episodic reinforcement learning with associative memory",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    }
+  ]
+}

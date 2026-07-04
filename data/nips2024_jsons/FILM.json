@@ -1,0 +1,3309 @@
+{
+  "paper_id": "FILM",
+  "title": "Make Your LLM Fully Utilize the Context",
+  "authors": [
+    {
+      "first": "Shengnan",
+      "middle": [],
+      "last": "An",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Peking University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Zexiong",
+      "middle": [],
+      "last": "Ma",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Peking University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Zeqi",
+      "middle": [],
+      "last": "Lin",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Peking University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Nanning",
+      "middle": [
+        "Zheng"
+      ],
+      "last": "†♢",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Peking University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Jian-Guang",
+      "middle": [],
+      "last": "Lou",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Peking University",
+        "location": {}
+      }
+    },
+    {
+      "first": "♣",
+      "middle": [
+        "♢"
+      ],
+      "last": "Iair",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Peking University",
+        "location": {}
+      }
+    },
+    {
+      "first": "",
+      "middle": [],
+      "last": "Xi'an",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Peking University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "While many contemporary large language models (LLMs) can process lengthy input, they still struggle to fully utilize information within the long context, known as the lost-in-the-middle challenge. We hypothesize that it stems from insufficient explicit supervision during the long-context training, which fails to emphasize that any position in a long context can hold crucial information. Based on this intuition, our study presents INformation-INtensive (IN2) training, a purely data-driven solution to overcome lost-in-the-middle. Specifically, IN2 training leverages a synthesized long-context question-answer dataset, where the answer requires (1) fine-grained information awareness on a short segment (∼128 tokens) within a synthesized long context (4K-32K tokens), and (2) the integration and reasoning of information from two or more short segments. Through applying this information-intensive training on Mistral-7B, we present FILM-7B (FILlin-the-Middle). To thoroughly assess the ability of FILM-7B for utilizing long contexts, we design three probing tasks that encompass various context styles (document, code, and structured-data context) and information retrieval patterns (forward, backward, and bi-directional retrieval). The probing results demonstrate that FILM-7B can robustly retrieve information from different positions in its 32K context window. Beyond these probing tasks, FILM-7B significantly improves the performance on real-world long-context tasks (e.g., 23.5→26.9 F1 score on NarrativeQA), while maintaining a comparable performance on short-context tasks (e.g., 59.3→59.2 accuracy on MMLU). Github Link: github.com/microsoft/FILM.",
+  "body": {
+    "1_Introduction": "To a great mind, nothing is little.",
+    "2_Information-Intensive_Training": {
+      "2.1_Training_Data_Construction": "Overview. The IN2 training aims to explicitly teach the model that any position in a long context can contain crucial information. To achieve this goal, we construct a long-context question-answer training dataset D = {L i , q i , a i }, where the answer a i to the question q i requires the information contained in some short segments that are randomly placed in the whole long context L i .\nFigure 2 illustrates an overview of the data construction process. Specifically, the training data D is constructed based on a general natural language corpus C. Given a raw text C i ∈ C, we first generate a question-answer pair (q i , a i ) using a powerful LLM, then synthesize a long context L i that includes the necessary information from C i and other randomly sampled texts from C. We generate two types of question-answer pairs that require (1) the awareness of fine-grained information in the long context, and (2) the integration and reasoning of information appearing at different positions in the long context. We take the realnewslike subset from the C4 corpus (Raffel et al., 2020) as C, and take GPT-4-Turbo (OpenAI, 2023b) as the LLM to generate QA pairs.\nFine-grained information awareness. We consider a 128-token segment as the minimum information unit of the contextfoot_0 . Given a raw text C i , we first randomly extract a 128-token segment s i from it, then generate the q i , a i and L i accordingly,\nEQUATION\nDocument Sentence Retrieval (Bi-Direction) Code Function Retrieval (Backward) Database Entity Retrieval (Forward) ### Context: … This crucially distinguishes our algorithms from the … Specifically, our modality-missing-aware prompts can … These results demonstrate that there are still a large ... We design better optimizers, a crucial engineering … We present a study of modern architectures applied … This scalability issue is to use of consensus algorithms … Extensive experiments are conducted to validate the effectiveness of our proposed method, achieving new state-of-the-art performance on all four benchmarks with a notable gain. Notably, we achieved the top in highly competitive … With this, it is shown how approximate FP64x2 GEMM … It is challenging to address widespread and … To verify the effectiveness of the proposed method … The results show that \\\\emph{GCMiner} significantly … Our experimental results on all common benchmark … … ### Instruction: In above context, which sentence contains the piece \"achieving new state-of-the-art performance on all four\"? ### Context: … def get_clause:\\n llen = len(lineup)\\n clause = ''\\n if … def updateData:\\n if self.train:\\n if self.inplace:\\n self. … def save_comments:\\n for comment in comments:\\n … def plot_patio:\\n ax = plt.subplot(111)\\n passo_x = 1 / … def encode_label:\\n Label record format:\\n Total: 5 … def _parse_array:\\n array = []\\n for child in node. … def serve_rpc:\\n plugins = [QuarkAsyncPlugin()]\\n rpc =… def createStrip:\\n story = fetchVign(config)\\n if specialPlatform == 'android':\\n except Exception as err: def breed_childern:\\n self.mutation(first_child)\\n self. … def get_module_depth:\\n Parameters\\n depth_image: … def run_layout:\\n if settings is None:\\n if settings. … def register:\\n user = None\\n if user_id:\\n if request … def test_list_ddl:\\n cursor = con.cursor()\\n result = list( … def with_laps:\\n with Stopwatch() as sw:\\n for i in … def config_iq_stream:\\n bwActual = c_double(0)\\n … … ### Instruction: In above context, which function contains the code snip \"if specialPlatform == 'android':\" ? ### Context: … <id: Q2486402, label: New York State Route 191, … > <id: Q80329096, label: Transverse abdominal incision … > <id: Q70559114, label: Monitoring plasma level of … > <id: Q91568218, label: Progression of the first stage … > <id: Q84088820, label: Historical perspective of low-… > <id: Q63952215, label: Online action-to-perception … > <id: Q40241868, label: Alpha-1-C-octyl-1-deoxynojirimycin as a pharmacological chaperone for Gaucher disease, description: scientific article published on 21 August 2006> <id: Q5651247, label: Wer, wenn nicht wir, descript … > <id: Q42133313, label: UnZIPping mechanisms of … > <id: Q74650195, label: Pursued by genetics: an auto … > <id: Q38835253, label: Neurological Aspects of … > <id: Q64358411, label: Unity for Change, description: … > <id: Q24110047, label: Hypothetical protein SM_b20 … > … ### Instruction: In above context , what is the label and description for the query where the id is Q40241868 ?\nFigure 3 : Three tasks in VAL Probing. The retrieval patterns are determined by the relative positions between the retrieval keywords and the information to be retrieved.\nwhere (q i , a i ) is sampled by prompting the powerful LLM with the segment s i and the instruction I f , ⊕{•} represents the concatenation of the contained segments, and [r j ] are randomly sampled from 128-token segments in C. Note that I f instructs the LLM to make the question-answer pair highly specific to the information provided in s i .\nIntegration and reasoning of information. Beyond utilizing each single segment, we consider to generate question-answer pairs for information contained in two or more segments. Following the setting of the minimum information unit above, we split a full text C i into a set of 128-token segments [s i ], then generate the q i , a i and L i accordingly,\nEQUATION\nwhere I r instructs the LLM to generate a multi-hop question-answer pair that requires the information within at least two segments in [s i ]. All segments in [s i ] and [r j ] are jointly shuffled, so the required segments may appear far apart in the context.",
+      "2.2_Training_Details": "Using the training data constructed above, we further fine-tune the Mistral-7B-Instruct-v0.2foot_1 (Jiang et al., 2023) to get our FILM-7B (FILl-in-the-Middle). We perform IN2 training in the instructiontuning paradigm: the long contexts and questions are used as instructions, and the loss on the answer parts are used to update the model. Appendix D contains the system template used for formatting the training data. For hyper-parameters, we set the global batch size as 128 and conduct one-epoch training with ∼14K training steps. We use the cosine learning rate decay with a 1e-6 maximum 5 0  1 0 0  1 5 0  2 0 0  2 5 0  3 0 0  3 5 0  4 0 0  4 5 0  5 0 0  5 5 0  6 0 0  6 5 0  7 0 0  7 5 0  8 0 0 Relative Positions in 800 Sentences 0.4 0.5 0.6 0.7 0.8 0.9 1.0 Performance (%) Document Sentence Retrieval (Bi-Direction) FILM-7B (Ours) Mistral-7B-Instruct-v0.2 Mistral-7B-Instruct-v0.1 5 0  1 0 0  1 5 0  2 0 0  2 5 0  3 0 0  3 5 0  4 0 0  4 5 0  5 0 0  5 5 0  6 0 0  6 5 0  7 0 0  7 5 0  8 0 0 Relative Positions in 800 Functions 0.0 0.2 0.4 0.6 0.8 1.0 Code Function Retrieval (Backward) 5 0  1 0 0  1 5 0  2 0 0  2 5 0  3 0 0  3 5 0  4 0 0  4 5 0  5 0 0  5 5 0  6 0 0  6 5 0  7 0 0  7 5 0 Relative Positions in 800 Functions 0.0 0.2 0.4 0.6 0.8 1.0 Code Function Retrieval (Backward) 5 0 learning rate and 3% warm-up steps. The training process is conducted on 16 nodes of 8x80G A100 GPUs with the full sharding strategy and cpu offload strategy implemented by pytorch FSDP (Zhao et al., 2023) . The entire training process consumes ∼300 GPU days.",
+      "_text": "This section introduces the construction of the dataset for IN2 training and the detailed training process of our model FILM-7B."
+    },
+    "3_Long-Context_Probing": {
+      "3.1_Near-Perfect_Performance_on_Needle-in-the-Haystack:_Are": "We There Yet?\nThe Needle-in-the-Haystackfoot_2 task is widely used to assess how robustly a model utilizes information positioned in the long context. It reveals that even some powerful proprietary LLMs, such as GPT-4 and Claude 2.1 (Anthropic, 2023) , struggle to fully exploit the information within the long context.\nWe use the Needle-in-the-Haystack task to preliminarily evaluate the long-context capability of FILM-7B. Appendix C demonstrates that FILM-7B has achieved near-perfect performance on this task. This result is not surprising as recent open-source LLMs, such as LongAlign (Bai et al., 2024) and InternLM2 (Cai et al., 2024) , have also shown near-perfect performance on this task.\nHowever, we argue that the near-perfect performance on Needle-in-the-Haystack may overestimate the long-context capabilities of LLMs, based on the following two considerations:\n• Needle-in-the-Haystack employs a document-style context, which LLMs could be quite familiar with due to the pre-training on natural language corpora.\n• The forward retrieval pattern in Needle-in-the-Haystack may simplify the difficulty of information seeking in the long context.\nThe \"forward retrieval\" means that the information being retrieved directly follows the retrieval keyword in a long context. For example, the default question used in Needle-in-the-Haystack is \"What is the best thing to do in San Francisco?\" and the answer is contained in \"The best thing to do in San Francisco is eat a sandwich and sit in Dolores Park on a sunny day.\" The retrieved information \"eat a sandwich and ...\" just follows the retrieval keywords \"best thing to do in San Francisco\".\nAccording to the mechanism of induction head (Olsson et al., 2022) , such a following-up copying is an easily learned pattern for LLMs, thus less challenging for evaluating long context utilization.\nGiven these considerations, we suggest that performances on Needle-in-the-Haystack may not adequately reflect the long-context capabilities of LLMs. Therefore, we propose VAL Probing for a more comprehensive evaluation involving various context styles and retrieval patterns.",
+      "3.2_VAL_Probing": "Our retrieval-based VAL Probing considers three context styles (document, code, and structured-data context) and three retrieval patterns (forward, backward, and bi-directional retrieval). Each context in VAL Probing contains ∼32K tokens, and each task contains ∼3K examples. Figure 3 briefly illustrates the contexts and retrieval instructions in VAL Probing.",
+      "_text": "In this section, we first show the preliminary evaluation of FILM-7B on the Needle-in-the-Haystack and discuss about the inadequacies of this probing task. Subsequently, to comprehensively evaluate the long-context information awareness of FILM-7B, we introduce VArious Long-context (VAL) Probing. This includes three tasks that cover various context styles (document, code, and structureddata context) and information retrieval patterns (forward, backward, and bi-directional retrieval). (Bai et al., 2024) 65.3 16.9 39.3 56.0 55.0 36.2 53.2 36.4 LongAlign-13B-64K (Bai et al., 2024) 71.7 13.4 50.8 40.8 82.9 27.0 68.5 27.1 InternLM2-chat-7B (Cai et al., 2024) 68.8 18.7 50.2 44.1 61.2 57.1 60.1 40.0 InternLM2-chat-20B (Cai et al., 2024) 66.4 27.2 63.4 45.5 74.9 57.2 68.2 43.3 GPT-4-Turbo (OpenAI, 2023b) 81.3 31.7 66.1 46.5 89.6 18.0 79.0 32.1 FILM-7B (ours) 85.4 6.1 83.3 18.7 89.0 16.8 85.9 13.9"
+    },
+    "4_Experiments_and_Analysis": {
+      "4.1_Experimental_Setup": "Models. We mainly compare FILM-7B with long-context open-source models that have been trained with ≥32K context windows, including the Mistral (Jiang et al., 2023), LongChat (Li et al., 2023a) , ChatGLM (Du et al., 2022) , LongAlign (Bai et al., 2024) , LongWanjuan (Lv et al., 2024) , Yi (AI et al., 2024) and InternLM2 (Cai et al., 2024) . We utilize the instruct/chat versions of these models as most of our evaluation tasks are under the zero-shot instruction-following paradigm. We also draw comparisons with popular proprietary LLMs such as GPT-3.5-Turbo (OpenAI, 2023a) and GPT-4-Turbo (OpenAI, 2023b). All models and tasks employ greedy decoding. For probing tasks, we primarily compare FILM-7B with LongAlign and InternLM2 series, as these models have shown near-perfect performances on Needle-in-the-Haystack.\nReal-world long-context tasks. We take 9 tasks from the LongBench (Bai et al., 2023) collection to evaluate the long-context capability on real-world scenarios. These tasks encompass long-document question answering (NarrativeQA (Kočiskỳ et al., 2018) , Qasper (Dasigi et al., 2021) and Multi-FieldQA (MultiFQA) (Bai et al., 2023) , multi-document multi-hop reasoning (HotpotQA (Yang et al., 2018) , 2WikiMultihopQA (2WikiMQA) (Ho et al., 2020) and MuSiQue (Trivedi et al., 2022) ), and long-context summarization (GovReport (Huang et al., 2021) , QMSum (Zhong et al., 2021) and MultiNews (Fabbri et al., 2019) ). We employ the middle truncation strategy in LongBench to limit the input within 32K tokens. We report ROUGE-L (Lin, 2004) for summarization tasks and F1 scores for other tasks. The evaluation metrics are computed using the official evaluation scriptsfoot_6 . Short-context tasks. We select 8 short-context tasks commonly used for evaluating the general capabilities of models. These include MMLU (Hendrycks et al., 2020) , BoolQ (Clark et al., 2019) , RACE-High (RACE-H) (Lai et al., 2017) , CommonsenseQA (CSQA) (Talmor et al., 2019) , ARC-Challenge (ARC-C) (Clark et al., 2018) , HellaSwag (Zellers et al., 2019) , GSM8K (Cobbe et al., 2021) , and MATH (Hendrycks et al., 2021) . We use 5-shot for MMLU, 8-shot for GSM8K, 4-shot for MATH, and 0-shot for other tasks. We utilize the lm_evalfoot_7 for the evaluations on MMLU, BoolQ, RACE-H, ARC-C and HellaSwag, and use the evaluation scripts from An et al. (2024) for other tasks.",
+      "4.3_Training_Strategy_Analysis": "Experimental results in Section 4.2 demonstrate the feasibility of IN2 training. We aim to explore further into enhancing the effectiveness and efficiency of IN2 training, particularly from the perspective of training strategies. We are specifically interested in investigating the impact of the following two training strategies: applying the sliding window and adjusting the position encoding. Considering the high cost of training, the following experiments use 20% of all training examples.\nModels using sliding windows cannot effectively capture the long distance information. Our experiments involving Mistral models, as shown in Figure 4a , reveal that the performance of Mistral-7B-Instruct-v0.1 is awful when the information is positioned at a long distance. It's worth noting that Mistral-7B-Instruct-v0.1 employs the sliding window strategy while Mistral-7B-Instruct-v0.2 does not. Consequently, we are interested in determining whether our IN2 training can still alleviate the lost-in-the-middle problem under the sliding window strategy. We conduct the following two experiments with a 4K sliding window during training:\n• Apply the sliding window in both pre-training and IN2 training. We take the Mistral-7B-Instruct-v0.1 as the backbone model and conduct IN2 training with the same window size (4K).\n• Apply the sliding window only during the IN2 training. We take the Mistral-7B-Instruct-v0.2 as the backbone model and additionally apply a 4K sliding window during IN2 training.\nFigure 6 illustrates the performances of models with sliding windows. It shows that in both two settings with sliding windows, the performances drop dramatically when the distance between the retrieval question and information is longer than the sliding window size. It reveals that the sliding window strategy greatly hurts the long-context capability of models.\nTraining with higher information intensity requires a larger RoPE base θ. The training stage in Section 2 follows the RoPE settings configured for the backbone model. Previous studies on context extension suggest that training with an extended context length necessitates a larger RoPE base θ (Roziere et al., 2023; Xiong et al., 2023; Cai et al., 2024) . In the case of our IN2 training, the context length remains unchanged, but the information intensity is significantly increased. As a result, we are interested in exploring whether the RoPE settings should also be adjusted to further enhance the IN2 training. Table 3 shows the results with increasing the RoPE base θ from 1.0 × 10 6 to 1.0 × 10 8 . It shows that increasing the default RoPE base θ of the backbone model leads to better performances on VAL Probing. We suggest to use a 10 times of the default RoPE base θ to conduct IN2 training.",
+      "_text": "We assess the long-context capability of FILM-7B on both probing tasks and real-world long-context tasks. Moreover, we investigate if the performance in short-context scenarios is affected."
+    },
+    "5_Related_Work": "Long-context LLMs. Recent research has significantly contributed to the exploration of training large models with extended context windows (Jiang et al., 2023; Du et al., 2022; Li et al., 2023a; Team et al., 2023; Team, 2023; Xiong et al., 2023; Song et al., 2023; Tworkowski et al., 2024; AI et al., 2024; Cai et al., 2024) . There are primarily two directions in the development of long-context LLMs. (1) Data engineering, which emphasizes the construction of long-context data for training the LLMs. This includes data balancing (Fu et al., 2024) , data order arrangement (Shi et al., 2023) , instruction data collection (Bai et al., 2024) , and data quality measurement (Lv et al., 2024) . Our IN2 training can be categorized into this field. (2) Effective and efficient training, which investigates methods to optimize the training of a long-context model. This encompasses the design of position encoding (Chen et al., 2023a; Liu et al., 2023; Peng et al., 2023b; Ding et al., 2024) , batching strategy (Bai et al., 2024) , parameter-efficient training (Chen et al., 2023b) , and the development of new model architectures (Peng et al., 2023a; Gu & Dao, 2023) .\nLong-context evaluations. Existing benchmarks for evaluating long-context models can be divided into two categories. (1) Real-world benchmarks that assess general long-context capabilities (e.g., long-context QA, summarization, and language modeling), such as NarrativeQA (Kočiskỳ et al., 2018) , LongBench (Bai et al., 2023) , ZeroSCROLLS (Shaham et al., 2023) , L-Eval (An et al., 2023) , Loogle (Li et al., 2023b) , ∞Bench (Zhang et al., 2024) , and a series of work on perplexity evaluation (Beltagy et al., 2020; Roy et al., 2021; Press et al., 2021; Chen et al., 2023a; Liu et al., 2023; Peng et al., 2023b; Chen et al., 2023b; Ding et al., 2024; Mohtashami & Jaggi, 2024) . (2) Probing tasks that provide a more concise reflection of the long-context utilization across different context lengths and positions. These include Needle-in-the-Haystack, passkey retrieval (Mohtashami & Jaggi, 2024) , synthesized document QA (Liu et al., 2024) , S3Eval (Lei et al., 2024) , Discovery (Li et al., 2024) , RULER (Hsieh et al., 2024) , and the VAL Probing proposed in this study. Among these probing tasks, our VAL Probing is the first to explicitly incorporate a variety of retrieval patterns.",
+    "6_Conclusion": "This work introduces IN2 training to overcome the lost-in-the-middle problem. By applying IN2 training on the open-source model, our FILM-7B exhibits significant improvements on probing tasks and real-world long-context tasks while does not compromise the short-context performance. Ming Zhong, Da Yin, Tao Yu, Ahmad Zaidi, Mutethia Mutuma, Rahul Jha, Ahmed Hassan, Asli Celikyilmaz, Yang Liu, Xipeng Qiu, et al. Qmsum: A new benchmark for query-based multidomain meeting summarization. In Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, pp. 5905-5921, 2021. This is the Appendix of the paper: Make Your LLM Fully Utilize the Context."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Yi: Open foundation models by 01",
+      "authors": [
+        {
+          "first": ":",
+          "middle": [],
+          "last": "Ai",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Young",
+          "suffix": ""
+        },
+        {
+          "first": "Bei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Chengen",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Ge",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Guanwei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Heng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jiangcheng",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianqun",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jing",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Kaidong",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Qiang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Shawn",
+          "middle": [],
+          "last": "Yue",
+          "suffix": ""
+        },
+        {
+          "first": "Senbin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Shiming",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Tao",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Wen",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Wenhao",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohui",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoyi",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyao",
+          "middle": [],
+          "last": "Niu",
+          "suffix": ""
+        },
+        {
+          "first": "Pengcheng",
+          "middle": [],
+          "last": "Nie",
+          "suffix": ""
+        },
+        {
+          "first": "Yuchi",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Yudong",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yue",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxuan",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenyu",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiyuan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Zonghong",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "L-eval: Instituting standardized evaluation for long context language models",
+      "authors": [
+        {
+          "first": "Chenxin",
+          "middle": [],
+          "last": "An",
+          "suffix": ""
+        },
+        {
+          "first": "Shansan",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Ming",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Mukai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Lingpeng",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Xipeng",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Learning from mistakes makes llm better reasoner",
+      "authors": [
+        {
+          "first": "Zexiong",
+          "middle": [],
+          "last": "Shengnan An",
+          "suffix": ""
+        },
+        {
+          "first": "Zeqi",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Nanning",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Jian-Guang",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Weizhu",
+          "middle": [],
+          "last": "Lou",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Model card and evaluations for claude models",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Anthropic",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Longbench: A bilingual, multitask benchmark for long context understanding",
+      "authors": [
+        {
+          "first": "Yushi",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Lv",
+          "suffix": ""
+        },
+        {
+          "first": "Jiajie",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Hongchang",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        },
+        {
+          "first": "Jiankai",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhidian",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengxiao",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Xiao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Aohan",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Longalign: A recipe for long context alignment of large language models",
+      "authors": [
+        {
+          "first": "Yushi",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Lv",
+          "suffix": ""
+        },
+        {
+          "first": "Jiajie",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuze",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Ji",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxiao",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Juanzi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Longformer: The long-document transformer",
+      "authors": [
+        {
+          "first": "Iz",
+          "middle": [],
+          "last": "Beltagy",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [
+            "E"
+          ],
+          "last": "Peters",
+          "suffix": ""
+        },
+        {
+          "first": "Arman",
+          "middle": [],
+          "last": "Cohan",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Internlm2 technical report",
+      "authors": [
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Maosong",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Haojiong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Keyu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xun",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Zehui",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Zhi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Pei",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Extending context window of large language models via positional interpolation",
+      "authors": [
+        {
+          "first": "Shouyuan",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Sherman",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        },
+        {
+          "first": "Liangjian",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yuandong",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Longlora: Efficient fine-tuning of long-context large language models",
+      "authors": [
+        {
+          "first": "Yukang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Shengju",
+          "middle": [],
+          "last": "Qian",
+          "suffix": ""
+        },
+        {
+          "first": "Haotian",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "Zhijian",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Song",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaya",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Boolq: Exploring the surprising difficulty of natural yes/no questions",
+      "authors": [
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Kenton",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Wei",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Kwiatkowski",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Collins",
+          "suffix": ""
+        },
+        {
+          "first": "Kristina",
+          "middle": [],
+          "last": "Toutanova",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Think you have solved question answering? try arc, the ai2 reasoning challenge",
+      "authors": [
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Isaac",
+          "middle": [],
+          "last": "Cowhey",
+          "suffix": ""
+        },
+        {
+          "first": "Oren",
+          "middle": [],
+          "last": "Etzioni",
+          "suffix": ""
+        },
+        {
+          "first": "Tushar",
+          "middle": [],
+          "last": "Khot",
+          "suffix": ""
+        },
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Sabharwal",
+          "suffix": ""
+        },
+        {
+          "first": "Carissa",
+          "middle": [],
+          "last": "Schoenick",
+          "suffix": ""
+        },
+        {
+          "first": "Oyvind",
+          "middle": [],
+          "last": "Tafjord",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Training verifiers to solve math word problems",
+      "authors": [
+        {
+          "first": "Karl",
+          "middle": [],
+          "last": "Cobbe",
+          "suffix": ""
+        },
+        {
+          "first": "Vineet",
+          "middle": [],
+          "last": "Kosaraju",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Bavarian",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Heewoo",
+          "middle": [],
+          "last": "Jun",
+          "suffix": ""
+        },
+        {
+          "first": "Lukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Plappert",
+          "suffix": ""
+        },
+        {
+          "first": "Jerry",
+          "middle": [],
+          "last": "Tworek",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Hilton",
+          "suffix": ""
+        },
+        {
+          "first": "Reiichiro",
+          "middle": [],
+          "last": "Nakano",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "A dataset of information-seeking questions and answers anchored in research papers",
+      "authors": [
+        {
+          "first": "Pradeep",
+          "middle": [],
+          "last": "Dasigi",
+          "suffix": ""
+        },
+        {
+          "first": "Kyle",
+          "middle": [],
+          "last": "Lo",
+          "suffix": ""
+        },
+        {
+          "first": "Iz",
+          "middle": [],
+          "last": "Beltagy",
+          "suffix": ""
+        },
+        {
+          "first": "Arman",
+          "middle": [],
+          "last": "Cohan",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Matt",
+          "middle": [],
+          "last": "Gardner",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Longrope: Extending llm context window beyond 2 million tokens",
+      "authors": [
+        {
+          "first": "Yiran",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [
+            "Lyna"
+          ],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Chengruidong",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanyuan",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Ning",
+          "middle": [],
+          "last": "Shang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiahang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Mao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Glm: General language model pretraining with autoregressive blank infilling",
+      "authors": [
+        {
+          "first": "Zhengxiao",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Yujie",
+          "middle": [],
+          "last": "Qian",
+          "suffix": ""
+        },
+        {
+          "first": "Xiao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Ming",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Jiezhong",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhilin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Jie",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Multi-news: A large-scale multi-document summarization dataset and abstractive hierarchical model",
+      "authors": [
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Fabbri",
+          "suffix": ""
+        },
+        {
+          "first": "Irene",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Tianwei",
+          "middle": [],
+          "last": "She",
+          "suffix": ""
+        },
+        {
+          "first": "Suyi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Dragomir",
+          "middle": [],
+          "last": "Radev",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Data engineering for scaling language models to 128k context",
+      "authors": [
+        {
+          "first": "Yao",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Rameswar",
+          "middle": [],
+          "last": "Panda",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyao",
+          "middle": [],
+          "last": "Niu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Yue",
+          "suffix": ""
+        },
+        {
+          "first": "Hannaneh",
+          "middle": [],
+          "last": "Hajishirzi",
+          "suffix": ""
+        },
+        {
+          "first": "Yoon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Mamba: Linear-time sequence modeling with selective state spaces",
+      "authors": [
+        {
+          "first": "Albert",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Tri",
+          "middle": [],
+          "last": "Dao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Measuring massive multitask language understanding",
+      "authors": [
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "Collin",
+          "middle": [],
+          "last": "Burns",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Basart",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "Mantas",
+          "middle": [],
+          "last": "Mazeika",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Measuring mathematical problem solving with the math dataset",
+      "authors": [
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "Collin",
+          "middle": [],
+          "last": "Burns",
+          "suffix": ""
+        },
+        {
+          "first": "Saurav",
+          "middle": [],
+          "last": "Kadavath",
+          "suffix": ""
+        },
+        {
+          "first": "Akul",
+          "middle": [],
+          "last": "Arora",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Basart",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round 2)"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Constructing a multi-hop qa dataset for comprehensive evaluation of reasoning steps",
+      "authors": [
+        {
+          "first": "Xanh",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Anh-Khoa",
+          "middle": [],
+          "last": "Duong Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "Saku",
+          "middle": [],
+          "last": "Sugawara",
+          "suffix": ""
+        },
+        {
+          "first": "Akiko",
+          "middle": [],
+          "last": "Aizawa",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the 28th International Conference on Computational Linguistics"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Ruler: What's the real context size of your long-context language models?",
+      "authors": [
+        {
+          "first": "Cheng-Ping",
+          "middle": [],
+          "last": "Hsieh",
+          "suffix": ""
+        },
+        {
+          "first": "Simeng",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Kriman",
+          "suffix": ""
+        },
+        {
+          "first": "Shantanu",
+          "middle": [],
+          "last": "Acharya",
+          "suffix": ""
+        },
+        {
+          "first": "Dima",
+          "middle": [],
+          "last": "Rekesh",
+          "suffix": ""
+        },
+        {
+          "first": "Fei",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Boris",
+          "middle": [],
+          "last": "Ginsburg",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Efficient attentions for long document summarization",
+      "authors": [
+        {
+          "first": "Luyang",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuyang",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolaus",
+          "middle": [],
+          "last": "Parulian",
+          "suffix": ""
+        },
+        {
+          "first": "Ji",
+          "middle": [],
+          "last": "Heng",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, NAACL-HLT 2021"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Mistral 7b",
+      "authors": [
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Albert Q Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Arthur",
+          "middle": [],
+          "last": "Sablayrolles",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Mensch",
+          "suffix": ""
+        },
+        {
+          "first": "Devendra",
+          "middle": [],
+          "last": "Bamford",
+          "suffix": ""
+        },
+        {
+          "first": "Diego",
+          "middle": [],
+          "last": "Singh Chaplot",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "De Las Casas",
+          "suffix": ""
+        },
+        {
+          "first": "Gianna",
+          "middle": [],
+          "last": "Bressand",
+          "suffix": ""
+        },
+        {
+          "first": "Guillaume",
+          "middle": [],
+          "last": "Lengyel",
+          "suffix": ""
+        },
+        {
+          "first": "Lucile",
+          "middle": [],
+          "last": "Lample",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Saulnier",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "The narrativeqa reading comprehension challenge",
+      "authors": [
+        {
+          "first": "Tomáš",
+          "middle": [],
+          "last": "Kočiskỳ",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Schwarz",
+          "suffix": ""
+        },
+        {
+          "first": "Phil",
+          "middle": [],
+          "last": "Blunsom",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Dyer",
+          "suffix": ""
+        },
+        {
+          "first": "Karl",
+          "middle": [
+            "Moritz"
+          ],
+          "last": "Hermann",
+          "suffix": ""
+        },
+        {
+          "first": "Gábor",
+          "middle": [],
+          "last": "Melis",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [],
+          "last": "Grefenstette",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Transactions of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Race: Large-scale reading comprehension dataset from examinations",
+      "authors": [
+        {
+          "first": "Guokun",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        },
+        {
+          "first": "Qizhe",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Hanxiao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yiming",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Eduard",
+          "middle": [],
+          "last": "Hovy",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the 2017 Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "S3eval: A synthetic, scalable, systematic evaluation suite for large language models",
+      "authors": [
+        {
+          "first": "Fangyu",
+          "middle": [],
+          "last": "Lei",
+          "suffix": ""
+        },
+        {
+          "first": "Qian",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yiming",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Shizhu",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Kang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "How long can context length of open-source llms truly promise?",
+      "authors": [
+        {
+          "first": "Dacheng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Rulin",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        },
+        {
+          "first": "Anze",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "Lianmin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [],
+          "last": "Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "Ion",
+          "middle": [],
+          "last": "Stoica",
+          "suffix": ""
+        },
+        {
+          "first": "Xuezhe",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "NeurIPS 2023 Workshop on Instruction Tuning and Instruction Following"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Loogle: Can long-context language models understand long contexts",
+      "authors": [
+        {
+          "first": "Jiaqi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Mengmeng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zilong",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Muhan",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Starcoder: may the source be with you! Transactions on Machine Learning Research",
+      "authors": [
+        {
+          "first": "Raymond",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yangtian",
+          "middle": [],
+          "last": "Zi",
+          "suffix": ""
+        },
+        {
+          "first": "Niklas",
+          "middle": [],
+          "last": "Muennighoff",
+          "suffix": ""
+        },
+        {
+          "first": "Denis",
+          "middle": [],
+          "last": "Kocetkov",
+          "suffix": ""
+        },
+        {
+          "first": "Chenghao",
+          "middle": [],
+          "last": "Mou",
+          "suffix": ""
+        },
+        {
+          "first": "Marc",
+          "middle": [],
+          "last": "Marone",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Akiki",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "I"
+          ],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Jenny",
+          "middle": [],
+          "last": "Chim",
+          "suffix": ""
+        },
+        {
+          "first": "Qian",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Long-context llms struggle with long in-context learning",
+      "authors": [
+        {
+          "first": "Tianle",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Ge",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Quy",
+          "middle": [],
+          "last": "Duc Do",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Yue",
+          "suffix": ""
+        },
+        {
+          "first": "Wenhu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Teknium\". Openorca: An open dataset of gpt augmented flan reasoning traces",
+      "authors": [
+        {
+          "first": "Wing",
+          "middle": [],
+          "last": "Lian",
+          "suffix": ""
+        },
+        {
+          "first": "Bleys",
+          "middle": [],
+          "last": "Goodson",
+          "suffix": ""
+        },
+        {
+          "first": "Eugene",
+          "middle": [],
+          "last": "Pentland",
+          "suffix": ""
+        },
+        {
+          "first": "Austin",
+          "middle": [],
+          "last": "Cook",
+          "suffix": ""
+        },
+        {
+          "first": "Chanvichet",
+          "middle": [],
+          "last": "Vong",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Rouge: A package for automatic evaluation of summaries",
+      "authors": [
+        {
+          "first": "Chin-Yew",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2004,
+      "venue": "Text summarization branches out"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Lost in the middle: How language models use long contexts",
+      "authors": [
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Nelson F Liu",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Ashwin",
+          "middle": [],
+          "last": "Hewitt",
+          "suffix": ""
+        },
+        {
+          "first": "Michele",
+          "middle": [],
+          "last": "Paranjape",
+          "suffix": ""
+        },
+        {
+          "first": "Fabio",
+          "middle": [],
+          "last": "Bevilacqua",
+          "suffix": ""
+        },
+        {
+          "first": "Percy",
+          "middle": [],
+          "last": "Petroni",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Transactions of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Scaling laws of rope-based extrapolation",
+      "authors": [
+        {
+          "first": "Xiaoran",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Hang",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Chenxin",
+          "middle": [],
+          "last": "An",
+          "suffix": ""
+        },
+        {
+          "first": "Xipeng",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        },
+        {
+          "first": "Dahua",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Longwanjuan: Towards systematic measurement for long text quality",
+      "authors": [
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Lv",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoran",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Qipeng",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Hang",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Conghui",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xipeng",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        },
+        {
+          "first": "Dahua",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Random-access infinite context length for transformers",
+      "authors": [
+        {
+          "first": "Amirkeivan",
+          "middle": [],
+          "last": "Mohtashami",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Jaggi",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "In-context learning and induction heads",
+      "authors": [
+        {
+          "first": "Catherine",
+          "middle": [],
+          "last": "Olsson",
+          "suffix": ""
+        },
+        {
+          "first": "Nelson",
+          "middle": [],
+          "last": "Elhage",
+          "suffix": ""
+        },
+        {
+          "first": "Neel",
+          "middle": [],
+          "last": "Nanda",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Joseph",
+          "suffix": ""
+        },
+        {
+          "first": "Nova",
+          "middle": [],
+          "last": "Dassarma",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Yuntao",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Conerly",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Drain",
+          "suffix": ""
+        },
+        {
+          "first": "Deep",
+          "middle": [],
+          "last": "Ganguli",
+          "suffix": ""
+        },
+        {
+          "first": "Zac",
+          "middle": [],
+          "last": "Hatfield-Dodds",
+          "suffix": ""
+        },
+        {
+          "first": "Danny",
+          "middle": [],
+          "last": "Hernandez",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Johnston",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Jackson",
+          "middle": [],
+          "last": "Kernion",
+          "suffix": ""
+        },
+        {
+          "first": "Liane",
+          "middle": [],
+          "last": "Lovitt",
+          "suffix": ""
+        },
+        {
+          "first": "Kamal",
+          "middle": [],
+          "last": "Ndousse",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Mccandlish",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Olah",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "OpenAI"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "turbo fine-tuning and api updates",
+      "authors": [],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Rwkv: Reinventing rnns for the transformer era",
+      "authors": [
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Alcaide",
+          "suffix": ""
+        },
+        {
+          "first": "Quentin",
+          "middle": [],
+          "last": "Anthony",
+          "suffix": ""
+        },
+        {
+          "first": "Alon",
+          "middle": [],
+          "last": "Albalak",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Arcadinho",
+          "suffix": ""
+        },
+        {
+          "first": "Stella",
+          "middle": [],
+          "last": "Biderman",
+          "suffix": ""
+        },
+        {
+          "first": "Huanqi",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Chung",
+          "suffix": ""
+        },
+        {
+          "first": "Leon",
+          "middle": [],
+          "last": "Derczynski",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Findings of the Association for Computational Linguistics: EMNLP 2023"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Yarn: Efficient context window extension of large language models",
+      "authors": [
+        {
+          "first": "Bowen",
+          "middle": [],
+          "last": "Peng",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Quesnelle",
+          "suffix": ""
+        },
+        {
+          "first": "Honglu",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Enrico",
+          "middle": [],
+          "last": "Shippole",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Train short, test long: Attention with linear biases enables input length extrapolation",
+      "authors": [
+        {
+          "first": "Ofir",
+          "middle": [],
+          "last": "Press",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Exploring the limits of transfer learning with a unified text-to-text transformer",
+      "authors": [
+        {
+          "first": "Colin",
+          "middle": [],
+          "last": "Raffel",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Roberts",
+          "suffix": ""
+        },
+        {
+          "first": "Katherine",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Sharan",
+          "middle": [],
+          "last": "Narang",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Matena",
+          "suffix": ""
+        },
+        {
+          "first": "Yanqi",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "J"
+          ],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Journal of machine learning research"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Efficient content-based sparse attention with routing transformers",
+      "authors": [
+        {
+          "first": "Aurko",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Saffar",
+          "suffix": ""
+        },
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Grangier",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Transactions of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Code llama: Open foundation models for code",
+      "authors": [
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Baptiste Roziere",
+          "suffix": ""
+        },
+        {
+          "first": "Fabian",
+          "middle": [],
+          "last": "Gehring",
+          "suffix": ""
+        },
+        {
+          "first": "Sten",
+          "middle": [],
+          "last": "Gloeckle",
+          "suffix": ""
+        },
+        {
+          "first": "Itai",
+          "middle": [],
+          "last": "Sootla",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gat",
+          "suffix": ""
+        },
+        {
+          "first": "Ellen",
+          "middle": [],
+          "last": "Xiaoqing",
+          "suffix": ""
+        },
+        {
+          "first": "Yossi",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Jingyu",
+          "middle": [],
+          "last": "Adi",
+          "suffix": ""
+        },
+        {
+          "first": "Tal",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jérémy",
+          "middle": [],
+          "last": "Remez",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Rapin",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Zeroscrolls: A zero-shot benchmark for long text understanding",
+      "authors": [
+        {
+          "first": "Uri",
+          "middle": [],
+          "last": "Shaham",
+          "suffix": ""
+        },
+        {
+          "first": "Maor",
+          "middle": [],
+          "last": "Ivgi",
+          "suffix": ""
+        },
+        {
+          "first": "Avia",
+          "middle": [],
+          "last": "Efrat",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Berant",
+          "suffix": ""
+        },
+        {
+          "first": "Omer",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Findings of the Association for Computational Linguistics: EMNLP 2023"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Prediction with a short memory",
+      "authors": [
+        {
+          "first": "Sham",
+          "middle": [],
+          "last": "Vatsal Sharan",
+          "suffix": ""
+        },
+        {
+          "first": "Percy",
+          "middle": [],
+          "last": "Kakade",
+          "suffix": ""
+        },
+        {
+          "first": "Gregory",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Valiant",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 50th Annual ACM SIGACT Symposium on Theory of Computing"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "In-context pretraining: Language modeling beyond document boundaries",
+      "authors": [
+        {
+          "first": "Weijia",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Sewon",
+          "middle": [],
+          "last": "Min",
+          "suffix": ""
+        },
+        {
+          "first": "Maria",
+          "middle": [],
+          "last": "Lomeli",
+          "suffix": ""
+        },
+        {
+          "first": "Chunting",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Margaret",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "Victoria Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Noah",
+          "middle": [
+            "A"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        },
+        {
+          "first": "Wen-Tau",
+          "middle": [],
+          "last": "Yih",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Hierarchical context merging: Better long context understanding for pre-trained llms",
+      "authors": [
+        {
+          "first": "Woomin",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Seunghyuk",
+          "middle": [],
+          "last": "Oh",
+          "suffix": ""
+        },
+        {
+          "first": "Sangwoo",
+          "middle": [],
+          "last": "Mo",
+          "suffix": ""
+        },
+        {
+          "first": "Jaehyung",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Sukmin",
+          "middle": [],
+          "last": "Yun",
+          "suffix": ""
+        },
+        {
+          "first": "Jung-Woo",
+          "middle": [],
+          "last": "Ha",
+          "suffix": ""
+        },
+        {
+          "first": "Jinwoo",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Do long-range language models actually use long-range context?",
+      "authors": [
+        {
+          "first": "Simeng",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Kalpesh",
+          "middle": [],
+          "last": "Krishna",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Mattarella-Micke",
+          "suffix": ""
+        },
+        {
+          "first": "Mohit",
+          "middle": [],
+          "last": "Iyyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "CommonsenseQA: A question answering challenge targeting commonsense knowledge",
+      "authors": [
+        {
+          "first": "Alon",
+          "middle": [],
+          "last": "Talmor",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Herzig",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Lourie",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Berant",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Introducing mpt-30b: Raising the bar for open-source foundation models",
+      "authors": [
+        {
+          "first": "Nlp",
+          "middle": [],
+          "last": "Mosaicml",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Team",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Together 32k",
+      "authors": [],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Llama 2: Open foundation and fine-tuned chat models",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Louis",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Albert",
+          "suffix": ""
+        },
+        {
+          "first": "Amjad",
+          "middle": [],
+          "last": "Almahairi",
+          "suffix": ""
+        },
+        {
+          "first": "Yasmine",
+          "middle": [],
+          "last": "Babaei",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolay",
+          "middle": [],
+          "last": "Bashlykov",
+          "suffix": ""
+        },
+        {
+          "first": "Soumya",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "Prajjwal",
+          "middle": [],
+          "last": "Bhargava",
+          "suffix": ""
+        },
+        {
+          "first": "Shruti",
+          "middle": [],
+          "last": "Bhosale",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Musique: Multihop questions via single-hop question composition",
+      "authors": [
+        {
+          "first": "Harsh",
+          "middle": [],
+          "last": "Trivedi",
+          "suffix": ""
+        },
+        {
+          "first": "Niranjan",
+          "middle": [],
+          "last": "Balasubramanian",
+          "suffix": ""
+        },
+        {
+          "first": "Tushar",
+          "middle": [],
+          "last": "Khot",
+          "suffix": ""
+        },
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Sabharwal",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Transactions of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Focused transformer: Contrastive training for context scaling",
+      "authors": [
+        {
+          "first": "Szymon",
+          "middle": [],
+          "last": "Tworkowski",
+          "suffix": ""
+        },
+        {
+          "first": "Konrad",
+          "middle": [],
+          "last": "Staniszewski",
+          "suffix": ""
+        },
+        {
+          "first": "Mikołaj",
+          "middle": [],
+          "last": "Pacek",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhuai",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Henryk",
+          "middle": [],
+          "last": "Michalewski",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Miłoś",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Effective long-context scaling of foundation models",
+      "authors": [
+        {
+          "first": "Wenhan",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Jingyu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Molybog",
+          "suffix": ""
+        },
+        {
+          "first": "Hejia",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Prajjwal",
+          "middle": [],
+          "last": "Bhargava",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Louis",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "Rashi",
+          "middle": [],
+          "last": "Rungta",
+          "suffix": ""
+        },
+        {
+          "first": "Karthik",
+          "middle": [],
+          "last": "Abinav Sankararaman",
+          "suffix": ""
+        },
+        {
+          "first": "Barlas",
+          "middle": [],
+          "last": "Oguz",
+          "suffix": ""
+        },
+        {
+          "first": "Madian",
+          "middle": [],
+          "last": "Khabsa",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Yashar",
+          "middle": [],
+          "last": "Mehdad",
+          "suffix": ""
+        },
+        {
+          "first": "Sharan",
+          "middle": [],
+          "last": "Narang",
+          "suffix": ""
+        },
+        {
+          "first": "Kshitiz",
+          "middle": [],
+          "last": "Malik",
+          "suffix": ""
+        },
+        {
+          "first": "Angela",
+          "middle": [],
+          "last": "Fan",
+          "suffix": ""
+        },
+        {
+          "first": "Shruti",
+          "middle": [],
+          "last": "Bhosale",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Edunov",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [],
+          "last": "Lewis",
+          "suffix": ""
+        },
+        {
+          "first": "Sinong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Retrieval meets long context large language models",
+      "authors": [
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Ping",
+          "suffix": ""
+        },
+        {
+          "first": "Xianchao",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Lawrence",
+          "middle": [],
+          "last": "Mcafee",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Zihan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Sandeep",
+          "middle": [],
+          "last": "Subramanian",
+          "suffix": ""
+        },
+        {
+          "first": "Evelina",
+          "middle": [],
+          "last": "Bakhturina",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Shoeybi",
+          "suffix": ""
+        },
+        {
+          "first": "Bryan",
+          "middle": [],
+          "last": "Catanzaro",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Hotpotqa: A dataset for diverse, explainable multi-hop question answering",
+      "authors": [
+        {
+          "first": "Zhilin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "Saizheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "Ruslan",
+          "middle": [],
+          "last": "Salakhutdinov",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Hellaswag: Can a machine really finish your sentence?",
+      "authors": [
+        {
+          "first": "Rowan",
+          "middle": [],
+          "last": "Zellers",
+          "suffix": ""
+        },
+        {
+          "first": "Ari",
+          "middle": [],
+          "last": "Holtzman",
+          "suffix": ""
+        },
+        {
+          "first": "Yonatan",
+          "middle": [],
+          "last": "Bisk",
+          "suffix": ""
+        },
+        {
+          "first": "Ali",
+          "middle": [],
+          "last": "Farhadi",
+          "suffix": ""
+        },
+        {
+          "first": "Yejin",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "∞bench: Extending long context evaluation beyond 100k tokens",
+      "authors": [
+        {
+          "first": "Xinrong",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yingfa",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Shengding",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Zihang",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Junhao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Khai",
+          "middle": [],
+          "last": "Moo",
+          "suffix": ""
+        },
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Hao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhen",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Shuo",
+          "middle": [],
+          "last": "Leng Thai",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiyuan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Maosong",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Pytorch fsdp: experiences on scaling fully sharded data parallel",
+      "authors": [
+        {
+          "first": "Yanli",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Rohan",
+          "middle": [],
+          "last": "Varma",
+          "suffix": ""
+        },
+        {
+          "first": "Liang",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Chien-Chin",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Min",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Less",
+          "middle": [],
+          "last": "Wright",
+          "suffix": ""
+        },
+        {
+          "first": "Hamid",
+          "middle": [],
+          "last": "Shojanazeri",
+          "suffix": ""
+        },
+        {
+          "first": "Myle",
+          "middle": [],
+          "last": "Ott",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Shleifer",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    }
+  ]
+}

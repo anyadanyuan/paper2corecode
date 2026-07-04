@@ -1,0 +1,2932 @@
+{
+  "paper_id": "riskcal",
+  "title": "Attack-Aware Noise Calibration for Differential Privacy",
+  "authors": [
+    {
+      "first": "Bogdan",
+      "middle": [],
+      "last": "Kulynych",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "EPFL",
+        "location": {}
+      }
+    },
+    {
+      "first": "Juan",
+      "middle": [
+        "Felipe"
+      ],
+      "last": "Gomez",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "EPFL",
+        "location": {}
+      }
+    },
+    {
+      "first": "Georgios",
+      "middle": [],
+      "last": "Kaissis",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "EPFL",
+        "location": {}
+      }
+    },
+    {
+      "first": "Flavio",
+      "middle": [],
+      "last": "Du",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "EPFL",
+        "location": {}
+      }
+    },
+    {
+      "first": "Pin",
+      "middle": [],
+      "last": "Calmon",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "EPFL",
+        "location": {}
+      }
+    },
+    {
+      "first": "Carmela",
+      "middle": [],
+      "last": "Troncoso",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "EPFL",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Differential privacy (DP) is a widely used approach for mitigating privacy risks when training machine learning models on sensitive data. DP mechanisms add noise during training to limit the risk of information leakage. The scale of the added noise is critical, as it determines the trade-off between privacy and utility. The standard practice is to select the noise scale to satisfy a given privacy budget ε. This privacy budget is in turn interpreted in terms of operational attack risks, such as accuracy, sensitivity, and specificity of inference attacks aimed to recover information about the training data records. We show that first calibrating the noise scale to a privacy budget ε, and then translating ε to attack risk leads to overly conservative risk assessments and unnecessarily low utility. Instead, we propose methods to directly calibrate the noise scale to a desired attack risk level, bypassing the step of choosing ε. For a given notion of attack risk, our approach significantly decreases noise scale, leading to increased utility at the same level of privacy. We empirically demonstrate that calibrating noise to attack sensitivity/specificity, rather than ε, when training privacy-preserving ML models substantially improves model accuracy for the same risk level. Our work provides a principled and practical way to improve the utility of privacy-preserving ML without compromising on privacy.",
+  "body": {
+    "2._Limitations": "Question: Does the paper discuss the limitations of the work performed by the authors? Answer: [Yes] Justification: Section 3.1 discusses in detail the limitations of advantage calibration. Section 5 discusses limitations and future work for the whole paper.\nGuidelines:\n• The answer NA means that the paper has no limitation while the answer No means that the paper has limitations, but those are not discussed in the paper.\n• The authors are encouraged to create a separate \"Limitations\" section in their paper.\n• The paper should point out any strong assumptions and how robust the results are to violations of these assumptions (e.g., independence assumptions, noiseless settings, model well-specification, asymptotic approximations only holding locally). The authors should reflect on how these assumptions might be violated in practice and what the implications would be.\n• The authors should reflect on the scope of the claims made, e.g., if the approach was only tested on a few datasets or with a few runs. In general, empirical results often depend on implicit assumptions, which should be articulated.\n• The authors should reflect on the factors that influence the performance of the approach.\nFor example, a facial recognition algorithm may perform poorly when image resolution is low or images are taken in low lighting. Or a speech-to-text system might not be used reliably to provide closed captions for online lectures because it fails to handle technical jargon.\n• The authors should discuss the computational efficiency of the proposed algorithms and how they scale with dataset size.\n• If applicable, the authors should discuss possible limitations of their approach to address problems of privacy and fairness.\n• While the authors might fear that complete honesty about limitations might be used by reviewers as grounds for rejection, a worse outcome might be that reviewers discover limitations that aren't acknowledged in the paper. The authors should use their best judgment and recognize that individual actions in favor of transparency play an important role in developing norms that preserve the integrity of the community. Reviewers will be specifically instructed to not penalize honesty concerning limitations.",
+    "1_Introduction": "Machine learning and statistical models can leak information about individuals in their training data, which can be recovered by membership inference, attribute inference, and reconstruction attacks (Fredrikson et al., 2015; Shokri et al., 2017; Yeom et al., 2018; Balle et al., 2022) . The most common defenses against these attacks are based on differential privacy (DP) (Dwork et al., 2014) . Differential privacy introduces noise to either the data, the training algorithm, or the model parameters (Chaudhuri et al., 2011) . This noise provably limits the adversary's ability to run successful attacks at the cost of reducing the utility of the model.\nIn DP, the parameters ε and δ control the privacy-utility trade-off. These parameters determine the scale (e.g., variance) of the noise added during training: Smaller values of these parameters correspond to larger noise. Larger noise provides stronger privacy guarantees but reduces the utility of the trained model. Typically, δ is set to a small fixed value (usually between 10 -8 and 10 -5 ), leaving ε as the primary tunable parameter. Without additional analyses, the values of parameters (ε, δ) alone do not provide a tangible and intuitive operational notion of privacy risk (Nanayakkara et al., 2023) . This begs the question: how should practitioners, regulators, and data subjects decide on acceptable values of ε and δ and calibrate the noise scale to achieve a desired level of protection?",
+    "2.1_Preliminaries": "Setup and notation. Let D n denote the set of all datasets of size n over a space D, and let S ≃ S ′ denote a neighboring relation, e.g. S, S ′ that differ by one datapoint. We study randomized algorithms (mechanisms) M (S) that take as input a dataset S ∈ 2 D , and output the result of a computation, e.g., statistical queries or an ML model. We denote the output domain of the mechanism by Θ. For ease of presentation, we mainly consider randomized mechanisms that are parameterized by a single noise parameter ω ∈ Ω, but our results extend to mechanisms with multiple parameters. For example, in the Gaussian mechanism (Dwork et al., 2014) , M (S) = q(S) + Z, where Z ∼ N (0, σ 2 ) and q(S) is a non-private statistical algorithm, the parameter is ω = σ with Ω = R ≥0 . We denote a parameterized mechanism by M ω (S). We summarize the notation in Table 1 in the Appendix.",
+    "2.2_Operational_Privacy_Risks": "We can interpret differential privacy through the lens of membership inference attacks (MIAs) in the so-called strong-adversary model (see, e.g., Nasr et al., 2021) . In this framework, the adversary aims to determine whether a given output θ ∈ Θ came from M (S) or M (S ′ ), where S ′ = S ∪ {z} for some target example z ∈ D. † The adversary has access to the mechanism M (•), the dataset S, and the target example z ∈ D. Such an attack is equivalent to a binary hypothesis test (Wasserman and Zhou, 2010; Kairouz et al., 2015; Dong et al., 2022) :\nEQUATION\nwhere the MIA is modelled as a test ϕ : Θ → [0, 1] that maps a given mechanism output θ to the probability of the null hypothesis H 0 being rejected. We can analyze this hypothesis test through the trade-off between the achievable false positive rate (FPR) α ϕ ≜ E M (S) [ϕ] and false negative rate (FNR)\nβ ϕ ≜ 1 -E M (S ′ ) [ϕ]\n, where the expectations are taken over the coin flips in the mechanism. ‡ Dong et al. (2022) formalize the trade-off function and define f -DP as follows:\nDefinition 2.3. A trade-off function T (M (S), M (S ′ )) : [0, 1] → [0, 1] outputs the FNR of the most powerful attack at any given level α ∈ [0, 1]:\nEQUATION\nSee Figure 5 in the Appendix for an illustration.\nDefinition 2.4. A mechanism M (•) satisfies f -DP, where f is the trade-off curve for some other mechanism, if for all α ∈ [0, 1], we have inf S≃S ′ T (M (S), M (S ′ ))(α) ≥ f (α).\nNext, we state the equivalence between (ε, δ)-DP guarantees and f -DP guarantees. Proposition 2.1 (Dong et al. (2022) ). If a mechanism M (•) is (ε, δ)-DP, then it is f -DP with\nEQUATION\nMoreover, a mechanism M (•) satisfies (ε(δ), δ)-DP for all δ ∈ [0, 1] iff it is f -DP with\nEQUATION\nWe overview three particular notions of attack risk: advantage/accuracy of MIAs, FPR/FNR of MIAs, and reconstruction robustness. These risks can be thought of as summary statistics of the f curve.\nAdvantage/Accuracy. Wood et al. (2018) proposed § to measure the attack risk as the maximum achievable attack accuracy. To avoid confusion with task accuracy, we use advantage over random guessing, which is the difference between the attack TPR 1 -β ϕ and FNR α ϕ :\nEQUATION\nThe advantage η is a linear transformation of the maximum attack accuracy\nsup 1 /2 • (1 -β ϕ ) + 1 /2 • (1 -α ϕ ),\nwhere supremum is over S ≃ S ′ and ϕ : Θ → [0, 1]. Moreover, η can be obtained from a fixed point α * = f (α * ) of the f curve as 1 -2α * , and it is bounded given an (ε, δ)-DP guarantee: Proposition 2.2 (Kairouz et al. 2015). If a mechanism M (•) is (ε, δ)-DP, then we have:\nEQUATION\nFPR/FNR Risk. Recent work (Carlini et al., 2022; Rezaei and Liu, 2021) has argued that MIAs are a relevant threat only when the attack true positive rate 1 -β ϕ is high at low enough α ϕ . As a concrete notion of risk, we thus consider minimum level of attack FNR β ⋆ within an FPR region α ∈ [0, α ⋆ ], where α ⋆ is a low value. This approach is similar to the statistically significant p-values often used in the sciences. Following the scientific standards and Carlini et al. (2022) , we consider α ⋆ ∈ {0.01, 0.05, 0.1}.",
+    "2.3_Our_Objective:_Attack-Aware_Noise_Calibration": "The standard practice in DP is to calibrate the noise scale ω of a mechanism M ω (•) to some target (ε ⋆ , δ ⋆ )-DP guarantee, with ε ⋆ from a recommended range, e.g., ε ⋆ ∈ [2, 10], and δ ⋆ fixed to δ ⋆ < 1 /n, as in Eq. ( 2). Then, the privacy guarantees provided by the chosen (ε ⋆ , δ ⋆ ) are obtained by mapping these values to bounds on sensitivity and specificity (by Proposition 2.1) or advantage (by Proposition 2.2) of membership inference attacks. In this work, we show that if the goal is to provide an operational and interpretable guarantee such as attack advantage or FPR/FNR, this approach leads to unnecessarily pessimistic noise requirements and a deterioration in utility due to the intermediate step of setting (ε ⋆ , δ ⋆ ). We show it is possible to skip this intermediate step by using the hypothesis-testing interpretation of DP to directly calibrate noise to operational notions of privacy risk. In practice, this means replacing the constraint in Eq. ( 2) with an operational notion of risk:\nEQUATION\nSolving this optimization problem requires two components. First, a way to optimize ω given a method to compute risk ω . As we assume that risk is monotonic in ω, Eq. ( 9) can be solved via binary search (see, e.g., Paszke et al., 2019) using calls to the risk ω function to an arbitrary precision. Second, we need a way to compute risk ω for any value ω. In the next section, we provide efficient methods for doing so for general DP mechanisms, including composed mechanisms such as DP-SGD, by extending the tight privacy analysis from Doroshenko et al. (2022) to computing f -DP. Having these methods, we instantiate Eq. ( 9) for the notions of risks introduced in Section 2.2.",
+    "3_Numeric_Calibration_to_Attack_Risks": {
+      "3._Theory_Assumptions_and_Proofs": "Question: For each theoretical result, does the paper provide the full set of assumptions and a complete (and correct) proof? Answer: [Yes]\n• Depending on the country in which research is conducted, IRB approval (or equivalent) may be required for any human subjects research. If you obtained IRB approval, you should clearly state this in the paper.\n• We recognize that the procedures for this may vary significantly between institutions and locations, and we expect authors to adhere to the NeurIPS Code of Ethics and the guidelines for their institution.\n• For initial submissions, do not include any information that would break anonymity (if applicable), such as the institution conducting the review.",
+      "3.1_Calibration_to_Advantage": "First, we show how to instantiate Eq. ( 9) to calibrate noise to a target advantage η ⋆ ∈ [0, 1]. Let η ω denote the advantage of the mechanism M ω (•) as defined in Eq. ( 7):\nEQUATION\n)\nGiven the PLRVs (X ω , Y ω ), we can obtain a substantially tighter bound than converting (ε, δ) guarantees using Proposition 2.2 under standard calibration. Specifically, Theorem 3.3 provides the following way to solve the problem:\nEQUATION\n)\nWe call this approach advantage calibration, and show how to practically implement it in Algorithms 3 and 4 in the Appendix. Given a method for obtaining valid PLRVs X ω , Y ω for any ω, such as the one by Doroshenko et al. (2022) , advantage calibration is guaranteed to ensure bounded advantage, which follows by combining Proposition 3.1 and Theorem 3.3:\n0.00 0.05 0.10 0.15 0.20 0.25 Attack advantage, η 10 0 10 1 Noise scale, σ Method Standard calibration Advantage calibration (a) Calibrating noise to attack advantage significantly reduces the required noise scale compared to the standard approach. y axis is logarithmic. \n3.2. Given PLRVs (X ω , Y ω ) of a discrete-valued dominating pair of a mechanism M ω (•), choosing ω * using Eq. (14) ensures η ω * ≤ η ⋆ .",
+      "3.2_Safer_Choice:_Calibration_to_FNR_within_a_Given_FPR_Region": "In this section, we show how to calibrate the noise in any practical DP mechanism to a given minimum level of attack FNR β ⋆ within an FPR region α ∈ [0, α ⋆ ], which enables to avoid the pitfalls of advantage calibration. We base this notion of risk off the previous work (Carlini et al., 2022; Rezaei and Liu, 2021) which argued that MIAs are a relevant threat only when the achievable TPR 1 -β is high at low FPR α. We instantiate the calibration problem in Eq. ( 9) as follows, assuming\nEQUATION\nTo solve Eq. ( 16), we begin by showing that such calibration is in fact equivalent to requiring a given level of attack FNR β ⋆ and FPR α ⋆ .\nAlgorithm 1 Construct the trade-off curve using discrete privacy loss random variables (X, Y )\nRequire: PMF Pr[X ω = x i ] over grid {x 1 , x 2 , . . . , x k } with x 1 < x 2 < . . . < x k Require: PMF Pr[Y ω = y j ] over grid {y 1 , y 2 , . . . , y l } with y 1 < y 2 < . . . < y l 1: procedure COMPUTEBETA(ω; α ⋆ ; X ω , Y ω ) 2: t ← min{i ∈ {0, 1, . . . , k} | Pr[X ω > x i ] ≤ α ⋆ }, where x 0 ≜ -∞ 3: γ ← α ⋆ -Pr[Xω>xt]\nPr [Xω=xt] 4:\nreturn f ω (α ⋆ ) = Pr[Y ω ≤ x t ] -γ Pr[Y ω = x t ]\nProposition 3.4. For any α ⋆ ≥ 0, β ⋆ ≥ 0 such that α ⋆ + β ⋆ ≤ 1, and any f -DP mechanism M (•):\nEQUATION\n)\nThis follows directly by monotonicity of the trade-off function f (Dong et al., 2022) . The optimization problem becomes:\nEQUATION\nUnlike advantage calibration to η ⋆ , the approach in Eq. ( 18) limits the adversary's capabilities without increasing the risk in the privacy-critical low-FPR regime, as we can explicitly control the acceptable attack sensitivity for a given low FPR.\nTo obtain f ω (α), we use the PLRVs X ω , Y ω along with Theorem 3.3 to compute f = T (P, Q) ¶ (see Algorithm 1), and solve Eq. ( 18) using binary search over ω ∈ Ω. We provide the precise procedure in Algorithm 6 in the Appendix. This approach guarantees the desired level of risk: Proposition 3.5. Given PLRVs (X ω , Y ω ) of a discrete-valued dominating pair of a mechanism M ω (•), choosing ω * using Eq. ( 18) and Algorithm 1 to compute f ω (α) ensures f ω * (α ⋆ ) ≥ β ⋆ .",
+      "3.3_Other_Approaches_to_Trade-Off_Curve_Accounting": "In this section, we first contextualize the proposed method within existing work. Then, we discuss settings in which alternatives to PLRV-based procedures could be more suitable.",
+      "_text": "In this section, we provide methods for calibrating DP mechanisms to the notions of privacy risk in Section 2.2. As a first step, we introduce the core technical building blocks of our calibration method: methods for evaluating advantage η ω and the trade-off curve f ω (α) for a given value of ω.\nDominating Pairs and PLRVs. We make use of two concepts, originally developed in the context of computing tight privacy profiles under composition: dominating pairs (Zhu et al., 2022a) and privacy loss random variables (PLRV) (Dwork and Rothblum, 2016) .\nDefinition 3.1. We say that a pair of distributions (P, Q) is a dominating pair for a mechanism M (•) if for every ε ∈ R, we have sup\nS≃S ′ D e ε (M (S) ∥ M (S ′ )) ≤ D e ε (P ∥ Q).\nImportantly, a dominating pair also provides a lower bound on the trade-off curve of a mechanism: Proposition 3.1. If (P, Q) is a dominating pair for a mechanism M , then for α ∈ [0, 1],\nEQUATION\nThe proofs of this and all the following statements are in Appendix E. Proposition 3.1 implies that a mechanism M (•) is f -DP with f = T (P, Q). Next, we introduce privacy loss random variables, which provide a natural parameterization of the curve T (P, Q).\nDefinition 3.2. Suppose that a mechanism M (•) has a discrete-valued dominating pair (P, Q). Then, we define the privacy loss random variables (PLRVs) (X, Y ) as Y ≜ log Q(o) /P (o), with o ∼ Q, and\nX ≜ log Q(o ′ ) /P (o ′ ) with o ′ ∼ P .\nWe can now state the result which serves as a main building block for our calibration algorithms, and forms the main theoretical contribution of our work. Theorem 3.3 (Accounting for advantage and f -DP with PLRVs). Suppose that a mechanism M (•) has a discrete-valued dominating pair (P, Q) with associated PLRVs (X, Y ). The attack advantage η for this mechanism is bounded:\nEQUATION\nMoreover, for any τ ∈ R ∪ {∞, -∞} and γ ∈ [0, 1], define\nEQUATION\nFor any level α ∈ [0, 1], choosing τ = (1 -α)-quantile of X and\nγ = α-Pr[X>τ ] Pr[X=τ ] guarantees that T (P, Q)(α) = β * (τ, γ).\nTo show this, we use the Neyman-Pearson lemma to explicitly parameterize the most powerful attack at level α in terms the threshold τ on the Neyman-Pearson test statistic and the probability γ of guessing when the test statistic exactly equals the threshold. See Appendix E.2 for the detailed proof.\nWe remark that similar results for the trade-off curve appear in (Zhu et al., 2022a) without the γ terms, as Zhu et al. assume continuous PLRVs (X, Y ). In our work, we rely on the technique due to Doroshenko et al. (2022) , summarized in Appendix D, which discretizes continuous mechanisms such as the subsampled Gaussian in DP-SGD, and provides a dominating pair that is discrete and finitely supported over an evenly spaced grid. As the dominating pairs are discrete, the γ terms are non-zero, thus are necessary to fully reconstruct the trade-off curve."
+    },
+    "4_Experiments": "In this section, we empirically evaluate the utility improvement of our calibration method over traditional approaches. We do so in simulations as well as in realistic applications of DP-SGD. In Appendix H, we also evaluate the utility gain when performing simpler statistical analyses.\nSimulations. First, we demonstrate the noise reduction when calibrating the DP-SGD algorithm for given error rates using the setup in Section 3.1. We fix three low FPR values: α ⋆ ∈ {0.01, 0.05, 0.1}, and vary maximum attack sensitivity 1 -β ⋆ from 0.1 to 0.5 in each FPR regime. We show the results in Figure 3 . We observe a significant decrease in the noise scale for all values. Although the decrease is smaller than with calibration for advantage (see Figure 2a ), calibrating directly for risk in the low FPR regime avoids the pitfall of advantage calibration: inadvertently increasing risk in this regime.",
+    "5_Concluding_Remarks": "In this work, we proposed novel methods for calibrating noise in differentially private learning targeting a given level of operational privacy risk: advantage and FPR/FNR of membership inference attacks. We introduced an accounting algorithm which directly and tightly estimates privacy guarantees in terms of f -DP, which characterizes these operational risks. Using simulations and end-to-end experiments on common use cases, we showed that our attack-aware noise calibration significantly decreases the required level of noise compared to the standard approach at the same level of operational risk. In the case of calibration for advantage, we also showed that the noise decrease could be harmful as it could allow for increased attack success in the low FPR regime compared to the standard approach, whereas calibration for a given level of FPR/FNR mitigates this issue. Next, we discuss limitations and possible directions for future work.\nChoice of Target FPR/FNR. We leave open the question on how to choose the target FPR α ⋆ and FNR β ⋆ , e.g., whether standard significance levels in sciences such as α ⋆ = 0.05 are compatible with data protection regulation and norms. Further work is needed to develop concrete guidance on the choice of target FPR and FNR informed by legal and practical constraints.\nCatastrophic Failures. It is possible to construct pathological DP mechanisms which admit catastrophic failures (see, e.g., Ponomareva et al., 2023) , i.e., mechanisms which allow non-trivial attack TPR at FPR α = 0 so that their trade-off curve is such that T (M (S), M (S ′ ))(0) < 1 for some S ≃ S ′ . A classical example in the context of private data release is a mechanism that releases a data record in the clear with probability δ > 0, in which case we have T (M (S), M (S ′ ))(0) = 1 -δ.\nSee the proof of Proposition 3.3 in Appendix E for a concrete construction. In the case that such a pathological mechanism is used in practice, one should use standard calibration to (ε, δ) with δ ≪ 1 /n to directly limit the chance of catastrophic failures. Fortunately, practical mechanisms such as DP-SGD do not admit catastrophic failures, as they ensure T (M (S), M (S ′ ))(0) = 1."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Deep learning with differential privacy",
+      "authors": [
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Abadi",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Chu",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Brendan Mcmahan",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Mironov",
+          "suffix": ""
+        },
+        {
+          "first": "Kunal",
+          "middle": [],
+          "last": "Talwar",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the 2016 ACM SIGSAC conference on computer and communications security"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Revisiting the economics of privacy: Population statistics and confidentiality protection as public goods",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "John",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [
+            "M"
+          ],
+          "last": "Abowd",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Schmutte",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Economics"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "The saddle-point method in differential privacy",
+      "authors": [
+        {
+          "first": "Wael",
+          "middle": [],
+          "last": "Alghamdi",
+          "suffix": ""
+        },
+        {
+          "first": "Juan",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Felipe",
+          "middle": [],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Shahab",
+          "middle": [],
+          "last": "Asoodeh",
+          "suffix": ""
+        },
+        {
+          "first": "Flavio",
+          "middle": [],
+          "last": "Calmon",
+          "suffix": ""
+        },
+        {
+          "first": "Oliver",
+          "middle": [],
+          "last": "Kosut",
+          "suffix": ""
+        },
+        {
+          "first": "Lalitha",
+          "middle": [],
+          "last": "Sankar",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Improving the gaussian mechanism for differential privacy: Analytical calibration and optimal denoising",
+      "authors": [
+        {
+          "first": "Borja",
+          "middle": [],
+          "last": "Balle",
+          "suffix": ""
+        },
+        {
+          "first": "Yu-Xiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Reconstructing training data with informed adversaries",
+      "authors": [
+        {
+          "first": "Borja",
+          "middle": [],
+          "last": "Balle",
+          "suffix": ""
+        },
+        {
+          "first": "Giovanni",
+          "middle": [],
+          "last": "Cherubin",
+          "suffix": ""
+        },
+        {
+          "first": "Jamie",
+          "middle": [],
+          "last": "Hayes",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE Symposium on Security and Privacy (SP). IEEE"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Adult. UCI Machine Learning Repository",
+      "authors": [
+        {
+          "first": "Barry",
+          "middle": [],
+          "last": "Becker",
+          "suffix": ""
+        },
+        {
+          "first": "Ronny",
+          "middle": [],
+          "last": "Kohavi",
+          "suffix": ""
+        }
+      ],
+      "year": 1996,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Membership inference attacks from first principles",
+      "authors": [
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Carlini",
+          "suffix": ""
+        },
+        {
+          "first": "Steve",
+          "middle": [],
+          "last": "Chien",
+          "suffix": ""
+        },
+        {
+          "first": "Milad",
+          "middle": [],
+          "last": "Nasr",
+          "suffix": ""
+        },
+        {
+          "first": "Shuang",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Terzis",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Tramer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE Symposium on Security and Privacy (SP)"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Differentially private empirical risk minimization",
+      "authors": [
+        {
+          "first": "Kamalika",
+          "middle": [],
+          "last": "Chaudhuri",
+          "suffix": ""
+        },
+        {
+          "first": "Claire",
+          "middle": [],
+          "last": "Monteleoni",
+          "suffix": ""
+        },
+        {
+          "first": "Anand",
+          "middle": [
+            "D"
+          ],
+          "last": "Sarwate",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Closed-form bounds for DP-SGD against record-level inference",
+      "authors": [
+        {
+          "first": "Giovanni",
+          "middle": [],
+          "last": "Cherubin",
+          "suffix": ""
+        },
+        {
+          "first": "Boris",
+          "middle": [],
+          "last": "Köpf",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Paverd",
+          "suffix": ""
+        },
+        {
+          "first": "Shruti",
+          "middle": [],
+          "last": "Tople",
+          "suffix": ""
+        },
+        {
+          "first": "Lukas",
+          "middle": [],
+          "last": "Wutschitz",
+          "suffix": ""
+        },
+        {
+          "first": "Santiago",
+          "middle": [],
+          "last": "Zanella Béguelin",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "33rd USENIX Security Symposium (USENIX Security 2024)"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "I need a better description\"': An investigation into user expectations for differential privacy",
+      "authors": [
+        {
+          "first": "Rachel",
+          "middle": [],
+          "last": "Cummings",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Kaptchuk",
+          "suffix": ""
+        },
+        {
+          "first": "Elissa",
+          "middle": [
+            "M"
+          ],
+          "last": "Redmiles",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the 2021 ACM SIGSAC Conference on Computer and Communications Security"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Gaussian differential privacy",
+      "authors": [
+        {
+          "first": "Jinshuo",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Roth",
+          "suffix": ""
+        },
+        {
+          "first": "Weijie J",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Journal of the Royal Statistical Society Series B: Statistical Methodology"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Connect the dots: Tighter discrete approximations of privacy loss distributions",
+      "authors": [
+        {
+          "first": "Vadym",
+          "middle": [],
+          "last": "Doroshenko",
+          "suffix": ""
+        },
+        {
+          "first": "Badih",
+          "middle": [],
+          "last": "Ghazi",
+          "suffix": ""
+        },
+        {
+          "first": "Pritish",
+          "middle": [],
+          "last": "Kamath",
+          "suffix": ""
+        },
+        {
+          "first": "Ravi",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Pasin",
+          "middle": [],
+          "last": "Manurangsi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings on Privacy Enhancing Technologies"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Concentrated differential privacy",
+      "authors": [
+        {
+          "first": "Cynthia",
+          "middle": [],
+          "last": "Dwork",
+          "suffix": ""
+        },
+        {
+          "first": "Guy",
+          "middle": [
+            "N"
+          ],
+          "last": "Rothblum",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Calibrating noise to sensitivity in private data analysis",
+      "authors": [
+        {
+          "first": "Cynthia",
+          "middle": [],
+          "last": "Dwork",
+          "suffix": ""
+        },
+        {
+          "first": "Frank",
+          "middle": [],
+          "last": "Mcsherry",
+          "suffix": ""
+        },
+        {
+          "first": "Kobbi",
+          "middle": [],
+          "last": "Nissim",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": "Proceedings of the Theory of Cryptography Conference"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "The algorithmic foundations of differential privacy",
+      "authors": [
+        {
+          "first": "Cynthia",
+          "middle": [],
+          "last": "Dwork",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Roth",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Foundations and Trends in Theoretical Computer Science"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "That which we call private",
+      "authors": [
+        {
+          "first": "Úlfar",
+          "middle": [],
+          "last": "Erlingsson",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Mironov",
+          "suffix": ""
+        },
+        {
+          "first": "Shuang",
+          "middle": [],
+          "last": "Ananth Raghunathan",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Am i private and if so, how many? communicating privacy guarantees of differential privacy with risk communication formats",
+      "authors": [
+        {
+          "first": "Saskia",
+          "middle": [],
+          "last": "Daniel Franzen",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nuñez Von",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Voigt",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Sörries",
+          "suffix": ""
+        },
+        {
+          "first": "Claudia",
+          "middle": [],
+          "last": "Tschorsch",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Müller-Birn",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the 2022 ACM SIGSAC Conference on Computer and Communications Security"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Model inversion attacks that exploit confidence information and basic countermeasures",
+      "authors": [
+        {
+          "first": "Matt",
+          "middle": [],
+          "last": "Fredrikson",
+          "suffix": ""
+        },
+        {
+          "first": "Somesh",
+          "middle": [],
+          "last": "Jha",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Ristenpart",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Proceedings of the ACM SIGSAC conference on computer and communications security"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "A programming framework for OpenDP",
+      "authors": [
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Gaboardi",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Hay",
+          "suffix": ""
+        },
+        {
+          "first": "Salil",
+          "middle": [],
+          "last": "Vadhan",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Total variation with differential privacy: Tighter composition and asymptotic bounds",
+      "authors": [
+        {
+          "first": "Elena",
+          "middle": [],
+          "last": "Ghazi",
+          "suffix": ""
+        },
+        {
+          "first": "Ibrahim",
+          "middle": [],
+          "last": "Issa",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE International Symposium on Information Theory (ISIT)"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Numerical composition of differential privacy",
+      "authors": [
+        {
+          "first": "Sivakanth",
+          "middle": [],
+          "last": "Gopi",
+          "suffix": ""
+        },
+        {
+          "first": "Yin",
+          "middle": [],
+          "last": "Tat Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Lukas",
+          "middle": [],
+          "last": "Wutschitz",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Array programming with NumPy",
+      "authors": [
+        {
+          "first": "Charles",
+          "middle": [
+            "R"
+          ],
+          "last": "Harris",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [
+            "Jarrod"
+          ],
+          "last": "Millman",
+          "suffix": ""
+        },
+        {
+          "first": "Stéfan",
+          "middle": [
+            "J"
+          ],
+          "last": "Van Der Walt",
+          "suffix": ""
+        },
+        {
+          "first": "Ralf",
+          "middle": [],
+          "last": "Gommers",
+          "suffix": ""
+        },
+        {
+          "first": "Pauli",
+          "middle": [],
+          "last": "Virtanen",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Cournapeau",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Wieser",
+          "suffix": ""
+        },
+        {
+          "first": "Julian",
+          "middle": [],
+          "last": "Taylor",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Berg",
+          "suffix": ""
+        },
+        {
+          "first": "Nathaniel",
+          "middle": [
+            "J"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Kern",
+          "suffix": ""
+        },
+        {
+          "first": "Matti",
+          "middle": [],
+          "last": "Picus",
+          "suffix": ""
+        },
+        {
+          "first": "Stephan",
+          "middle": [],
+          "last": "Hoyer",
+          "suffix": ""
+        },
+        {
+          "first": "Marten",
+          "middle": [
+            "H"
+          ],
+          "last": "Van Kerkwijk",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Brett",
+          "suffix": ""
+        },
+        {
+          "first": "Allan",
+          "middle": [],
+          "last": "Haldane",
+          "suffix": ""
+        },
+        {
+          "first": "Jaime",
+          "middle": [],
+          "last": "Fernández Del Río",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Wiebe",
+          "suffix": ""
+        },
+        {
+          "first": "Pearu",
+          "middle": [],
+          "last": "Peterson",
+          "suffix": ""
+        },
+        {
+          "first": "Pierre",
+          "middle": [],
+          "last": "Gérard-Marchant",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Sheppard",
+          "suffix": ""
+        },
+        {
+          "first": "Tyler",
+          "middle": [],
+          "last": "Reddy",
+          "suffix": ""
+        },
+        {
+          "first": "Warren",
+          "middle": [],
+          "last": "Weckesser",
+          "suffix": ""
+        },
+        {
+          "first": "Hameer",
+          "middle": [],
+          "last": "Abbasi",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Gohlke",
+          "suffix": ""
+        },
+        {
+          "first": "Travis",
+          "middle": [
+            "E"
+          ],
+          "last": "Oliphant",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Bounding training data reconstruction in DP-SGD",
+      "authors": [
+        {
+          "first": "Jamie",
+          "middle": [],
+          "last": "Hayes",
+          "suffix": ""
+        },
+        {
+          "first": "Borja",
+          "middle": [],
+          "last": "Balle",
+          "suffix": ""
+        },
+        {
+          "first": "Saeed",
+          "middle": [],
+          "last": "Mahloujifar",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Differential privacy: An economic method for choosing epsilon",
+      "authors": [
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Hsu",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Gaboardi",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Haeberlen",
+          "suffix": ""
+        },
+        {
+          "first": "Sanjeev",
+          "middle": [],
+          "last": "Khanna",
+          "suffix": ""
+        },
+        {
+          "first": "Arjun",
+          "middle": [],
+          "last": "Narayan",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [
+            "C"
+          ],
+          "last": "Pierce",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Roth",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "IEEE 27th Computer Security Foundations Symposium"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Lora: Low-rank adaptation of large language models",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Edward",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Zeyuan",
+          "middle": [],
+          "last": "Wallis",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhi",
+          "middle": [],
+          "last": "Allen-Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Shean",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Weizhu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Provable membership inference privacy",
+      "authors": [
+        {
+          "first": "Zachary",
+          "middle": [],
+          "last": "Izzo",
+          "suffix": ""
+        },
+        {
+          "first": "Jinsung",
+          "middle": [],
+          "last": "Yoon",
+          "suffix": ""
+        },
+        {
+          "first": "Sercan",
+          "middle": [
+            "O"
+          ],
+          "last": "Arik",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Transactions on Machine Learning Research"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Evaluating differentially private machine learning in practice",
+      "authors": [
+        {
+          "first": "Bargav",
+          "middle": [],
+          "last": "Jayaraman",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Evans",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "28th USENIX Security Symposium (USENIX Security 19)"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Revisiting membership inference under realistic assumptions",
+      "authors": [
+        {
+          "first": "Bargav",
+          "middle": [],
+          "last": "Jayaraman",
+          "suffix": ""
+        },
+        {
+          "first": "Lingxiao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Katherine",
+          "middle": [],
+          "last": "Knipmeyer",
+          "suffix": ""
+        },
+        {
+          "first": "Quanquan",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Evans",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings on Privacy Enhancing Technologies"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Breaking the communication-privacy-accuracy tradeoff with f-differential privacy",
+      "authors": [
+        {
+          "first": "Richeng",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhonggen",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Caijun",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaoyang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Tony",
+          "middle": [],
+          "last": "Quek",
+          "suffix": ""
+        },
+        {
+          "first": "Huaiyu",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "The composition theorem for differential privacy",
+      "authors": [
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Kairouz",
+          "suffix": ""
+        },
+        {
+          "first": "Sewoong",
+          "middle": [],
+          "last": "Oh",
+          "suffix": ""
+        },
+        {
+          "first": "Pramod",
+          "middle": [],
+          "last": "Viswanath",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Bounding data reconstruction attacks with the hypothesis testing interpretation of differential privacy",
+      "authors": [
+        {
+          "first": "Georgios",
+          "middle": [],
+          "last": "Kaissis",
+          "suffix": ""
+        },
+        {
+          "first": "Jamie",
+          "middle": [],
+          "last": "Hayes",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Ziller",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Rueckert",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Optimal privacy guarantees for a relaxed threat model: Addressing sub-optimal adversaries in differentially private machine learning",
+      "authors": [
+        {
+          "first": "Georgios",
+          "middle": [],
+          "last": "Kaissis",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Ziller",
+          "suffix": ""
+        },
+        {
+          "first": "Stefan",
+          "middle": [],
+          "last": "Kolek",
+          "suffix": ""
+        },
+        {
+          "first": "Anneliese",
+          "middle": [],
+          "last": "Riess",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Rueckert",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Jupyter notebooks -a publishing format for reproducible computational workflows",
+      "authors": [
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Kluyver",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Ragan-Kelley",
+          "suffix": ""
+        },
+        {
+          "first": "Fernando",
+          "middle": [],
+          "last": "Pérez",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Granger",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Bussonnier",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Frederic",
+          "suffix": ""
+        },
+        {
+          "first": "Kyle",
+          "middle": [],
+          "last": "Kelley",
+          "suffix": ""
+        },
+        {
+          "first": "Jessica",
+          "middle": [],
+          "last": "Hamrick",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Grout",
+          "suffix": ""
+        },
+        {
+          "first": "Sylvain",
+          "middle": [],
+          "last": "Corlay",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Ivanov",
+          "suffix": ""
+        },
+        {
+          "first": "Damián",
+          "middle": [],
+          "last": "Avila",
+          "suffix": ""
+        },
+        {
+          "first": "Safia",
+          "middle": [],
+          "last": "Abdalla",
+          "suffix": ""
+        },
+        {
+          "first": "Carol",
+          "middle": [],
+          "last": "Willing",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Positioning and Power in Academic Publishing: Players, Agents and Agendas"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Learning multiple layers of features from tiny images",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Krizhevsky",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Disparate vulnerability to membership inference attacks",
+      "authors": [
+        {
+          "first": "Bogdan",
+          "middle": [],
+          "last": "Kulynych",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Yaghini",
+          "suffix": ""
+        },
+        {
+          "first": "Giovanni",
+          "middle": [],
+          "last": "Cherubin",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Veale",
+          "suffix": ""
+        },
+        {
+          "first": "Carmela",
+          "middle": [],
+          "last": "Troncoso",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings on Privacy Enhancing Technologies"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "What you see is what you get: Principled deep learning via distributional generalization",
+      "authors": [
+        {
+          "first": "Bogdan",
+          "middle": [],
+          "last": "Kulynych",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Yao-Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Yaodong",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Jaroslaw",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Preetum",
+          "middle": [],
+          "last": "Blasiok",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nakkiran",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Gaussian membership inference privacy",
+      "authors": [
+        {
+          "first": "Tobias",
+          "middle": [],
+          "last": "Leemann",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Pawelczyk",
+          "suffix": ""
+        },
+        {
+          "first": "Gjergji",
+          "middle": [],
+          "last": "Kasneci",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Testing statistical hypotheses",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Erich",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [
+            "P"
+          ],
+          "last": "Lehmann",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Romano",
+          "suffix": ""
+        }
+      ],
+      "year": 2006,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Generalization techniques empirically outperform differential privacy against membership inference",
+      "authors": [
+        {
+          "first": "Jiaxiang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [],
+          "last": "Oya",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Kerschbaum",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Optimal membership inference bounds for adaptive composition of sampled gaussian mechanisms",
+      "authors": [
+        {
+          "first": "Saeed",
+          "middle": [],
+          "last": "Mahloujifar",
+          "suffix": ""
+        },
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Sablayrolles",
+          "suffix": ""
+        },
+        {
+          "first": "Graham",
+          "middle": [],
+          "last": "Cormode",
+          "suffix": ""
+        },
+        {
+          "first": "Somesh",
+          "middle": [],
+          "last": "Jha",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Towards explaining epsilon: A worst-case study of differential privacy risks",
+      "authors": [
+        {
+          "first": "Luise",
+          "middle": [],
+          "last": "Mehner",
+          "suffix": ""
+        },
+        {
+          "first": "Saskia",
+          "middle": [],
+          "last": "Nuñez Von",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Voigt",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Tschorsch",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "2021 IEEE European Symposium on Security and Privacy Workshops"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Visualizing privacy-utility trade-offs in differentially private data releases",
+      "authors": [
+        {
+          "first": "Priyanka",
+          "middle": [],
+          "last": "Nanayakkara",
+          "suffix": ""
+        },
+        {
+          "first": "Johes",
+          "middle": [],
+          "last": "Bater",
+          "suffix": ""
+        },
+        {
+          "first": "Xi",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Jessica",
+          "middle": [],
+          "last": "Hullman",
+          "suffix": ""
+        },
+        {
+          "first": "Jennie",
+          "middle": [],
+          "last": "Rogers",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings on Privacy Enhancing Technologies"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "What are the chances? explaining the epsilon parameter in differential privacy",
+      "authors": [
+        {
+          "first": "Priyanka",
+          "middle": [],
+          "last": "Nanayakkara",
+          "suffix": ""
+        },
+        {
+          "first": "Mary",
+          "middle": [
+            "Anne"
+          ],
+          "last": "Smart",
+          "suffix": ""
+        },
+        {
+          "first": "Rachel",
+          "middle": [],
+          "last": "Cummings",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Kaptchuk",
+          "suffix": ""
+        },
+        {
+          "first": "Elissa",
+          "middle": [
+            "M"
+          ],
+          "last": "Redmiles",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "USENIX Security Symposium (USENIX Security 23)"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Adversary instantiation: Lower bounds for differentially private machine learning",
+      "authors": [
+        {
+          "first": "Milad",
+          "middle": [],
+          "last": "Nasr",
+          "suffix": ""
+        },
+        {
+          "first": "Shuang",
+          "middle": [],
+          "last": "Songi",
+          "suffix": ""
+        },
+        {
+          "first": "Abhradeep",
+          "middle": [],
+          "last": "Thakurta",
+          "suffix": ""
+        },
+        {
+          "first": "Nicolas",
+          "middle": [],
+          "last": "Papernot",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Carlini",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE Symposium on security and privacy (SP)"
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Tight auditing of differentially private machine learning",
+      "authors": [
+        {
+          "first": "Milad",
+          "middle": [],
+          "last": "Nasr",
+          "suffix": ""
+        },
+        {
+          "first": "Jamie",
+          "middle": [],
+          "last": "Hayes",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Steinke",
+          "suffix": ""
+        },
+        {
+          "first": "Borja",
+          "middle": [],
+          "last": "Balle",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Tramèr",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Jagielski",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Carlini",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Terzis",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "32nd USENIX Security Symposium (USENIX Security 23)"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Guidelines for evaluating differential privacy guarantees",
+      "authors": [
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Joseph P Near",
+          "suffix": ""
+        },
+        {
+          "first": "Naomi",
+          "middle": [],
+          "last": "Darais",
+          "suffix": ""
+        },
+        {
+          "first": "Gary",
+          "middle": [],
+          "last": "Lefkovitz",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Howarth",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Redrawing the boundaries on purchasing data from privacy-sensitive individuals",
+      "authors": [
+        {
+          "first": "Kobbi",
+          "middle": [],
+          "last": "Nissim",
+          "suffix": ""
+        },
+        {
+          "first": "Salil",
+          "middle": [],
+          "last": "Vadhan",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Proceedings of the conference on Innovations in theoretical computer science"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Deep roto-translation scattering for object classification",
+      "authors": [
+        {
+          "first": "Edouard",
+          "middle": [],
+          "last": "Oyallon",
+          "suffix": ""
+        },
+        {
+          "first": "Stéphane",
+          "middle": [],
+          "last": "Mallat",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "The pandas development team",
+      "authors": [],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Pytorch: An imperative style, high-performance deep learning library",
+      "authors": [
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Paszke",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Gross",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Lerer",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "Gregory",
+          "middle": [],
+          "last": "Chanan",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Killeen",
+          "suffix": ""
+        },
+        {
+          "first": "Zeming",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Natalia",
+          "middle": [],
+          "last": "Gimelshein",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Antiga",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in Neural Information Processing Systems (NeurIPS)"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "How to DP-fy ML: A practical guide to machine learning with differential privacy",
+      "authors": [
+        {
+          "first": "Natalia",
+          "middle": [],
+          "last": "Ponomareva",
+          "suffix": ""
+        },
+        {
+          "first": "Hussein",
+          "middle": [],
+          "last": "Hazimeh",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Kurakin",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Carson",
+          "middle": [],
+          "last": "Denison",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [
+            "Brendan"
+          ],
+          "last": "Mcmahan",
+          "suffix": ""
+        },
+        {
+          "first": "Sergei",
+          "middle": [],
+          "last": "Vassilvitskii",
+          "suffix": ""
+        },
+        {
+          "first": "Steve",
+          "middle": [],
+          "last": "Chien",
+          "suffix": ""
+        },
+        {
+          "first": "Abhradeep",
+          "middle": [],
+          "last": "Guha",
+          "suffix": ""
+        },
+        {
+          "first": "Thakurta",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Journal of Artificial Intelligence Research"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Language models are unsupervised multitask learners",
+      "authors": [
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Rewon",
+          "middle": [],
+          "last": "Child",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Luan",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "OpenAI blog"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "On the difficulty of membership inference attacks",
+      "authors": [
+        {
+          "first": "Shahbaz",
+          "middle": [],
+          "last": "Rezaei",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Membership inference attacks against machine learning models",
+      "authors": [
+        {
+          "first": "Reza",
+          "middle": [],
+          "last": "Shokri",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Stronati",
+          "suffix": ""
+        },
+        {
+          "first": "Congzheng",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Vitaly",
+          "middle": [],
+          "last": "Shmatikov",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "IEEE symposium on security and privacy (SP). IEEE"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Recursive deep models for semantic compositionality over a sentiment treebank",
+      "authors": [
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Perelygin",
+          "suffix": ""
+        },
+        {
+          "first": "Jean",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Chuang",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Ng",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Potts",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Proceedings of the Conference on Empirical Methods in Natural Language Processing"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Differentially private learning needs better features (or much more data)",
+      "authors": [
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Tramer",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Boneh",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "SciPy 1.0 Contributors",
+      "authors": [
+        {
+          "first": "Pauli",
+          "middle": [],
+          "last": "Virtanen",
+          "suffix": ""
+        },
+        {
+          "first": "Ralf",
+          "middle": [],
+          "last": "Gommers",
+          "suffix": ""
+        },
+        {
+          "first": "Travis",
+          "middle": [
+            "E"
+          ],
+          "last": "Oliphant",
+          "suffix": ""
+        },
+        {
+          "first": "Matt",
+          "middle": [],
+          "last": "Haberland",
+          "suffix": ""
+        },
+        {
+          "first": "Tyler",
+          "middle": [],
+          "last": "Reddy",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Cournapeau",
+          "suffix": ""
+        },
+        {
+          "first": "Evgeni",
+          "middle": [],
+          "last": "Burovski",
+          "suffix": ""
+        },
+        {
+          "first": "Pearu",
+          "middle": [],
+          "last": "Peterson",
+          "suffix": ""
+        },
+        {
+          "first": "Warren",
+          "middle": [],
+          "last": "Weckesser",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Bright",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Stéfan",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Van Der Walt",
+          "suffix": ""
+        },
+        {
+          "first": "Joshua",
+          "middle": [],
+          "last": "Brett",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Wilson",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolay",
+          "middle": [],
+          "last": "Jarrod Millman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mayorov",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "J"
+          ],
+          "last": "Andrew",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Nelson",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Kern",
+          "suffix": ""
+        },
+        {
+          "first": "C J",
+          "middle": [],
+          "last": "Larson",
+          "suffix": ""
+        },
+        {
+          "first": "İlhan",
+          "middle": [],
+          "last": "Carey",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Polat",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "W"
+          ],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Jake",
+          "middle": [],
+          "last": "Moore",
+          "suffix": ""
+        },
+        {
+          "first": "Denis",
+          "middle": [],
+          "last": "Vanderplas",
+          "suffix": ""
+        },
+        {
+          "first": "Josef",
+          "middle": [],
+          "last": "Laxalde",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Perktold",
+          "suffix": ""
+        },
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Cimrman",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "A"
+          ],
+          "last": "Henriksen",
+          "suffix": ""
+        },
+        {
+          "first": "Charles",
+          "middle": [
+            "R"
+          ],
+          "last": "Quintero",
+          "suffix": ""
+        },
+        {
+          "first": "Anne",
+          "middle": [
+            "M"
+          ],
+          "last": "Harris",
+          "suffix": ""
+        },
+        {
+          "first": "Antônio",
+          "middle": [
+            "H"
+          ],
+          "last": "Archibald",
+          "suffix": ""
+        },
+        {
+          "first": "Fabian",
+          "middle": [],
+          "last": "Ribeiro",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Pedregosa",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Van Mulbregt",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "SciPy 1.0: Fundamental Algorithms for Scientific Computing in Python"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Glue: A multi-task benchmark and analysis platform for natural language understanding",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Amanpreet",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "Julian",
+          "middle": [],
+          "last": "Michael",
+          "suffix": ""
+        },
+        {
+          "first": "Felix",
+          "middle": [],
+          "last": "Hill",
+          "suffix": ""
+        },
+        {
+          "first": "Omer",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Bowman",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the 2018 EMNLP Workshop BlackboxNLP: Analyzing and Interpreting Neural Networks for NLP"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "seaborn: statistical data visualization",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Michael",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Waskom",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Journal of Open Source Software"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "A statistical framework for differential privacy",
+      "authors": [
+        {
+          "first": "Larry",
+          "middle": [],
+          "last": "Wasserman",
+          "suffix": ""
+        },
+        {
+          "first": "Shuheng",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2010,
+      "venue": "Journal of the American Statistical Association"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Huggingface's transformers: State-of-the-art natural language processing",
+      "authors": [
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Wolf",
+          "suffix": ""
+        },
+        {
+          "first": "Lysandre",
+          "middle": [],
+          "last": "Debut",
+          "suffix": ""
+        },
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Sanh",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Chaumond",
+          "suffix": ""
+        },
+        {
+          "first": "Clement",
+          "middle": [],
+          "last": "Delangue",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Moi",
+          "suffix": ""
+        },
+        {
+          "first": "Pierric",
+          "middle": [],
+          "last": "Cistac",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Rault",
+          "suffix": ""
+        },
+        {
+          "first": "Rémi",
+          "middle": [],
+          "last": "Louf",
+          "suffix": ""
+        },
+        {
+          "first": "Morgan",
+          "middle": [],
+          "last": "Funtowicz",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Differential privacy: A primer for a non-technical audience",
+      "authors": [
+        {
+          "first": "Alexandra",
+          "middle": [],
+          "last": "Wood",
+          "suffix": ""
+        },
+        {
+          "first": "Micah",
+          "middle": [],
+          "last": "Altman",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Bembenek",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Bun",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Gaboardi",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Honaker",
+          "suffix": ""
+        },
+        {
+          "first": "Kobbi",
+          "middle": [],
+          "last": "Nissim",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "David R O'brien",
+          "suffix": ""
+        },
+        {
+          "first": "Salil",
+          "middle": [],
+          "last": "Steinke",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Vadhan",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Vand. J. Ent. & Tech. L"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "dp-transformers: Training transformer models with differential privacy",
+      "authors": [
+        {
+          "first": "Lukas",
+          "middle": [],
+          "last": "Wutschitz",
+          "suffix": ""
+        },
+        {
+          "first": "Huseyin",
+          "middle": [
+            "A"
+          ],
+          "last": "Inan",
+          "suffix": ""
+        },
+        {
+          "first": "Andre",
+          "middle": [],
+          "last": "Manoel",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Privacy risk in machine learning: Analyzing the connection to overfitting",
+      "authors": [
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Yeom",
+          "suffix": ""
+        },
+        {
+          "first": "Irene",
+          "middle": [],
+          "last": "Giacomelli",
+          "suffix": ""
+        },
+        {
+          "first": "Matt",
+          "middle": [],
+          "last": "Fredrikson",
+          "suffix": ""
+        },
+        {
+          "first": "Somesh",
+          "middle": [],
+          "last": "Jha",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "IEEE 31st Computer Security Foundations Symposium (CSF)"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Opacus: User-friendly differential privacy library in PyTorch",
+      "authors": [
+        {
+          "first": "Ashkan",
+          "middle": [],
+          "last": "Yousefpour",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Shilov",
+          "suffix": ""
+        },
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Sablayrolles",
+          "suffix": ""
+        },
+        {
+          "first": "Davide",
+          "middle": [],
+          "last": "Testuggine",
+          "suffix": ""
+        },
+        {
+          "first": "Karthik",
+          "middle": [],
+          "last": "Prasad",
+          "suffix": ""
+        },
+        {
+          "first": "Mani",
+          "middle": [],
+          "last": "Malek",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Nguyen",
+          "suffix": ""
+        },
+        {
+          "first": "Sayan",
+          "middle": [],
+          "last": "Ghosh",
+          "suffix": ""
+        },
+        {
+          "first": "Akash",
+          "middle": [],
+          "last": "Bharadwaj",
+          "suffix": ""
+        },
+        {
+          "first": "Jessica",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Graham",
+          "middle": [],
+          "last": "Cormode",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Mironov",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Differentially private fine-tuning of language models",
+      "authors": [
+        {
+          "first": "Da",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Saurabh",
+          "middle": [],
+          "last": "Naik",
+          "suffix": ""
+        },
+        {
+          "first": "Arturs",
+          "middle": [],
+          "last": "Backurs",
+          "suffix": ""
+        },
+        {
+          "first": "Sivakanth",
+          "middle": [],
+          "last": "Gopi",
+          "suffix": ""
+        },
+        {
+          "first": "Gautam",
+          "middle": [],
+          "last": "Huseyin A Inan",
+          "suffix": ""
+        },
+        {
+          "first": "Janardhan",
+          "middle": [],
+          "last": "Kamath",
+          "suffix": ""
+        },
+        {
+          "first": "Yin Tat",
+          "middle": [],
+          "last": "Kulkarni",
+          "suffix": ""
+        },
+        {
+          "first": "Andre",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Lukas",
+          "middle": [],
+          "last": "Manoel",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wutschitz",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Sharp composition bounds for gaussian differential privacy via Edgeworth expansion",
+      "authors": [
+        {
+          "first": "Qinqing",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Jinshuo",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Qi",
+          "middle": [],
+          "last": "Long",
+          "suffix": ""
+        },
+        {
+          "first": "Weijie",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Optimal accounting of differential privacy via characteristic function",
+      "authors": [
+        {
+          "first": "Yuqing",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Jinshuo",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Yu-Xiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of The 25th International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Optimal accounting of differential privacy via characteristic function",
+      "authors": [
+        {
+          "first": "Yuqing",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Jinshuo",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Yu-Xiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    }
+  ]
+}

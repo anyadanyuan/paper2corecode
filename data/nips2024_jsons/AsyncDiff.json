@@ -1,0 +1,3185 @@
+{
+  "paper_id": "AsyncDiff",
+  "title": "AsyncDiff: Parallelizing Diffusion Models by Asynchronous Denoising",
+  "authors": [
+    {
+      "first": "Zigeng",
+      "middle": [],
+      "last": "Chen",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Xinyin",
+      "middle": [],
+      "last": "Ma",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Gongfan",
+      "middle": [],
+      "last": "Fang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Zhenxiong",
+      "middle": [],
+      "last": "Tan",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    },
+    {
+      "first": "Xinchao",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "National University of Singapore",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Figure 1 : We introduce a new distributed acceleration paradigm that attains a 2.8x speed-up on Stable Diffusion XL while maintaining pixel-level consistency, using four NVIDIA A5000 GPUs.",
+  "body": {
+    "1_Introduction": "Diffusion models [10] stand out in generative modeling and have significantly advanced various fields including text-to-image [38, 36, 40, 41, 64, 70] and text-to-video generation [56, 6, 54, 17, 2] , image\nTraditional: Denosing Model running in Sequential � � 1 GPU 0 GPU 0 GPU 1 GPU 2 GPU 3 Ours: Denoising Model running in Parallel Communication within device Communication across devices � � 2 � � 3 � � 4 � � 1 � � 2 � � 3 � � 4\nFigure 2 : By preparing each component's input beforehand, we enable parallel computation of the denoising model, which substantially reduces latency while minimally affecting quality.\ntranslation [44, 51, 19] , audio generation [18, 11, 39] , low-level vision tasks [42, 53, 35, 22, 5, 62] , image editing [15, 58, 46, 69] , and 3D model generation [37, 14, 32] , among others. However, their widespread application is hindered by the high latency inherent in their multi-step sequential denoising process. This issue becomes more pronounced as the complexity and size of the models increase to enhance generative quality.\nIn response to these challenges, significant research efforts are directed toward enhancing the efficiency of diffusion models. Notably, training-free acceleration methods have garnered increasing popularity due to their low cost and convenience. Numerous studies [30, 55, 68, 59, 48, 21, 29] improve inference speed by skipping redundant calculations in the denoising process. As computational resources grow rapidly, distributing computations across multiple devices has become a more promising approach. Recent advances [47, 20] demonstrate that using distributed computing to parallelize inference effectively increases the acceleration ratio for diffusion models while maintaining acceptable generative quality. Though these methods succeed in parallelizing the diffusion models, they require iterative refining [47] or displaced patch parallelism [20] , resulting in a larger number of model evaluations or low GPU utilization correspondingly.\nThus, we wish to propose a new parallel paradigm for diffusion, akin to the model parallelism in distributed computing [12, 33, 24, 13, 34, 57] , which divides the denoising model into several components to be distributed on different GPUs. The primary challenge lies in the inherent sequential denoising process of diffusion models. Each step in this process depends on the completion of its predecessor, forming a dependency chain that impedes parallelization and significantly increases inference latency. Our approach seeks to disrupt this chain, allowing for the parallel execution of the denoising model while closely approximating the results of the sequential process.\nIn this paper, we introduce AsyncDiff, a universal, distributed acceleration paradigm that innovatively explores model parallelism in diffusion models. As shown in Fig 2 , our method sequentially partitions the heavyweight denoising model ϵ θ into multiple components {ϵ n θ } N n=1 based on computational load, assigning each to a separate device. Our core idea lies in decoupling the dependencies between these cascaded components by leveraging the high similarity in hidden states across consecutive diffusion steps. After the initial warm-up steps, each component takes the output from the previous component's prior step as the approximation of its original output. This transforms the traditional sequential denoising into an asynchronous process, allowing components to predict noise for different time steps in parallel. Additionally, we incorporate stride denoising to skip redundant calculations and reduce the frequency of communication between devices, further enhancing efficiency.\nThrough extensive testing across multiple base models, our method effectively distributes the computational burden across various devices, substantially boosting inference speed while maintaining quality. Specifically, with the text-to-image model Stable Diffusion v2.1 [38] , our method achieves a 1.8x speedup with only a marginal 0.01 drop in CLIP Score [8] , and a 4.0x speedup with a slight 0.38 reduction in CLIP Score on two and four NVIDIA A5000 GPUs, respectively. For video diffusion models, AnimateDiff [6] and Stable Video Diffusion [2] , our approach significantly reduces latency by tens of seconds, effectively preserving video quality.\nIn summary, we present a novel distributed acceleration method for diffusion models that significantly reduces inference latency with minimal impact on generation quality. This is achieved by replacing the sequential denoising process with an asynchronous process, allowing each component of the denoising model to run independently across different devices. Extensive experiments on both image and video diffusion models strongly demonstrate the effectiveness and versatility of our method.\n2 Related Works Diffusion Models. Diffusion models have attracted significant attention due to their powerful generative capabilities across various tasks. Sohl-Dickstein et al. [49] first proposed diffusion probabilistic models. Ho et al. [10] with the introduction of Denoising Diffusion Probabilistic Models (DDPM), enhancing training efficiency and generation quality. Rombach et al. [38] advanced these models by incorporating latent spaces, enabling high-resolution image generation. Despite these advancements, the high latency of the iterative denoising process remains a limitation.",
+    "3.1_Preliminary": "Diffusion models [10] are a dominant class of generative models that transform Gaussian noise into complex data distributions via a Markov process. The forward process is defined by:\nEQUATION\nwhere {β t } progressively increases noise until the data becomes indistinguishable from noise. The reverse process, essential for data reconstruction, involves iterative denoising:\nEQUATION\nwhere µ θ (x t , t) is the predicted mean and σ 2 t is the variance. For DDIMs [50] , the reverse update is deterministic:\nEQUATION\nwhere α t is the cumulative product of (1 -β t ). These processes are computationally intensive, influencing the quality of generated samples and necessitating efficient inference methods for practical applications.",
+    "3.2_Asynchronous_Diffusion_Model": "Traditional diffusion models employ a sequential and synchronous denoising process. At each time step t, the noise-prediction model ϵ θ estimates the noise ϵ t based on the noisy image x t and the time embedding t. The image for the next step, x t-1 , is then generated using a sampler function S(x t , ϵ t , t). This process is iterative, where the generation of ϵ t at each step is dependent on the completion of the previous denoising step, making the process slow, particularly when ϵ θ is computationally intensive.\nTo address the limitations of high latency in diffusion models, leveraging multiple GPUs for distributed inference is a promising solution. Existing studies primarily focus on patch parallelism [20] , where the input image is divided into patches, each processed on a different GPU. While this strategy efficiently distributes computational loads, it still retains the bottleneck of sequential denoising, as each patch must undergo the complete denoising process iteratively. In contrast, our asynchronous diffusion model innovatively introduces a model parallelism strategy. By approximating the sequential denoising as an asynchronous process, this approach enables parallel inference of the noise prediction model, effectively reducing latency and breaking the constraints of sequential execution.",
+    "4.1_Implementation_Details": "Base models. We validated the broad applicability of AsyncDiff through extensive testing on several diffusion models. For text-to-image tasks, we experimented with three versions of Stable Diffusion: SD 1.5, SD 2.1 [38] , and Stable Diffusion XL (SDXL) [36] . Additionally, we explored the effectiveness of AsyncDiff on video diffusion models using Stable Video Diffusion (SVD) [2] and AnimateDiff [6] . All models were evaluated using 50 DDIM steps. We facilitated communication across multiple GPUs using the broadcast operation from torch.distributed, powered by the NVIDIA Collective Communication Library (NCCL) backend. Dataset and Evaluation Metrics. We assess the zero-shot generation capability using the MS-COCO 2017 [25] validation set, which comprises 5,000 images and captions. For image generation, quality is measured by the CLIP Score (on ViT-g/14) [8] and Fréchet Inception Distance (FID) [9] , with LPIPS [67] used to check consistency with original outputs. In video generation, quality is evaluated by averaging the CLIP Score across all frames of a video. We also report MACs per device and latency to gauge efficiency comprehensively. All latency measurements were conducted on NVIDIA A5000 GPUs equipped with NVLINK Bridge.",
+    "4.2_Experimental_Results_on_Image_Diffusion_Models": "Improvements on Base Models. Table 1 displays our acceleration outcomes for three fundamental image diffusion models under various configurations. In this context, 'N' represents the number of segments into which the denoising model is divided, and 'S' denotes the stride of denoising for each parallel computation batch. Our approach, AsyncDiff, not only significantly accelerates processing but also minimally impacts generative quality. The speedup ratio is almost proportional to the number of devices used, demonstrating efficient resource utilization. Visualization results in Figure 5 (a) illustrate the high generative quality achieved even with substantially reduced latency. Although achieving pixel-level consistency with the original output is challenging at high acceleration ratios, the generated image still effectively conveys the semantic information in the prompt, which is crucial for generative results.",
+    "4.3_Experimental_Results_on_Video_Diffusion_Models": "As presented in\nTable 4, we conducted experiments with different configurations on two video diffusion models: SVD [2] (25 frames), and AnimentDiff [6] (16 frames), to demonstrate the efficacy of our method. Video generation, often constrained by exceptionally high latency and substantial computation load, greatly benefits from our approach. For a 50-step video diffusion model, AsyncDiff significantly reduces latency-by tens or even hundreds of seconds-while preserving the quality of generated content. Qualitative results shown in the Appendix. D further corroborate the effectiveness of our method. AsyncDiff achieves an impressive acceleration ratio of over three times while still producing videos that closely match the prompt descriptions, ensuring the rationality of actions and details. These findings highlight the substantial potential of AsyncDiff in accelerating the inference process of video diffusion models.",
+    "4.4_Effect_of_Stride_Denoising": "We introduce stride denoising to further enhance the efficiency of the asynchronous denoising process. Stride denoising completes multiple steps simultaneously through a single parallel computation, reducing the number of parallel rounds and communication frequency across devices. For a diffusion process with T steps and warm-up step W , the number of broadcasts decreases from T -W to (T -W )//2 with a stride of 2. This strategy also reduces the computational load on each device by skipping unnecessary calculations. Table 5 shows the effects of stride denoising in our parallel framework with 3 and 4 devices. Stride denoising significantly lowers overall latency and the proportion of communication time, especially as the number of devices used increases. While stride denoising slightly impacts generation quality, this effect is minimal and can be mitigated by a modest increase in warm-up steps, preserving efficiency and maintaining quality.",
+    "5_Conclusion": "In this paper, we propose a new parallel paradigm, AsyncDiff, to accelerate diffusion models by leveraging model parallelism across multiple devices. We split the denoising model into several components, each assigned to a different device. We transform the conventional sequential denoising into an asynchronous process by exploiting the high similarity of hidden states between consecutive time steps, enabling each component to compute in parallel. Our method has been comprehensively validated on three image diffusion models (SD 2.1, SD 1.5, SDXL) and two video diffusion models (SVD, AnimateDiff). Extensive experiments demonstrate that our approach significantly accelerates inference with only a marginal impact on generative quality. This work investigates the practical application of model parallelism in diffusion models, establishing a new baseline for future research in distributed diffusion models.\n❈ In this document, we provide supplementary materials that extend beyond the scope of the main manuscript, constrained by space limitations. A More Implementation Details.\nModel Segmentation. In our method, we partition the cumbersome denoising model into multiple components, each assigned to a different device. After successfully parallelizing the computation of each component, the time cost for each time step now corresponds to the maximum latency among these components. To optimize parallel processing efficiency, we partition the model into segments that each carry a roughly equal computational load. This arrangement allows all modules to finish their computations nearly simultaneously, making full use of available computational resources. The segmentation strategy is sequential except for SDXL [36] . For the denoising U-net within the SDXL module, we group its first and last blocks into a single segment and apply sequential splitting to the remaining blocks. This is because SDXL has specific needs for high-frequency details, and res connections typically contain abundant high-frequency information.\nTime Shifting. We introduce a technique called time shifting. Following the warm-up steps, the time embedding for each step is shifted back by one step. For instance, in a 50-step asynchronous denoising process with a warm-up of 2 steps, the original sequence of time embeddings is {50, 49, 48, 47, ..., 3, 2, 1}. With time shifting, this sequence is adjusted to {50, 49, 49, 48, ..., 3, 2}. In certain extreme cases, asynchronous denoising might leave residual noise in the output. Time shifting addresses this by adjusting the time embeddings backward, enhancing the denoising effect. It's important to note that time shifting is not a standard component of our method but is employed optionally. The quantitative results presented in this paper are achieved without the use of time shifting."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Analytic-dpm: an analytic estimate of the optimal reverse variance in diffusion probabilistic models",
+      "authors": [
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Chongxuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Stable video diffusion: Scaling latent video diffusion models to large datasets",
+      "authors": [
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Dockhorn",
+          "suffix": ""
+        },
+        {
+          "first": "Sumith",
+          "middle": [],
+          "last": "Kulal",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Mendelevitch",
+          "suffix": ""
+        },
+        {
+          "first": "Maciej",
+          "middle": [],
+          "last": "Kilian",
+          "suffix": ""
+        },
+        {
+          "first": "Dominik",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "Yam",
+          "middle": [],
+          "last": "Levi",
+          "suffix": ""
+        },
+        {
+          "first": "Zion",
+          "middle": [],
+          "last": "English",
+          "suffix": ""
+        },
+        {
+          "first": "Vikram",
+          "middle": [],
+          "last": "Voleti",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Letts",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Image quality assessment: Unifying structure and texture similarity",
+      "authors": [
+        {
+          "first": "Keyan",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Kede",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Shiqi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Eero",
+          "middle": [
+            "P"
+          ],
+          "last": "Simoncelli",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "IEEE transactions on pattern analysis and machine intelligence"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Structural pruning for diffusion models",
+      "authors": [
+        {
+          "first": "Gongfan",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyin",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Xinchao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Shadowdiffusion: When degradation prior meets diffusion model for shadow removal",
+      "authors": [
+        {
+          "first": "Lanqing",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Chong",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenhan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Siyu",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Yufei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Hanspeter",
+          "middle": [],
+          "last": "Pfister",
+          "suffix": ""
+        },
+        {
+          "first": "Bihan",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Animatediff: Animate your personalized text-to-image diffusion models without specific tuning",
+      "authors": [
+        {
+          "first": "Yuwei",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Ceyuan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Anyi",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "Yaohui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        },
+        {
+          "first": "Dahua",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Deep residual learning for image recognition",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shaoqing",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Clipscore: A reference-free evaluation metric for image captioning",
+      "authors": [
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Hessel",
+          "suffix": ""
+        },
+        {
+          "first": "Ari",
+          "middle": [],
+          "last": "Holtzman",
+          "suffix": ""
+        },
+        {
+          "first": "Maxwell",
+          "middle": [],
+          "last": "Forbes",
+          "suffix": ""
+        },
+        {
+          "first": "Ronan",
+          "middle": [],
+          "last": "Le Bras",
+          "suffix": ""
+        },
+        {
+          "first": "Yejin",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Gans trained by a two time-scale update rule converge to a local nash equilibrium",
+      "authors": [
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Heusel",
+          "suffix": ""
+        },
+        {
+          "first": "Hubert",
+          "middle": [],
+          "last": "Ramsauer",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "Bernhard",
+          "middle": [],
+          "last": "Nessler",
+          "suffix": ""
+        },
+        {
+          "first": "Sepp",
+          "middle": [],
+          "last": "Hochreiter",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Denoising diffusion probabilistic models",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "Ajay",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Pieter",
+          "middle": [],
+          "last": "Abbeel",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Make-an-audio: Text-to-audio generation with prompt-enhanced diffusion models",
+      "authors": [
+        {
+          "first": "Rongjie",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Jiawei",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Dongchao",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Luping",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Mingze",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenhui",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Jinglin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhou",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Gpipe: Efficient training of giant neural networks using pipeline parallelism",
+      "authors": [
+        {
+          "first": "Yanping",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Youlong",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Ankur",
+          "middle": [],
+          "last": "Bapna",
+          "suffix": ""
+        },
+        {
+          "first": "Orhan",
+          "middle": [],
+          "last": "Firat",
+          "suffix": ""
+        },
+        {
+          "first": "Dehao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Mia",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Hyoukjoong",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Jiquan",
+          "middle": [],
+          "last": "Ngiam",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Quoc",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghui",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Beyond data and model parallelism for deep neural networks",
+      "authors": [
+        {
+          "first": "Zhihao",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Matei",
+          "middle": [],
+          "last": "Zaharia",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Aiken",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of Machine Learning and Systems"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Holodiffusion: Training a 3d diffusion model using 2d images",
+      "authors": [
+        {
+          "first": "Animesh",
+          "middle": [],
+          "last": "Karnewar",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [],
+          "last": "Vedaldi",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Novotny",
+          "suffix": ""
+        },
+        {
+          "first": "Niloy",
+          "middle": [
+            "J"
+          ],
+          "last": "Mitra",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Imagic: Text-based real image editing with diffusion models",
+      "authors": [
+        {
+          "first": "Bahjat",
+          "middle": [],
+          "last": "Kawar",
+          "suffix": ""
+        },
+        {
+          "first": "Shiran",
+          "middle": [],
+          "last": "Zada",
+          "suffix": ""
+        },
+        {
+          "first": "Oran",
+          "middle": [],
+          "last": "Lang",
+          "suffix": ""
+        },
+        {
+          "first": "Omer",
+          "middle": [],
+          "last": "Tov",
+          "suffix": ""
+        },
+        {
+          "first": "Huiwen",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Tali",
+          "middle": [],
+          "last": "Dekel",
+          "suffix": ""
+        },
+        {
+          "first": "Inbar",
+          "middle": [],
+          "last": "Mosseri",
+          "suffix": ""
+        },
+        {
+          "first": "Michal",
+          "middle": [],
+          "last": "Irani",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Musiq: Multi-scale image quality transformer",
+      "authors": [
+        {
+          "first": "Junjie",
+          "middle": [],
+          "last": "Ke",
+          "suffix": ""
+        },
+        {
+          "first": "Qifei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yilin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Peyman",
+          "middle": [],
+          "last": "Milanfar",
+          "suffix": ""
+        },
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF international conference on computer vision"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Text2video-zero: Text-to-image diffusion models are zero-shot video generators",
+      "authors": [
+        {
+          "first": "Levon",
+          "middle": [],
+          "last": "Khachatryan",
+          "suffix": ""
+        },
+        {
+          "first": "Andranik",
+          "middle": [],
+          "last": "Movsisyan",
+          "suffix": ""
+        },
+        {
+          "first": "Vahram",
+          "middle": [],
+          "last": "Tadevosyan",
+          "suffix": ""
+        },
+        {
+          "first": "Roberto",
+          "middle": [],
+          "last": "Henschel",
+          "suffix": ""
+        },
+        {
+          "first": "Zhangyang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Shant",
+          "middle": [],
+          "last": "Navasardyan",
+          "suffix": ""
+        },
+        {
+          "first": "Humphrey",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Diffwave: A versatile diffusion model for audio synthesis",
+      "authors": [
+        {
+          "first": "Zhifeng",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Ping",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaji",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Kexin",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Bryan",
+          "middle": [],
+          "last": "Catanzaro",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Bbdm: Image-to-image translation with brownian bridge diffusion models",
+      "authors": [
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kaitao",
+          "middle": [],
+          "last": "Xue",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yu-Kun",
+          "middle": [],
+          "last": "Lai",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern Recognition"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Distrifusion: Distributed parallel inference for high-resolution diffusion models",
+      "authors": [
+        {
+          "first": "Muyang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Tianle",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaxin",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Qinsheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "Junjie",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Yangqing",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Yu",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Song",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Faster diffusion: Rethinking the role of unet encoder in diffusion models",
+      "authors": [
+        {
+          "first": "Senmao",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Taihang",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Fahad",
+          "middle": [],
+          "last": "Shahbaz Khan",
+          "suffix": ""
+        },
+        {
+          "first": "Linxuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Shiqi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Yaxing",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Ming-Ming",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Diffusion models for image restoration and enhancement-a comprehensive survey",
+      "authors": [
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yulin",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Cuiling",
+          "middle": [],
+          "last": "Lan",
+          "suffix": ""
+        },
+        {
+          "first": "Xingrui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenjun",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        },
+        {
+          "first": "Xinchao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhibo",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Snapfusion: Text-to-image diffusion model on mobile devices within two seconds",
+      "authors": [
+        {
+          "first": "Yanyu",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Huan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Qing",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Ju",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Pavlo",
+          "middle": [],
+          "last": "Chemerys",
+          "suffix": ""
+        },
+        {
+          "first": "Yun",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Yanzhi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Sergey",
+          "middle": [],
+          "last": "Tulyakov",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "{AlpaServe}: Statistical multiplexing with model parallelism for deep learning serving",
+      "authors": [
+        {
+          "first": "Zhuohan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Lianmin",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Yinmin",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Vincent",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Yanping",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhifeng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Joseph",
+          "middle": [
+            "E"
+          ],
+          "last": "Gonzalez",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "17th USENIX Symposium on Operating Systems Design and Implementation (OSDI 23)"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Microsoft coco: Common objects in context",
+      "authors": [
+        {
+          "first": "Tsung-Yi",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Maire",
+          "suffix": ""
+        },
+        {
+          "first": "Serge",
+          "middle": [],
+          "last": "Belongie",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Hays",
+          "suffix": ""
+        },
+        {
+          "first": "Pietro",
+          "middle": [],
+          "last": "Perona",
+          "suffix": ""
+        },
+        {
+          "first": "Deva",
+          "middle": [],
+          "last": "Ramanan",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dollár",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Lawrence",
+          "suffix": ""
+        },
+        {
+          "first": "Zitnick",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Computer Vision-ECCV 2014: 13th European Conference"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Pseudo numerical methods for diffusion models on manifolds",
+      "authors": [
+        {
+          "first": "Luping",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Zhijie",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhou",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Dpm-solver: A fast ode solver for diffusion probabilistic model sampling in around 10 steps",
+      "authors": [
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhao",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Fan",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Jianfei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Chongxuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Latent consistency models: Synthesizing high-resolution images with few-step inference",
+      "authors": [
+        {
+          "first": "Simian",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Yiqin",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "Longbo",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Hang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Accelerating diffusion models via early stop of the diffusion process",
+      "authors": [
+        {
+          "first": "Zhaoyang",
+          "middle": [],
+          "last": "Lyu",
+          "suffix": ""
+        },
+        {
+          "first": "Xudong",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Ceyuan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Dahua",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Deepcache: Accelerating diffusion models for free",
+      "authors": [
+        {
+          "first": "Xinyin",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Gongfan",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinchao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Making a \"completely blind\" image quality analyzer",
+      "authors": [
+        {
+          "first": "Anish",
+          "middle": [],
+          "last": "Mittal",
+          "suffix": ""
+        },
+        {
+          "first": "Rajiv",
+          "middle": [],
+          "last": "Soundararajan",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [
+            "C"
+          ],
+          "last": "Bovik",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "IEEE Signal processing letters"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Diffrf: Rendering-guided 3d radiance field diffusion",
+      "authors": [
+        {
+          "first": "Norman",
+          "middle": [],
+          "last": "Müller",
+          "suffix": ""
+        },
+        {
+          "first": "Yawar",
+          "middle": [],
+          "last": "Siddiqui",
+          "suffix": ""
+        },
+        {
+          "first": "Lorenzo",
+          "middle": [],
+          "last": "Porzi",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [
+            "Rota"
+          ],
+          "last": "Bulo",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Kontschieder",
+          "suffix": ""
+        },
+        {
+          "first": "Matthias",
+          "middle": [],
+          "last": "Nießner",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Pipedream: generalized pipeline parallelism for dnn training",
+      "authors": [
+        {
+          "first": "Deepak",
+          "middle": [],
+          "last": "Narayanan",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Harlap",
+          "suffix": ""
+        },
+        {
+          "first": "Amar",
+          "middle": [],
+          "last": "Phanishayee",
+          "suffix": ""
+        },
+        {
+          "first": "Vivek",
+          "middle": [],
+          "last": "Seshadri",
+          "suffix": ""
+        },
+        {
+          "first": "Gregory",
+          "middle": [
+            "R"
+          ],
+          "last": "Nikhil R Devanur",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [
+            "B"
+          ],
+          "last": "Ganger",
+          "suffix": ""
+        },
+        {
+          "first": "Matei",
+          "middle": [],
+          "last": "Gibbons",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zaharia",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 27th ACM symposium on operating systems principles"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Efficient large-scale language model training on gpu clusters using megatron-lm",
+      "authors": [
+        {
+          "first": "Deepak",
+          "middle": [],
+          "last": "Narayanan",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Shoeybi",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [],
+          "last": "Casper",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Legresley",
+          "suffix": ""
+        },
+        {
+          "first": "Mostofa",
+          "middle": [],
+          "last": "Patwary",
+          "suffix": ""
+        },
+        {
+          "first": "Vijay",
+          "middle": [],
+          "last": "Korthikanti",
+          "suffix": ""
+        },
+        {
+          "first": "Dmitri",
+          "middle": [],
+          "last": "Vainbrand",
+          "suffix": ""
+        },
+        {
+          "first": "Prethvi",
+          "middle": [],
+          "last": "Kashinkunti",
+          "suffix": ""
+        },
+        {
+          "first": "Julie",
+          "middle": [],
+          "last": "Bernauer",
+          "suffix": ""
+        },
+        {
+          "first": "Bryan",
+          "middle": [],
+          "last": "Catanzaro",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Restoring vision in adverse weather conditions with patch-based denoising diffusion models",
+      "authors": [
+        {
+          "first": "Ozan",
+          "middle": [],
+          "last": "Özdenizci",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Legenstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "IEEE Transactions on Pattern Analysis and Machine Intelligence"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Sdxl: Improving latent diffusion models for high-resolution image synthesis",
+      "authors": [
+        {
+          "first": "Dustin",
+          "middle": [],
+          "last": "Podell",
+          "suffix": ""
+        },
+        {
+          "first": "Zion",
+          "middle": [],
+          "last": "English",
+          "suffix": ""
+        },
+        {
+          "first": "Kyle",
+          "middle": [],
+          "last": "Lacey",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Dockhorn",
+          "suffix": ""
+        },
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Müller",
+          "suffix": ""
+        },
+        {
+          "first": "Joe",
+          "middle": [],
+          "last": "Penna",
+          "suffix": ""
+        },
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Dreamfusion: Text-to-3d using 2d diffusion",
+      "authors": [
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Poole",
+          "suffix": ""
+        },
+        {
+          "first": "Ajay",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [
+            "T"
+          ],
+          "last": "Barron",
+          "suffix": ""
+        },
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Mildenhall",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "High-resolution image synthesis with latent diffusion models",
+      "authors": [
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "Dominik",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Esser",
+          "suffix": ""
+        },
+        {
+          "first": "Björn",
+          "middle": [],
+          "last": "Ommer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Mm-diffusion: Learning multi-modal diffusion models for joint audio and video generation",
+      "authors": [
+        {
+          "first": "Ludan",
+          "middle": [],
+          "last": "Ruan",
+          "suffix": ""
+        },
+        {
+          "first": "Yiyang",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Huan",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Huiguo",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Bei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianlong",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Jing Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Qin",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Baining",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Dreambooth: Fine tuning text-to-image diffusion models for subject-driven generation",
+      "authors": [
+        {
+          "first": "Nataniel",
+          "middle": [],
+          "last": "Ruiz",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Varun",
+          "middle": [],
+          "last": "Jampani",
+          "suffix": ""
+        },
+        {
+          "first": "Yael",
+          "middle": [],
+          "last": "Pritch",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Rubinstein",
+          "suffix": ""
+        },
+        {
+          "first": "Kfir",
+          "middle": [],
+          "last": "Aberman",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Photorealistic text-toimage diffusion models with deep language understanding",
+      "authors": [
+        {
+          "first": "Chitwan",
+          "middle": [],
+          "last": "Saharia",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "Saurabh",
+          "middle": [],
+          "last": "Saxena",
+          "suffix": ""
+        },
+        {
+          "first": "Lala",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jay",
+          "middle": [],
+          "last": "Whang",
+          "suffix": ""
+        },
+        {
+          "first": "Emily",
+          "middle": [
+            "L"
+          ],
+          "last": "Denton",
+          "suffix": ""
+        },
+        {
+          "first": "Kamyar",
+          "middle": [],
+          "last": "Ghasemipour",
+          "suffix": ""
+        },
+        {
+          "first": "Raphael",
+          "middle": [
+            "Gontijo"
+          ],
+          "last": "Lopes",
+          "suffix": ""
+        },
+        {
+          "first": "Burcu",
+          "middle": [],
+          "last": "Karagol Ayan",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Image super-resolution via iterative refinement",
+      "authors": [
+        {
+          "first": "Chitwan",
+          "middle": [],
+          "last": "Saharia",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [
+            "J"
+          ],
+          "last": "Fleet",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammad",
+          "middle": [],
+          "last": "Norouzi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE transactions on pattern analysis and machine intelligence"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Progressive distillation for fast sampling of diffusion models",
+      "authors": [
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Ho",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Unit-ddpm: Unpaired image translation with denoising diffusion probabilistic models",
+      "authors": [
+        {
+          "first": "Hiroshi",
+          "middle": [],
+          "last": "Sasaki",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [
+            "G"
+          ],
+          "last": "Willcocks",
+          "suffix": ""
+        },
+        {
+          "first": "Toby",
+          "middle": [
+            "P"
+          ],
+          "last": "Breckon",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Adversarial diffusion distillation",
+      "authors": [
+        {
+          "first": "Axel",
+          "middle": [],
+          "last": "Sauer",
+          "suffix": ""
+        },
+        {
+          "first": "Dominik",
+          "middle": [],
+          "last": "Lorenz",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Blattmann",
+          "suffix": ""
+        },
+        {
+          "first": "Robin",
+          "middle": [],
+          "last": "Rombach",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Dragdiffusion: Harnessing diffusion models for interactive point-based image editing",
+      "authors": [
+        {
+          "first": "Yujun",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Chuhui",
+          "middle": [],
+          "last": "Xue",
+          "suffix": ""
+        },
+        {
+          "first": "Jiachun",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "Wenqing",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Song",
+          "middle": [],
+          "last": "Vincent Yf Tan",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Parallel sampling of diffusion models",
+      "authors": [
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Shih",
+          "suffix": ""
+        },
+        {
+          "first": "Suneel",
+          "middle": [],
+          "last": "Belkhale",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        },
+        {
+          "first": "Dorsa",
+          "middle": [],
+          "last": "Sadigh",
+          "suffix": ""
+        },
+        {
+          "first": "Nima",
+          "middle": [],
+          "last": "Anari",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Frdiff: Feature reuse for exquisite zero-shot acceleration of diffusion models",
+      "authors": [
+        {
+          "first": "Junhyuk",
+          "middle": [],
+          "last": "So",
+          "suffix": ""
+        },
+        {
+          "first": "Jungwon",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Eunhyeok",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Deep unsupervised learning using nonequilibrium thermodynamics",
+      "authors": [
+        {
+          "first": "Jascha",
+          "middle": [],
+          "last": "Sohl-Dickstein",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Weiss",
+          "suffix": ""
+        },
+        {
+          "first": "Niru",
+          "middle": [],
+          "last": "Maheswaranathan",
+          "suffix": ""
+        },
+        {
+          "first": "Surya",
+          "middle": [],
+          "last": "Ganguli",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Denoising diffusion implicit models",
+      "authors": [
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Chenlin",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Dual diffusion implicit bridges for image-toimage translation",
+      "authors": [
+        {
+          "first": "Xuan",
+          "middle": [],
+          "last": "Su",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaming",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Chenlin",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Ermon",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Exploring clip for assessing the look and feel of images",
+      "authors": [
+        {
+          "first": "Jianyi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Kelvin Ck",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [
+            "Change"
+          ],
+          "last": "Loy",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Exploiting diffusion prior for real-world image super-resolution",
+      "authors": [
+        {
+          "first": "Jianyi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zongsheng",
+          "middle": [],
+          "last": "Yue",
+          "suffix": ""
+        },
+        {
+          "first": "Shangchen",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Kelvin Ck",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [
+            "Change"
+          ],
+          "last": "Loy",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Modelscope text-to-video technical report",
+      "authors": [
+        {
+          "first": "Jiuniu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Hangjie",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Dayou",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yingya",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Shiwei",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Cache me if you can: Accelerating diffusion models through block caching",
+      "authors": [
+        {
+          "first": "Felix",
+          "middle": [],
+          "last": "Wimbauer",
+          "suffix": ""
+        },
+        {
+          "first": "Bichen",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Edgar",
+          "middle": [],
+          "last": "Schoenfeld",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoliang",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Ji",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Zijian",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Artsiom",
+          "middle": [],
+          "last": "Sanakoyeu",
+          "suffix": ""
+        },
+        {
+          "first": "Peizhao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Tsai",
+          "suffix": ""
+        },
+        {
+          "first": "Jonas",
+          "middle": [],
+          "last": "Kohler",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Tune-a-video: One-shot tuning of image diffusion models for text-to-video generation",
+      "authors": [
+        {
+          "first": "Jay Zhangjie",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yixiao",
+          "middle": [],
+          "last": "Ge",
+          "suffix": ""
+        },
+        {
+          "first": "Xintao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Stan",
+          "middle": [
+            "Weixian"
+          ],
+          "last": "Lei",
+          "suffix": ""
+        },
+        {
+          "first": "Yuchao",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Yufei",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Wynne",
+          "middle": [],
+          "last": "Hsu",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Shan",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohu",
+          "middle": [],
+          "last": "Qie",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [
+            "Zheng"
+          ],
+          "last": "Shou",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Gspmd: general and scalable parallelization for ml computation graphs",
+      "authors": [
+        {
+          "first": "Yuanzhong",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Hyoukjoong",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Dehao",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Blake",
+          "middle": [],
+          "last": "Hechtman",
+          "suffix": ""
+        },
+        {
+          "first": "Yanping",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Rahul",
+          "middle": [],
+          "last": "Joshi",
+          "suffix": ""
+        },
+        {
+          "first": "Maxim",
+          "middle": [],
+          "last": "Krikun",
+          "suffix": ""
+        },
+        {
+          "first": "Dmitry",
+          "middle": [],
+          "last": "Lepikhin",
+          "suffix": ""
+        },
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Ly",
+          "suffix": ""
+        },
+        {
+          "first": "Marcello",
+          "middle": [],
+          "last": "Maggioni",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Paint by example: Exemplar-based image editing with diffusion models",
+      "authors": [
+        {
+          "first": "Binxin",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuyang",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Bo",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ting",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xuejin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoyan",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Dong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Fang",
+          "middle": [],
+          "last": "Wen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Hash3d: Training-free acceleration for 3d generation",
+      "authors": [
+        {
+          "first": "Xingyi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Xinchao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Diffusion probabilistic model made slim",
+      "authors": [
+        {
+          "first": "Xingyi",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Daquan",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Jiashi",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "Xinchao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "One-step diffusion with distribution matching distillation",
+      "authors": [
+        {
+          "first": "Michaël",
+          "middle": [],
+          "last": "Tianwei Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Gharbi",
+          "suffix": ""
+        },
+        {
+          "first": "Eli",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Fredo",
+          "middle": [],
+          "last": "Shechtman",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [
+            "T"
+          ],
+          "last": "Durand",
+          "suffix": ""
+        },
+        {
+          "first": "Taesung",
+          "middle": [],
+          "last": "Freeman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Scaling up to excellence: Practicing model scaling for photo-realistic image restoration in the wild",
+      "authors": [
+        {
+          "first": "Fanghua",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Jinjin",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Zheyuan",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jinfan",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangtao",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Xintao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jingwen",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Qiao",
+          "suffix": ""
+        },
+        {
+          "first": "Chao",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Resshift: Efficient diffusion model for image super-resolution by residual shifting",
+      "authors": [
+        {
+          "first": "Zongsheng",
+          "middle": [],
+          "last": "Yue",
+          "suffix": ""
+        },
+        {
+          "first": "Jianyi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [
+            "Change"
+          ],
+          "last": "Loy",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Text-to-image diffusion model in generative ai: A survey",
+      "authors": [
+        {
+          "first": "Chenshuang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Chaoning",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Mengchun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "In",
+          "middle": [],
+          "last": "So Kweon",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Laptop-diff: Layer pruning and normalized distillation for compressing diffusion models",
+      "authors": [
+        {
+          "first": "Dingkun",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sijia",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Qingsong",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Haonan",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF65",
+      "title": "Fast sampling of diffusion models with exponential integrator",
+      "authors": [
+        {
+          "first": "Qinsheng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yongxin",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF66",
+      "title": "The unreasonable effectiveness of deep features as a perceptual metric",
+      "authors": [
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Isola",
+          "suffix": ""
+        },
+        {
+          "first": "Alexei",
+          "middle": [
+            "A"
+          ],
+          "last": "Efros",
+          "suffix": ""
+        },
+        {
+          "first": "Eli",
+          "middle": [],
+          "last": "Shechtman",
+          "suffix": ""
+        },
+        {
+          "first": "Oliver",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Cross-attention makes inference cumbersome in text-to-image diffusion models",
+      "authors": [
+        {
+          "first": "Wentian",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Haozhe",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Jinheng",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Francesco",
+          "middle": [],
+          "last": "Faccio",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [
+            "Zheng"
+          ],
+          "last": "Shou",
+          "suffix": ""
+        },
+        {
+          "first": "Jürgen",
+          "middle": [],
+          "last": "Schmidhuber",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Sine: Single image editing with text-to-image diffusion models",
+      "authors": [
+        {
+          "first": "Zhixing",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ligong",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Arnab",
+          "middle": [],
+          "last": "Ghosh",
+          "suffix": ""
+        },
+        {
+          "first": "Dimitris",
+          "middle": [
+            "N"
+          ],
+          "last": "Metaxas",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Uni-controlnet: All-in-one control to text-to-image diffusion models",
+      "authors": [
+        {
+          "first": "Shihao",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Dongdong",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yen-Chun",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jianmin",
+          "middle": [],
+          "last": "Bao",
+          "suffix": ""
+        },
+        {
+          "first": "Shaozhe",
+          "middle": [],
+          "last": "Hao",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Kwan-Yee K",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF70",
+      "title": "Mobilediffusion: Subsecond text-to-image generation on mobile devices",
+      "authors": [
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Yanwu",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhisheng",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Tingbo",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF71",
+      "title": "Dpm-solver-v3: Improved diffusion ode solver with empirical model statistics",
+      "authors": [
+        {
+          "first": "Kaiwen",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianfei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    }
+  ]
+}

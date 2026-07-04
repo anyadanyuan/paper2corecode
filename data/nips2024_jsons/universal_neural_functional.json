@@ -1,0 +1,1663 @@
+{
+  "paper_id": "universal_neural_functional",
+  "title": "Universal Neural Functionals",
+  "authors": [
+    {
+      "first": "Allan",
+      "middle": [],
+      "last": "Zhou",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Stanford University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Chelsea",
+      "middle": [],
+      "last": "Finn",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Stanford University",
+        "location": {}
+      }
+    },
+    {
+      "first": "James",
+      "middle": [],
+      "last": "Harrison",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Stanford University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Google",
+      "middle": [],
+      "last": "Deepmind",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Stanford University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "A challenging problem in many modern machine learning tasks is to process weight-space features, i.e., to transform or extract information from the weights and gradients of a neural network. Recent works have developed promising weight-space models that are equivariant to the permutation symmetries of simple feedforward networks. However, they are not applicable to general architectures, since the permutation symmetries of a weight space can be complicated by recurrence or residual connections. This work proposes an algorithm that automatically constructs permutation equivariant models, which we refer to as universal neural functionals (UNFs), for any weight space. Among other applications, we demonstrate how UNFs can be substituted into existing learned optimizer designs, and find promising improvements over prior methods when optimizing small image classifiers and language models. Our results suggest that learned optimizers can benefit from considering the (symmetry) structure of the weight space they optimize. We open-source our library for constructing UNFs at https://github.com/AllanYangZhou/universal_neural_functional.",
+  "body": {
+    "1_Introduction": "Many problems in machine learning require handling weight-space features, such as the weights, gradients, or sparsity masks of neural networks. For example, optimizers iteratively map the current weights and gradient history to updated weights. Taking this perspective, researchers have proposed a variety of data-driven methods that train a neural network to process these weight-space features. Examples applications of these neural functionals [Zhou et al., 2023a] include training neural networks to predict classifier generalization from weights [Eilertsen et al., 2020] , to optimize other networks [Metz et al., 2022] , and to classify or edit implicit neural representations (INRs) [De Luigi et al., 2023] .\nUntil recently, researchers lacked a unifying and principled framework for designing neural functionals, and would implement a custom model for their particular weight-space task. A significant recent advance was the development of weight-space models that are permutation equivariant [Navon et al., 2023 , Zhou et al., 2023a] . Neuron permutation symmetries arise in a neural network's weight space because re-ordering hidden neurons has no effect on the network's function [Hecht-Nielsen, 1990] . A permutation equivariant neural functional can guarantee that under a neuron permutation of its input, its output permutes accordingly. Navon et al. [2023] showed that permutation equivariance significantly improves performance on weight-space tasks, but their models only apply to the weight spaces of simple feedforward multilayer perceptrons (MLPs). Permutation equivariant neural functionals [Zhou et al., 2023a] added the ability to process weights from simple feedforward convolutional networks (CNNs). However, in practice we may deal with the weight spaces of complex networks that have residual connections, recurrence, normalization layers, and so on. Extending existing approaches to each possible weight space would be tedious and challenging.\nFigure 1 : Illustration of the permutation symmetries in the weight space of a recurrent neural network (Example 2.2). Left: Each layer contains feedforward (ff) weights mapping between different layer's activations, and recurrent (rec) weights transforming activations over time. We can permute the hidden activations as illustrated without changing the final outputs h L t . Right: Permuting the hidden activations induces a permutation on the weights. Here, the rows and columns of the feedforward weights are permuted by (σ ℓ+1 , σ ℓ ), while the recurrent weights are permuted by (σ ℓ , σ ℓ ). Our algorithm automatically constructs permutation equivariant models for any collection of weight tensors given a description of its symmetries (Appendix A).\nWe propose an approach that automatically constructs permutation equivariant models for any collection of tensors whose dimensions can permute according to a shared set of permutations. This naturally encompasses the permutation equivariance we might desire for any given weight space. We show that our algorithm constructs the most general linear layer that operates on a given weight space while guaranteeing equivariance to the specified permutation symmetries. Stacking multiple such layers with pointwise nonlinearities produces a deep permutation equivariant model, which we refer to as a universal neural functional.\nTo evaluate the empirical effectiveness of UNFs, we apply them to tasks that require processing networks with complex architectures containing recurrence, layer normalization, residual connections, and more. We use UNFs to implement learned optimizers and then optimize small image classifiers, RNNs, and Transformer language models, observing promising improvements over prior methods. In a generalization prediction task, we use UNF to predict the performance of sequence-to-sequence RNN models from their weights. Our experiments show that universal neural functionals are flexible, can be easily applied to different weight spaces, and improve upon prior weight-space methods.",
+    "2_Preliminaries": "We largely follow or extend the notation and naming of Zhou et al. [2023a] . Given a fixed neural network architecture, there is a weight space W of possible parameters (weights, biases, normalization scalings, etc.). We refer to all such parameters as \"weights\". A particular set of weights W = W (1) , • • • , W (L) contains multiple \"tensors\", or multidimensional arrays. Depending on the architecture, W contains numerous symmetries [Hecht-Nielsen, 1990 , Godfrey et al., 2022] , i.e., transformations on the weight space that do not affect the network's behavior. Following prior work [Navon et al., 2023 , Zhou et al., 2023a] , this work focuses only on the permutation symmetries, which are called neuron permutations.\nNeuron permutations correspond to re-arranging the neurons within (hidden) layers, which have no canonical ordering. We make the simplifying assumption that all layers can be re-arranged-this assumption can be later corrected using positional encodings [Zhou et al., 2023a] . Assuming there are N independently permutable layers of neurons, the neuron permutation group is the direct product S = S n1 × • • • × S n N , where n i is the number of neurons being permuted in each layer.\nIn general, each weight is a \"tensor\" (multi-dimensional array) of real numbers. Using M (a, b,\n• • • ) to denote arrays R a×b×••• , consider a rank-D ℓ tensor W (ℓ) ∈ M n d ℓ 1 , • • • , n d ℓ D ℓ\n. Each dimension\nd ℓ i is permuted by σ d ℓ i .\nThat is, the action of σ on the indices of the weight tensor is:\nEQUATION\nDefining the multi-index ⃗ i := (i 1 , • • • , i D ℓ ), the action on the weight tensor is to permute the entries:\nσW (ℓ) ⃗ i := W (ℓ) σ -1 ( ⃗ i)\n, and the action on W is σW := σW (1) , • • • , σW (L) . We now elaborate on the definition of the group and action in several common cases. Example 2.1 (Multilayer perceptron). A multilayer perceptron (MLP) with L + 1 layers has activations h ℓ+1 = s W (ℓ) h ℓ + b (ℓ+1) , with h 1 being the first (input) layer and h L+1 the output. If each h ℓ is a vector of length n ℓ , then the weights are matrices W (ℓ) ∈ M (n ℓ+1 , n ℓ ) and the biases are vectors b (ℓ) ∈ M (n ℓ ). Then we have a neuron permutation group S = S n1 × • • • × S n L+1 , and σ ∈ S can be written σ = (σ ℓ ) L+1 ℓ=1 . The action on the weights and biases is:\nEQUATION\nwhere P (σ ℓ ) is the n ℓ × n ℓ permutation matrix corresponding to σ ℓ . This corresponds exactly to the \"NP\" setting in Zhou et al. [2023a] .\nExample 2.2 (Recurrent neural network). Consider a deep recurrent neural network (RNN) [Elman, 1990] without biases. We follow the presentation of Wang et al. [2023] :\nEQUATION\nwhere h 1 t are the inputs and h L+1 t are the outputs at each timestep, with h ℓ 0 initialized to 0. The weight space consists of feedforward (ff) weights W ℓ ff ∈ M (n ℓ+1 , n ℓ ) and recurrent (rec) weights W ℓ rec ∈ M (n ℓ , n ℓ ). We again define the neuron permutation group S := S n1 × • • • × S n L+1 , but the action of the group on the weight space is now different. Here, re-arranging the neurons corresponds to transforming the weights:\nW ℓ ff → P (σ ℓ+1 ) W ℓ ff P (σ ℓ ) ⊤ and W ℓ rec → P (σ ℓ ) W ℓ rec P (σ ℓ ) ⊤ .\nAs illustrated by Figure 1 , the feedforward weights transform just as in the MLP case (Eq. 2), but the recurrent weights' rows and columns must be transformed by the same permutation.\nExample 2.3 (Convolutional neural network). Consider a 1D convolutional neural network (CNN) without biases. Using ⋆ to denote cross-correlation, we have activations h ℓ+1 = s W (ℓ) ⋆ h ℓ , where the input is h 1 and the output is h L+1 . If each filter has spatial dimension k ℓ and each h ℓ has n ℓ channels, then we have rank-3 weight tensors W (ℓ) ∈ M (n ℓ+1 , n ℓ , k ℓ ) and neuron permutation group S = L ℓ=1 S n ℓ × S k ℓ . Looking at how each dimension of W (ℓ) permutes, we would have σ n ℓ+1 ∈ S n ℓ+1 permute the first dimension (output channels), σ n ℓ ∈ S n ℓ permute the second dimension (input channels), and σ k ℓ ∈ S k ℓ permute the third dimension (spatial).\nWe note that permutating the spatial dimensions of a convolution filter would change the CNN's behavior and is not a true symmetry of the weight space. This is a notable difference between how our framework handles convolutional weight spaces compared to NFNs [Zhou et al., 2023a] , where the action of the neuron permutation group does not affect the spatial dimensions at all. Assuming that all dimensions of each weight tensor can permute simplifies the development of our framework, and undesired symmetry can be broken (if desired) by positional encodings of the input [Zhou et al., 2023a , Lim et al., 2023] .\nEquivariance and invariance. We are interested in functions T : W → W that are equivariant, meaning that it doesn't matter whether we apply a neuron permutation to the input or the output. We define L S (W, W) as the space of equivariant linear maps, i.e., those T satisfying:\nEQUATION\n)\nOur goal is to design a layer (i.e., a parameterized space of functions) that is equivalent to L S (W, W).\nIn some applications, we may instead desire invariance, that is a function P satisfying P (σW ) = P (W ) , ∀σ ∈ S, W ∈ W.\nFollowing prior work [Navon et al., 2023 , Zhou et al., 2023a] , we can build invariant neural functionals by composing several equivariant layers with an invariant pooling layer, e.g., one that sums over every dimension of each weight tensor and concatenates the results.",
+    "3_Universal_neural_functionals": {
+      "3.1_Decomposing_equivariant_weight-space_maps": "The weight space is a direct sum of individual weight subspaces W = W (1) ⊕ • • • ⊕ W (L) , so the problem of defining an equivariant layer on W can be decomposed into defining equivariant layers between each pair of weight subspaces W (m) and W (ℓ) , for all ℓ and m [Navon et al., 2023] .\nWe re-state this result in our own notation. For any ℓ, m pair we define L S W (m) , W (ℓ) as the space of equivariant maps between the two weight subspaces. It contains all T ℓm : W (m) → W (ℓ) satisfying\nEQUATION\nnoting that the action on the left and right hand sides of the equivariance condition are not, in general, the same.\nAssume that we already have a basis B sp for L S W (p) , W (s) . A basis function E ∈ B sp can be extended to Ē : W → W by defining:\nEQUATION\nwhere Ē(W ) := Ē1 (W ), • • • , ĒL (W ) .\nTheorem 3.1 (Navon et al. [2023] ). Let { B ℓm } be bases for each L S W (m) , W (ℓ) . Then the union of these bases (extended by Eq. 7) is a basis for linear equivariant maps on W. That is, we have the basis B for L S (W, W) defined:\nEQUATION\nThis result tells us that we can construct an equivariant basis B for L S (W, W) by simply combining the equivariant bases { B ℓm } for each pair of weight subspaces.",
+      "3.2_Equivariant_layers_between_tensors": "Algorithm 1 Basis for equivariant\nW (m) → W (ℓ) layer Require: W (m) , W (ℓ) 1: Initialize basis B ℓm ← { } 2: I ← { o 1 , • • • , o D ℓ , i 1 , • • • , i Dm } 3: for P in VALIDPARTITIONS (I) do 4:\nLabel each subset s p ∈ P by unique character CHAR(s p )\n5:\nfor α ∈ I do 6:\nMap index c[α] ← CHAR(s p ) where α ∈ s p 7:\nend for 8:\nE P (X) c[o1],••• ,c o[D ℓ ] := R X c[i1],••• ,c[i Dm ] 9: B ℓm ← B ℓm ∪ { E P } 10: end for 11: return B ℓm\nSince weights are tensors, our decomposed problem involves finding bases for permutation equivariant maps between tensors. Variants of this problem have been studied by numerous prior works-in particular, Maron et al. [2018] theoretically characterize a basis for equivariant maps between arbitrary-rank tensors, and provide a concrete implementation of the basis functions in the rank-2 case. Here, we describe a general algorithm that automatically constructs a basis for permutation equivariant maps between arbitrary-rank tensors. Concretely, it implements each basis function in terms of simple array operations that are amenable to efficient computation with modern deep learning frameworks.\nFunctions in L S W (m) , W (ℓ) take input tensors indexed by { i 1 , • • • , i Dm } and produces output tensors indexed by { o 1 , • • • , o D ℓ }. We can construct a basis B ℓm for this space where each element is identified by a valid partition P of these indices. Recall that the indices (i\n1 , i 2 , • • • ) of W (m) are permuted by σ d m 1 , σ d m 2 , • • • .\nWe say that two indices i 1 and i 2 \"permute simultaneously\" if d m 1 = d m 2 . Definition 1. A valid partition is a partition P of the output and input indices\nI = { o 1 , • • • , o D ℓ , i 1 , • • • , i Dm } into non-empty subsets, such that each subset only contains indices that are permuted simultaneously. Example 3.1 (W (m) = W (ℓ) = R n1×n2 ).\nHere the output and input indices are\n{ o 1 , o 2 , i 1 , i 2 }. The partition { { o 1 , o 2 } , { i 1 , i 2 } } is not valid because o 1 , o 2 are permuted by σ 1 , σ 2 , so they do not permute simultaneously. On the other hand, { { o 1 , i 1 } , { o 2 , i 2 } } is a valid partition. Example 3.2 (W (m) = W (ℓ) = R n1×n1 ). This time, the partition { { o 1 , o 2 } , { i 1 , i 2 } } is valid because o 1 , o 2 are both permuted by σ 1 , as are i 1 , i 2 .\nTo construct the equivariant basis, we enumerate all valid partitions and then map each partition P to a basis function E P . Concretely, we label each subset of P with a distinct character α, β, γ, • • • and then remap each of our original indices\n{ o 1 , • • • , o D ℓ , i 1 , • • • , i Dm }\nto a a character based on which subset the index was in. This mapping is best illustrated by continuing our previous example.\nExample 3.3 (W (m) = W (ℓ) = R n1×n2 ).\nHere input and output are both matrices, with combined indices { o 1 , o 2 , i 1 , i 2 }. We have two permutations (σ 1 , σ 2 ) ∈ S n1 × S n2 that can act on the rows and columns of the input and output matrices. There are four valid partitions:\nEQUATION\nConsider P 2 -we assign a character to each subset:\nEQUATION\nwhich tells us to remap the output indices (o 1 , o 2 ) → (α, β) and the input indices\n(i 1 , i 2 ) → (α, γ), producing the basis function E P2 W (m) αβ := γ W (m)\nαγ , where summation over γ can be inferred because it only contains an input index. m) , which is the layer introduced in Hartford et al. [2018] . To generalize the previous example, for each valid partition of the indices P we label its subsets with characters α, β, γ, • • • and then construct a basis function:",
+      "3.3_Equivariant_layers_on_weight_spaces": "Theorem 3.1 now tells us that we may now construct the equivariant weight-space layer by combining the bases { B ℓm } into a basis B of functions on W. The weight-space layer T (•, λ) can then be defined by a linear combination of the basis functions with learned coefficients λ. Explicitly, the full layer is defined:\nEQUATION\nwhere m) , λ ℓm . Appendix A provides a concrete description of how we specify the weight space in code and how the algorithm is then used to automatically construct an equivariant weight space layer. Our open-source implementation is compatible with most JAX [Bradbury et al., 2018] neural network libraries. Theorem 3.3. The weight-space layer (Eq.-13) is S-equivariant, and can express any linear equivariant function on W.\nλ ℓ,: = { λ ℓm | ℓ = 1, • • • , L } and T ℓ W, λ ℓ,: = L m=1 T ℓm W (\nProof. Each T ℓm is a linear combination of basis functions in B ℓm . Then, as described by Thm 3.1, Eq. 13 is a linear combination of functions that form a basis for L S (W, W).\nFor an MLP weight space with neuron permutation group defined as in Example 2.1, this approach will generate the exact same layer as NFN NP [Zhou et al., 2023a] . This is because the layers each parameterize all possible linear maps equivariant to the same symmetry group, and hence can express the same set of functions.",
+      "3.4_Multiple_feature_channels": "In practice, we may be interested in simultaneously processing multiple weight-space features, such as the weights and a history of gradients. These features can be stacked into a \"channel\" dimension analogous to the channels of convolutional networks. In that case, we must consider direct sums of weight spaces of the form W c = ⊕ c k=1 W, with elements that can be written as Extending equivariant layers to the multi-channel setting is quite common in the geometric deep learning literature and simply involves taking linear combinations along the channel dimension [Cohen and Welling, 2016, Ravanbakhsh et al., 2017] . That is, we modify the equivariant layer between subspaces as:\n1 W = (W [1], • • • , W [c]), for W [k] ∈ W.\nEQUATION\nwhere each λ ℓm b is now a learned c o × c i matrix instead of a scalar.",
+      "3.5_Deep_models": "The previous sections describes the construction of S-equivariant layers that operate operate on weight-space features in W c . We construct universal neural functionals by stacking multiple such layers (interleaved with pointwise non-linearities) into a deep, permutation equivariant model that can process weights. To construct a permutation invariant model, we can add an invariant pooling layer after the equivariant layers, as in prior work [Navon et al., 2023 , Zhou et al., 2023a] .",
+      "_text": "Since equivariance is preserved under composition, and pointwise non-linearities are already permutation equivariant, we can build deep equivariant models as long as we have an equivariant linear layer. Additionally, composing equivariant layers with an invariant pooling operation produces a deep invariant model. This section introduces a method for producing equivariant weight-space layers for any given weight space, which enables the flexible construction of universal neural functionals."
+    },
+    "4.1_RNN_generalization_prediction": "One promising application of neural functionals is in predicting the generalization of neural network models from their weights Eilertsen et al. [2020] . We construct Tiny RNN Zoofoot_1 , a dataset of recurrent neural networks trained to do arithmetic by completing given questions character-by-character. For example, given the input string \"15+20=\" the correct completion would be \"35<EOS>\". To construct the dataset, we train 10 4 sequence-to-sequence [Sutskever et al., 2014] models on example problems with input numbers up to five input digits. Both encoder and decoder RNNs contain a single GRU cell [Chung et al., 2014] with hidden size 128. The success rate of each RNN model is clearly invariant under permutation symmetries of its weights, so invariance is a natural inductive bias for any generalization predictor. We evaluate STATNN [Unterthiner et al., 2020] and a UNF-based predictor (note that NFNs are not applicable to the weights of recurrent networks). STATNN is operates on basic statistical featuresfoot_2 of the weights, and has been shown to be a very strong baseline on previous generalization prediction tasks [Unterthiner et al., 2020] . On the other hand, UNF operates on raw weight inputs and may be able to extract more nuanced signals than STATNN, as was shown (for CNN classifiers) in Zhou et al. [2023a] .\nIn particular, STATNN computes the mean, variance, and (0, 25, 50, 75, 100)-percentiles of each weight tensor in the RNN and feeds them into a six-layer MLP with hidden width 600. UNF is a permutation invariant model, implemented using a three-layer equivariant backbone (16 hidden channels) followed by invariant pooling and a three-layer MLP (512 hidden neurons). We train each predictor with binary cross entropy loss (since the target SR is in [0, 1]), using the Adam optimizer with learning rate 0.001, batch size 10, and training for up to 10 epochs. We use the validation data only for early stopping, and assess the performance of each predictor on the test inputs using Kendall's τ , the rank correlation between predicted and actual success rate.\nResults. Table 1 shows the performance of each predictor on held out weight inputs. Our UNF-based predictor achieves significantly higher rank correlation between predicted and actual success rate, suggesting that the equivariant layers are able to extract more informative features from the raw weights compared to STATNN.",
+    "4.2_Learned_optimizers": "Choosing the optimizer is a key step in training any modern neural network. Though most popular optimizers are variants of stochastic descent, the non-convexity of neural network training leaves few rigorous guidelines for ideal optimizer design. This has led some researchers to propose training good optimizers using some form of meta-learning [Bengio et al., 1990 , 2013 , Andrychowicz et al., 2016 , Wichrowska et al., 2017 , Metz et al., 2019] .\nCommon optimizers today (including the learned ones) are equivariant to any permutation of the weights. This is because permuting the weights also permutes the gradients, so stochastic gradient descent and similar optimizers will produce permuted updates. However, equivariance to any permutation ignores the actual symmetry structure of the optimized neural network. Arguably the more appropriate constraint is to only require equivariance to the neuron permutation group, which enables more expressive optimizers while still respecting the symmetries of the weight space. As we will see, this can be achieved by using UNFs to implement a learned optimizer.\nTraining learned optimizers that generalize well is extremely compute-intensive [Metz et al., 2022] , so we conduct our experiments in several smaller settings to analyze the impact of architecture\n0 1000 2000 0.6 0.8 1.0 Train NLL MLP on FashionMNIST 0 1000 2000 1.4 1.6 1.8 2.0 2.2 CNN on CIFAR-10 UNF SGDM Deep Set NFN 0 1000 2000 2.0 2.5 3.0 3.5 RNN on LM1B 0 2000 4000 7 8 9 10 Transformer on LM1B\nFigure 2 : Training loss (negative log-likelihood) curves for different tasks and architectures using meta-learned optimizers. We implement learned optimizers with either universal neural functionals (UNFs), NFNs [Zhou et al., 2023a] , or Deep Sets [Zaheer et al., 2017] . Deep Sets are the current standard choice for implementing learned optimizers. Note that NFN is identical to UNF in the MLP case, different for CNN case, and not applicable to RNNs or Transformers. All loss curves are smoothed and averaged over 5 random initializations (3 for Transformer), with shaded regions showing standard error. choice on learned optimizer performance. In each setting, an optimizer is meta-trained to optimize an architecture type on a task from random initializations. Following Harrison et al. [2022] , our learned optimizers track momentum terms m γ t ← γm t-1 + ∇ t and produce updates of the form:\nEQUATION\nHere αm γ0 t is a \"nominal term\" that biases the learned optimizer to behave like stochastic gradient descent with momentum coefficient γ 0 . The neural functional f (•) ingests weights W t , gradients ∇ t , momentum terms at several coefficients { m γi t } i , and the iteration t. During meta-training, we optimize network f and scalars α, β, γ 0 to minimize the task training loss after a fixed number of training steps T , the \"inner training horizion.\" To avoid the issue of backpropagating through an optimization process, we estimate meta-gradients using persistent evolutionary strategies [Vicol et al., 2021] .\nComparisons. The default architecture choice for f (•) in prior work is Deep Sets [Zaheer et al., 2017] , which offers equivariance to any permutation symmetry. We study the effect of replacing Deep Sets by UNFs. We also try the NFN NP architecture [Zhou et al., 2023a] where applicable, though it cannot be used on the RNN and Transformer experiments. Finally, we consider stochastic gradient descent with momentum (SGDM), which is equivalent to fixing β = 0 in Eq. 15. The SGDM baseline is also meta-trained to tune the learning rate α and momentum decay rate γ 0 . We compare the different learned optimizers in four tasks: MLP on FashionMNIST. Each optimizer trains an MLP classifier on a downsized and flattened version of the FashionMNIST dataset [Xiao et al., 2017] . We note that for MLP weight spaces, UNF are identical to NFN NP [Zhou et al., 2023a] .\nCNN on CIFAR-10. Each optimizer trains a convolutional classifier on a downsized 16 × 16 CIFAR-10. In this setting our algorithm produces a UNF that is different to NFN NP (see Example 2.3).",
+    "5_Related_Work": "There is a long history of neural network architectures that are equivariant to various symmetry groups [LeCun et al., 1995 , Cohen and Welling, 2016 , Ravanbakhsh et al., 2017 , Kondor and Trivedi, 2018 , Cohen et al., 2018] . Existing frameworks for automatically constructing equivariant models [Finzi et al., 2021] produce equivariant matrices, which would be intractable for our task. Our work constructs efficient equivariant basis functions for a particular class of permutation symmetries that arise in the weight spaces of neural networks. Permutation equivariant networks have been developed for sets [Zaheer et al., 2017] , matrices whose rows and columns permute independently [Hartford et al., 2018] , and tensors under higher-order permutation actions [Thiede et al., 2020, Pan and Kondor, 2022] -the latter may also be viewed as equivariant models on graphs or polytopes [Maron et al., 2018 , Albooyeh et al., 2019] . This work observes that a weight space is a collection of tensors under higher-order permutation symmetries, and develops equivariant models for that setting.\nThere has been significant interest in designing architectures that that either optimize or generate neural network weights [Schmidhuber, 1993 , Ha et al., 2016 , Krueger et al., 2017 , Kirsch and Schmidhuber, 2021 , Peebles et al., 2022 , Metz et al., 2022] . Some works have identified the importance of respecting the relevant symmetries when implementing black box meta-learners [Kirsch et al., 2022] . However, precise characterizations of equivariant models on neural weight spaces are relatively recent and were initially restricted to simple feedforward models [Navon et al., 2023 , Zhou et al., 2023a,b] .\nA recent alternative approach has been to leverage message passing neural networks (MPNNs) [Zhang et al., 2023] to process weights as edges of a graph. Concurrent to this work, Kofinas et al. [2024] demonstrated applications of MPNNs to learned optimization for MLPs and CNNs and Lim et al. [2023] extended MPNNs to process general weight-spaces. MPNN-based approaches benefit from more flexible adaptation to heterogenous inputs, and the computational cost of message passing does not grow as rapidly as our basis-this is because our approach guarantees each linear layer to be maximally expressive while MPNNs do not. We give a more detailed exposition of this trade-off in Appendix B.3",
+    "6_Conclusion": "We introduce a method for constructing permutation-equivariant neural functionals that operate on arbitrary weight spaces, removing a major limitation of previous frameworks that were only applicable to the weight spaces of simple MLPs and CNNs. Our algorithm constructs maximally expressive equivariant linear layers for processing any collection of tensors given a description of their permutation symmetries, and implements these layers in terms of efficient array operations in standard deep learning frameworks. We empirically validate that the resulting universal neural functionals (UNFs) are effective at tasks that involve processing the weights and gradients of convolutional image classifiers, recurrent sequence-to-sequence models, and Transformer language models. In particular, we find that UNFs show promising improvements over existing learned optimizer designs in small scale experiments.\nLimitations and future work. It remains to be demonstrated how UNFs can be applied to heterogenous weight-space inputs, e.g., to have a single UNF act as a learned optimizer for any input architecture. Moreover, our experimental results only validate the promise of UNF-based learned optimizers in relatively limited settings, and more work would needed to test generalization across arbitrary tasks. Finally, computational tractability may be a significant challenge for more complex architectures as the number of basis terms generated by Alg. 1 would grow rapidly for higher rank tensors with higher-order interactions (see Appendix B.2). Resolving these challenges would further improve the scalability and applicability of neural functionals to weight-space tasks."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Incidence networks for geometric deep learning",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Albooyeh",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Bertolini",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ravanbakhsh",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Learning to learn by gradient descent by gradient descent",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Andrychowicz",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Denil",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "W"
+          ],
+          "last": "Hoffman",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Pfau",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Schaul",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Shillingford",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "De"
+          ],
+          "last": "Freitas",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "On the optimization of a synaptic learning rule",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Cloutier",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gescei",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Optimality in Biological and Artificial Networks?"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Learning a synaptic learning rule",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Cloutier",
+          "suffix": ""
+        }
+      ],
+      "year": 1990,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "JAX: composable transformations of Python+NumPy programs",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Frostig",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Hawkins",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "J"
+          ],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Leary",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Maclaurin",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Necula",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Paszke",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Vanderplas",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wanderman-Milne",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "One billion word benchmark for measuring progress in statistical language modeling",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Chelba",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Mikolov",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Schuster",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Ge",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Brants",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Koehn",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Robinson",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Empirical evaluation of gated recurrent neural networks on sequence modeling",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Chung",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Gulcehre",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Cho",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Group equivariant convolutional networks",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Spherical CNNs",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [
+            "S"
+          ],
+          "last": "Cohen",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Geiger",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Köhler",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Deep learning on implicit neural representations of shapes",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "De Luigi",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Cardace",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Spezialetti",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "Zama"
+          ],
+          "last": "Ramirez",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Salti",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "Di"
+          ],
+          "last": "Stefano",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Classifying the classifier: dissecting the weight space of neural networks",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Eilertsen",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Jönsson",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Ropinski",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Unger",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ynnerman",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Finding structure in time",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "L"
+          ],
+          "last": "Elman",
+          "suffix": ""
+        }
+      ],
+      "year": 1990,
+      "venue": "Cognitive science"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "A practical method for constructing equivariant multilayer perceptrons for arbitrary matrix groups",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Finzi",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Welling",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "G"
+          ],
+          "last": "Wilson",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "On the symmetries of deep learning models and their internal representations",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Godfrey",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Emerson",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Kvinge",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "A closer look at learned optimization: Stability, robustness, and inductive biases",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Harrison",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Metz",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sohl-Dickstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Deep models of interactions across sets",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hartford",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Graham",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Leyton-Brown",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ravanbakhsh",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "On the algebraic structure of feedforward network weight spaces",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Hecht-Nielsen",
+          "suffix": ""
+        }
+      ],
+      "year": 1990,
+      "venue": "Advanced Neural Computers"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Meta learning backpropagation and improving it",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Kirsch",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schmidhuber",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Introducing symmetries to black box meta reinforcement learning",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Kirsch",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Flennerhag",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Van Hasselt",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Friesen",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Oh",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Graph Neural Networks for Learning Equivariant Representations of Neural Networks",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Kofinas",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Knyazev",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "J"
+          ],
+          "last": "Burghouts",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Gavves",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "G"
+          ],
+          "last": "Snoek",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [
+            "W"
+          ],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "12th International Conference on Learning Representations (ICLR)"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "On the generalization of equivariance and convolution in neural networks to the action of compact groups",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Kondor",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Trivedi",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Bayesian hypernetworks",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Krueger",
+          "suffix": ""
+        },
+        {
+          "first": "C.-W",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Islam",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Turner",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lacoste",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "A simple way to initialize recurrent networks of rectified linear units",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [
+            "V"
+          ],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Jaitly",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "E"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Convolutional networks for images, speech, and time series",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Lecun",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "The handbook of brain theory and neural networks"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Graph metanetworks for processing diverse neural architectures",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Lim",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Maron",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "T"
+          ],
+          "last": "Law",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lorraine",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lucas",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Invariant and equivariant graph networks",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Maron",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Ben-Hamu",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Shamir",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Lipman",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Understanding and correcting pathologies in the training of learned optimizers",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Metz",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Maheswaranathan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Nixon",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Freeman",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sohl-Dickstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Training versatile learned optimizers by scaling up",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Metz",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Harrison",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "D"
+          ],
+          "last": "Freeman",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Merchant",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Agrawal",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Poole",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Mordatch",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Roberts",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Equivariant architectures for learning in deep weight spaces",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Navon",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Shamsian",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Achituve",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Fetaya",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Chechik",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Maron",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Permutation equivariant layers for higher order interactions",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Kondor",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Learning to learn with generative models of neural network checkpoints",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Peebles",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Radosavovic",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Brooks",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "A"
+          ],
+          "last": "Efros",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Malik",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Equivariance through parameter-sharing",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ravanbakhsh",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schneider",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Poczos",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "A 'self-referential'weight matrix",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Schmidhuber",
+          "suffix": ""
+        }
+      ],
+      "year": 1993,
+      "venue": "ICANN'93: Proceedings of the International Conference on Artificial Neural Networks"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Sequence to sequence learning with neural networks",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [
+            "V"
+          ],
+          "last": "Le",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "The general theory of permutation equivarant neural networks and higher order graph variational encoders",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [
+            "H"
+          ],
+          "last": "Thiede",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [
+            "S"
+          ],
+          "last": "Hy",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Kondor",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Predicting neural network accuracy from weights",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Unterthiner",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Keysers",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gelly",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Bousquet",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Tolstikhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Unbiased gradient estimation in unrolled computation graphs with persistent evolution strategies",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Vicol",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Metz",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sohl-Dickstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Fleet policy learning via weight merging and an application to robotic tool-use",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Simchowitz",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Tedrake",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Learned optimizers that scale and generalize",
+      "authors": [
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Wichrowska",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Maheswaranathan",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "W"
+          ],
+          "last": "Hoffman",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [
+            "G"
+          ],
+          "last": "Colmenarejo",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Denil",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Freitas",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Sohl-Dickstein",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Fashion-mnist: a novel image dataset for benchmarking machine learning algorithms",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Rasul",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Vollgraf",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Deep sets",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zaheer",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kottur",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Ravanbakhsh",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Poczos",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Salakhutdinov",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Smola",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Neural networks are graphs! graph neural networks for equivariant processing of neural networks",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [
+            "W"
+          ],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Kofinas",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [
+            "J"
+          ],
+          "last": "Burghouts",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "G"
+          ],
+          "last": "Snoek",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Permutation equivariant neural functionals",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Burns",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sokota",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "Z"
+          ],
+          "last": "Kolter",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Neural functional transformers",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Burns",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sokota",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "Z"
+          ],
+          "last": "Kolter",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    }
+  ]
+}

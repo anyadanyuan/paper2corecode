@@ -1,0 +1,3230 @@
+{
+  "paper_id": "rate-based-backpropagation",
+  "title": "Advancing Training Efficiency of Deep Spiking Neural Networks through Rate-based Backpropagation",
+  "authors": [
+    {
+      "first": "Chengting",
+      "middle": [],
+      "last": "Yu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Zhejiang University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Lei",
+      "middle": [],
+      "last": "Liu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Zhejiang University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Gaoang",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Zhejiang University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Erping",
+      "middle": [],
+      "last": "Li",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Zhejiang University",
+        "location": {}
+      }
+    },
+    {
+      "first": "Aili",
+      "middle": [],
+      "last": "Wang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Zhejiang University",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "Recent insights have revealed that rate-coding is a primary form of information representation captured by surrogate-gradient-based Backpropagation Through Time (BPTT) in training deep Spiking Neural Networks (SNNs). Motivated by these findings, we propose rate-based backpropagation, a training strategy specifically designed to exploit rate-based representations to reduce the complexity of BPTT. Our method minimizes reliance on detailed temporal derivatives by focusing on averaged dynamics, streamlining the computational graph to reduce memory and computational demands of SNNs training. We substantiate the rationality of the gradient approximation between BPTT and the proposed method through both theoretical analysis and empirical observations. Comprehensive experiments on CIFAR-10, CIFAR-100, ImageNet, and CIFAR10-DVS validate that our method achieves comparable performance to BPTT counterparts, and surpasses state-of-the-art efficient training techniques. By leveraging the inherent benefits of rate-coding, this work sets the stage for more scalable and efficient SNNs training within resource-constrained environments. Our code is available at https://github.com/Tab-ct/rate-based-backpropagation.",
+  "body": {
+    "1_Introduction": "Spiking Neural Networks (SNNs) are conceptualized as biologically inspired neural systems, incorporating spiking neurons that closely mimic biological neural dynamics [46, 56] . Unlike Artificial Neural Networks (ANNs) based on continuous data representations, SNNs adopt spike-coding strategies to facilitate data transmission through discrete binary spike trains [52] . The intrinsic binary mechanism eliminates the need for the extensive multiply-accumulate operations typically required for synaptic connectivity [56] , thereby enhancing energy efficiency and inference speed when deployed on neuromorphic hardware systems [1, 10, 54] .\nThe mainstream training methods for SNNs primarily utilize Backpropagation Through Time (BPTT) with surrogate gradients to overcome non-differentiable spike events, allowing SNNs to achieve comparable results with ANNs counterparts [51, 62, 74] . However, the direct training method necessitates the storage of all temporal activations for backward propagation across the network's depth and duration, leading to high training costs in terms of both computational time and memory demands [43, 86, 35, 77, 76, 47, 13] . To alleviate memory burdens, online training techniques have been developed that partially decouple the time dependencies of backward computations in BPTT [2, 4, 76, 48, 89] . However, online methods still require iterative computations based on the time dimension, increasing training time complexity as the number of timesteps grows.\nObserved across most biological sensory systems, rate coding is a phenomenon where information is encoded through the rate of neuronal spikes, regardless of precise spike timing [52, 64, 23] . Recent explorations into spike representation have demonstrated the significant role of rate coding in enhancing the robustness of SNNs, further confirming its dominant position as the encoding representation in networks [38, 60, 18] . A significant observation has shown that BPTT-trained SNNs on static benchmark exhibit spike representation primarily following the rate-coding manner by highlighting strong similarities in representation between SNNs and their ANN counterparts [44] . A similar conclusion resonated with findings in fields of adversarial attacks, where recent methods significantly benefit from rate-based representations to enhance attack effectiveness [6, 29, 50] .\nMotivated by rate coding's status as the most effective and predominant form of representation in SNNs, we posit that targeted training based on rate-based information could offer a high costeffectiveness ratio. We propose to decouple BPTT based on rate-coding approximation and simplify rate-based derivative computations to a single spatial backpropagation. We further provide theoretical analysis and empirical evidence to reveal the rationality of the gradient approximation between BPTT and the proposed method. Experimental results demonstrate that the proposed method achieves performance comparable to BPTT counterparts while significantly reducing memory and computational demands. Comparison results also indicate that the proposed method outperforms state-of-the-art efficient training methods on benchmarks. We expect our work to facilitate more efficient and scalable training for SNNs in resource-constrained environments. Our main contributions are as follows:\n• We propose rate-based backpropagation that leverages rate-coded information for efficient training of deep SNNs. This method simplifies the computational graph by decoupling and compressing temporal dependencies, reducing training time and memory requirements.\n• Alongside the proposed method, we conduct theoretical analysis and empirical validation to demonstrate its effectiveness in approximating the gradient computations performed by BPTT-based SNNs training.\n• We conduct experiments on CIFAR-10, CIFAR-100, CIFAR10-DVS, and ImageNet, demonstrating that our proposed method matches the comparable performance of the BPTT counterpart and achieves state-of-the-art results among efficient SNN training methods.",
+    "2_Related_Work": "Training Methods for Deep SNNs. Deep SNNs are trained primarily through two principal strategies:\n(1) conversion methods that establish links between SNNs and ANNs through equivalent closed-form mappings, and (2) direct training from scratch utilizing Backpropagation Through Time (BPTT). Conversion methods develop closed-form formulations for spike representations [39, 67, 72, 88, 73, 47] , enabling seamless transitions of pre-trained ANNs into SNNs and facilitating comparable performance on large-scale datasets [8, 15, 27, 59, 57, 12, 42, 16] . However, the precision of these mappings under ultra-low latency conditions is not consistently reliable, often necessitating extensive time steps to accumulate spikes, which may compromise performance [7, 40, 31, 28, 34] . Direct training methods permit SNNs' performance with extremely low time steps by employing BPTT along with surrogate gradients to compute derivatives of discrete spiking events [51, 62, 74, 22, 81, 87, 85, 43, 66, 69, 13] . The strategy fosters innovation in SNN-specific modules, including optimized neurons, synapses, and network architectures, thereby enhancing performance [25, 21, 20, 17, 79, 83, 24, 80, 61] . Despite the advantages of low latency, direct training imposes substantial memory and time burdens to maintain the backward computational graph [43, 86, 35, 77, 76, 47, 13] .\nTo mitigate training costs associated with direct methods, light training strategies have attracted considerable attention [49, 35, 86, 55, 70] . Several studies have explored the concept of decoupling the forward and backward passes in SNNs, which generally assumes that neuronal dynamics follow deterministic processes and aims to establish closed-form fixed-point equivalences between spike representations and corresponding rate-based activations [72, 73, 77, 47, 68] . Drawing on online training techniques from recurrent neural networks, several studies have adapted the principles of Real-time Recurrent Learning (RTRL) [71] to streamline the online training process for SNNs, aiming to decrease memory demands while preserving biologically plausible online properties of the networks [84, 2, 4, 82, 55, 76, 47, 89] . The online methodologies have proven effective in large-scale tasks [76, 47, 89] . Nevertheless, the significant time costs associated with training methods continue to challenge SNNs' broader application. Spike Coding in SNNs. SNNs transmit information through spike trains [52] , with encoding mechanisms classified into temporal and rate coding. Temporal coding is defined on firing times, employed by several direct trainings [49, 75, 88] and ANN-to-SNN conversions [26, 65] , is noted for its low energy consumption due to sparse spiking. However, temporal coding schemes often require specialized neuron configurations and are generally effective only on simpler datasets [26, 65, 88] . Conversely, rate coding is widely adopted across both conversion [12, 15, 16, 27, 36, 57, 59, 78] and direct training approaches [73, 77, 47] , consistently achieving superior performance and facilitating low-latency operations [77, 47] . Moreover, rate coding has demonstrated significant potential in enhancing the robustness of SNNs against adversarial attacks [38, 60, 18] , with attack methods specifically designed to exploit rate-based representations showing promise in surpassing benchmarks for SNNs defense against attacks [6, 30, 50] . By employing representation similarity analysis to compare BPTT-trained SNNs with their ANN counterparts, Li et al. [44] has indicated that rate coding serves as the primary mode of information representation [44] . Inspired by previous findings, we consider that rate-coded information represents the most effective and predominant form of signal expression in SNNs, and the targeted training based on rate-based spike representations may offer a high cost-effectiveness ratio. Therefore, we propose to decouple BPTT towards rate-based backpropagation with the purpose of enhancing the efficiency of SNNs training.",
+    "3.1_Spiking_Neural_Networks": "Inspired by the brain's ability to transmit information through discrete spikes, the Leaky Integrateand-Fire (LIF) model serves as the basic building block of SNNs due to its simplicity. For practical implementation of SNNs based on connected spiking neurons, the dynamics of the LIF model are typically rendered in a discrete iterative format:\nEQUATION\nwhere u l t and s l t represent the membrane potential and output spike of neurons in layer l at time t, respectively. W l denotes the linear synaptic connections between layers l -1 and l, and λ acts as the decay term for the membrane potential. The Heaviside step function, H(•), determines spike generation, ensuring s l t in binary forms. Noting that H(•) is not differentiable, SNNs' direct training employs surrogate gradients to achieve error propagation by creating various pseudo-derivatives [51, 74, 19] , following the basic idea of Straight-Through Estimator (STE) [3] .",
+    "3.2_Training_SNNs_with_BPTT": "The network outputs at each timestep t are given by o t = W L s L t , where W L denotes the classifier's weights. Classification is based on the average of these outputs across all timesteps, computed as y pred = 1 T T t=1 o t . The loss function L is defined over averaged outputs and is typically formulated as L = ℓ 1 T T t=1 o t , y , where y represents the true labels and ℓ could be the cross-entropy function, as noted in various studies [87, 48, 19, 69] . BPTT unfolds the iterations described in Eq. ( 1), and propagates gradients back along the computational graphs across both temporal and spatial dimensions, as illustrated in Fig. 1a . The gradients of the membrane potential u incorporate elements from both (spatial) spike generation and (temporal) potential accumulation, expressed as: ∂L ∂u l t = ∂L ∂s l t ∂s l t ∂u l t + ∂L ∂u l t+1 ∂u l t+1 ∂u l t + ∂u l t+1 ∂s l t ∂s l t ∂u l t = ∂L ∂s l t ∂s l t ∂u l t + τ >t ∂L ∂s l τ ∂s l τ ∂u l τ t i=τ -1 ∂u l i+1 ∂u l i + ∂u l i+1 ∂s l i ∂s l i ∂u l i (2) Subsequently, the weight update for layer l is determined among all timesteps T , i.e. ∇ W l L = T t=1 ∂L ∂u l t ∂u l t ∂W l = T t=1 ∂L ∂u l t s l-1 t ⊤ , and the gradient is further propagated to previous layers through the linear part by ∂L ∂s l-1 t = ∂L ∂u l t W l ⊤ . 4 Rate-based Backpropagation for SNNs Training 4.1 Derivation of Rate-based Backpropagation Incorporating rate-based representation. Under the rate coding assumption, essential information is effectively encapsulated within the spike frequency averages. We start by defining the rate-based representation as an approximation for the forward procedure in SNNs, as shown in Figure 2. The average firing rate at each layer l, denoted as r l , is calculated as the expected value of the spike outputs s l t over the temporal dimension r l = E[s l t ] = 1 T t≤T s l t .\nConsidering the forward propagation through linear operators with weights W l that compute the inputs as I l t = W l s l-1 t , instead of transmitting distinct spikes over multiple timesteps, we transform the average rates into average inputs c l in the approximate representation:\nc l = E[I l t ] = E[W l s l-1 t ] = W l E[s l-1 t ] = W l r l-1 .\nSupposing input representations are well captured within c l , we approximate the exact inputs with the average inputs for all timesteps, I l t ≈ c l , and follow the neuronal dynamics in Eq. ( 1) to derive the output rates r l = E[s l t ]. With the rate-coding approximation in place, we can derive the gradients with respect to the weights in the linear part based on the error propagated through the average inputs:\nEQUATION\n)\nHandling temporal dependency during backward. For back-propagating the error, the linear parts operate smoothly as ∂c l ∂r l-1 = W l ⊤ . The next step is to define the correlation between the averages of inputs and output spike rates, ∂r l ∂c l , within the neurons of layer l. Since there is no deterministic relationship between r l and c l , we first look into the influence of separated inputs following the exact gradients in Eq. ( 2):\nEQUATION\nBy accumulating the intricate dynamics over time, we can derive the gradients of the overall spikes with respect to the inputs at time t:\nEQUATION\n)\nHere, with rate-coding approximating I l t ≈ c l , we follow the idea of Straight-Through Estimator [3] and define the backward gradients as ∂I l t ∂c l = Id, with Id representing the identity matrix. Then, we can derive the surrogate gradients of neural dynamics through the mean estimator:\nEQUATION\n)\nWith the compressed gradients of neuron parts, the error backpropagation of the rate-based representation is then determined, dependent only on the spatial domain:\nEQUATION\n)\nwhere we define the objective\nL = 1 T ℓ(E[o t ], y) = 1 T ℓ(c L , y).\nNote that the rate-based representation, while instrumental in constructing the backward computational graph for learning, does not necessitate actual implementation during the forward pass.",
+    "4.2_Rate-based_Gradient_Computation_for_Memory_and_Time_Efficiency": "As previously discussed, rate-based backpropagation can be executed on spatial-dimension computation by decoupling BPTT. We now show how rate-based backpropagation can be efficiently implemented within the overall learning framework. As depicted in Figure 2b , online schemes apply eligibility traces e l t locally within neurons to store historical information, effectively blocking backward access to past gradients. The gradient computation is optimized by compressing all past temporal dependencies into e l t . Similarly, we utilize iterative variables {g l t } l≤L and {e l t } l≤L as the accumulated post-and pre-synaptic dependencies, synchronously recorded during the neural dynamics computations. The iteration of {e l t } l≤L dynamically records the firing rates, where\ne l t = 1 t ((t -1)e l t-1 + s l t )\n, and it is straightforward to derive r l = e l T . Considering the surrogate gradients of neural dynamics, ∂r l\n∂c l , to estimate future-dependent terms outlined in Eq. 5, we first construct equivalent eligibility trace forms, {ρ l t } t≤T , with iterative expressions starting at ρ l 1 = 1:\nEQUATION\n)\nwith the equivalence that:\nEQUATION\n)\nBy iteratively accumulating\ng l t = 1 t ((t -1)g l t-1 + ∂s l t ∂u l t ρ t ), we obtain g l T = E[ ∂s l t ∂u l t ρ l t ] = E[κ κ κ l t ]\n. Now, we have collapsed the required computation graph through the iterative calculation to complexity O(L). The rate-based propagation is then conducted in one go, relying only on the intermediate variables e l T , g l T , and W l , within one-time spatial-dimension backpropagation.",
+    "4.3_Connecting_Error_Backward_of_Rate-based_Backpropagation_to_BPTT": "Having derived the fundamental form of rate-based backpropagation through the rate-encoding approximation, we now explore potential divergences with BPTT during error propagation. Although rate-based backpropagation is derived from the approximated forward pass, it still provides valid gradients for the original network parameters.\nThe primary divergence between rate-back and BPTT in backward computation primarily arises from the assumptions regarding the approximation of rate-based representation through mean estimators, as outlined in Eq.( 3) and Eq.( 6). The rate-coding motivations establish equivalence with BPTT by assuming temporal components are independent, which is formalized in Theorem 1.\nTheorem 1. Given δ (s l ) t = ∂L ∂s l t that refers to gradients computed following the chain rule of BPTT in Eq. (2), and κ l t = τ ∂s l t ∂I l τ (where E κ l t = E κ κ κ l t in Eq.(6-7)) , if E δ (s l ) t κ l t = E δ (s l ) t E κ l t holds for ∀l, we have E δ (s l ) t = ∂L ∂r l rate . Furthermore, given δ\n(I l ) t = ∂L ∂I l t , if E δ (I l ) t s l-1 t = E δ (I l ) t E[s l-1 t ] for ∀l, we then obtain (∇ W l L) rate = 1 T (∇ W l L).\nHere, E [x t ] = 1 T t x t refers the mean value of tensor x t over temporal dimension T .\nTo confirm our hypotheses, we carried out empirical experiments, the results of which are detailed in the experimental section. Our empirical findings support the core assumptions outlined in Theorem 1, demonstrating the relative independence between δ (s l ) t and κ l t (Figure 3a , b ), as well as between δ (I l ) t and s l t (Figure 3c ). For minor discrepancies that may arise, we introduced Theorem 2, which tolerates small deviations and confirms that approximation errors in rate-based backpropagation can be effectively bounded, ensuring the robustness of training under practical conditions.\nTheorem 2. For gradients δ (s l ) t = ∂L ∂s l t and κ l t = τ ∂s l t ∂I l τ , given the approximation error bound ϵ > 0 s.t. E δ (s l ) t κ l t -E δ (s l ) t E κ l t ≤ ϵ(1 + E δ (s l ) t ) for ∀l. Denote the stacked tensor I l = [I l 1 , ..., I l T ] and s l = [s l 1 , ..., s l T ]. Assuming the backward procedure follows non-expansivity s.t. ∂I l+1 ∂I l = W l+1 ⊤ ∂s l ∂I l is 1-lipschitz continuous without loss of generality and the biases are bounded uniformly by B, i.e. x ∂I l+1 ∂I l -x ∂I l+1 ∂I l ≤ xx for ∀x, x. Define δ l rate = ∂L ∂c l rate as the error propagated through Eq. (7), and δ (I l ) t = ∂L ∂I l t as the error propagated through BPTT, with δ L rate = E[δ (I L ) t ]. We have the gradient difference bounded by δ L-k rate -E[δ (I L-k ) t\n] = O(k 2 ϵ).\nTheorem 2 elucidates the stability of rate-based backpropagation relative to BPTT, showing that the proposed method can provide a bound on the overall objective solution. The bounded error could further be interpreted as a form of randomness suitable for stochastic optimization. The similarity measurement of the descent directions between the two methods provides empirical evidence for the effectiveness of the proposed method (Figure 3d ). Detailed proof is provided in Appendix A.",
+    "4.4_Implementation_Details": "For implementations of direct training, two distinct training modes are recognized: (multi-step) activation-based and (single-step) time-based [19] , differing fundamentally in handling the timesteps loop. We implement our rate-based propagation in both modes: rate M denotes the multi-step training mode where T loops are embedded within layers, and rate S refers to the single-step training mode with T loops outside the layers. A detailed discussion of training modes is included in Appendix B.\nAnother aspect of our implementation concerns handling batch normalization (BN), especially given its critical role in BPTT, which adjusts mean and variance statistics during the forward pass. The application of BN varies depending on the training mode. In the multi-step mode, BN benefits from access to information across all timesteps and can normalize based on statistics aggregated over temporal dimensions. We employed tdBN [87] in rate M since it has been widely adopted in direct training on various benchmarks. In contrast, the single-step mode limits BN to current timestep inputs, necessitating normalization across spatial dimensions only. In line with online schemes, SLTT [48] demonstrates the feasibility of implementing spatial BN iteratively across timesteps, an approach we adopt for rate S . Further details on the BN implementation are provided in Appendix B. ",
+    "5_Experiments": {
+      "5.1_Empirical_Validation": "Empirical experiments are conducted to support the preconditions of theorems discussed in Section 4.3. These preconditions assert the independence of paired variables across the temporal dimension: E δ\nEQUATION\nA1) and E δ (I l ) t s l-1 t = E δ (I l ) t E[s l-1 t ] (A2). To explore these relationships, we conducted experiments training ResNet-18 on CIFAR-100 using BPTT. Cosine similarity measures were employed to compare the empirical expectation products, cos⟨E δ (s l ) t κ l t , E δ (s l ) t E κ l t ⟩ as shown in Figure 3a , where values approaching 1 indicate a high degree of alignment, suggesting that the variables' directions are similar. Additionally, the correlation coefficient, ρ was measured to further assess the independence of these variables ρ = COV(κt,δ\n(s l ) t ) var(κt)var(δ (s l ) t )\nwhere COV(κ t , δ\n(s l ) t ) = E δ (s l ) t κ l t -E δ (s l ) t E κ l t\nIt is clear that ρ equals the cosine distance between the variables after centering by their means, ρ = cos⟨δ\n(s l ) t -E[δ (s l ) t ], κ l t -E κ l t ⟩.\nResults, shown in Figure 3b , reveal that the correlation coefficients are constrained within a very small range, typically around the magnitude of ∼ 10 -5 , supporting the hypothesis of their relative independence. We also conducted cosine similarity measurements to validate the assumption\nE δ (I l ) t s l-1 t = E δ (I l ) t E[s l-1 t ]\n, as shown in Figure 3c . Additionally, we implement both BPTT and the proposed method simultaneously within the same training iteration, allowing direct observation of the gradient descent directions. The relation (∇ W l L) rate = 1 T (∇ W l L) (A3) was visualized in Figure 3d , which revealed that the convergence directions for rate-based backpropagation and BPTT are closely aligned. Remarkably, all tests consistently demonstrate that configurations with T=6 better adhere to the theoretical assumptions than T=4, suggesting that the proposed method can more closely mimic BPTT computations as the timestep increases. This observation also highlights the intrinsic link between our method and rate-coding, suggesting that a larger temporal window may facilitate more stable manifestations of rate-coding.",
+      "5.2_Comparison_with_the_State-of-the-Art": "We present comparison results in Table 1 . In single-step mode, rate S offers fair comparisons with online schemes, while rate M in multi-step mode competes fairly with other methods employing one-step backpropagation. Unlike online methods such as OTTT [76] , SLTT [48] , and OS [89] , which necessitate spatial backpropagation at every timestep, our proposed method conducts this process only once at the final timestep. Although methods of DSR [47] and SSF [68] delay decoupled backpropagation until the final timestep, allowing for parallel processing across all timesteps to enhance computational speed, they still require each timestep's backpropagation to be managed independently within the backward computation graph. In contrast, our method fully compresses the temporal dimension, achieving one-step time-independent spatial backpropagation. As shown in Table 1 , our method yields comparable performance with BPTT counterparts on benchmarks, showcasing promising capabilities compared to other efficient training methods. While our theoretical analysis and motivation primarily adhere to rate-coding approximations, the performance on static datasets aligns with expectations. The results on the dynamic dataset CIFAR10-DVS also achieve comparable levels, implying a significant presence of rate-based representation within CIFAR10-DVS. More results regarding the performance comparisons between the proposed method and BPTT across various architectures and settings have been detailed in Appendix D.",
+      "5.3_Impact_of_Time_Expansion": "we assess the impact of extending timesteps on both accuracy and training efficiency. Figure 4a validates that our method capably manages increased timesteps, thereby confirming the scalability of the proposed method for larger T values. Figure 4b displays the computational and memory expenses incurred during the backward phase, which, as anticipated, do not escalate with increasing T . ",
+      "5.4_Analysis_of_Rate_Statistics": "Our method, derived from the principles of rate-based representation, necessitates examining the impact of rate coding on model behavior. Following an insightful approach from [6] , we assess the robustness of our models by shuffling the temporal order of spike sequences while maintaining their rate consistency. This experiment, designed to disrupt temporal information without changing the firing rate, was applied to models trained using rate-based backpropagation. During inference on the test dataset, we introduced perturbations by randomly shuffling the temporal dimensions of input tensors across all neurons, as reported in Table 2 . Notably, models mostly resisted these changes to some degree, which suggests that they follow the basic rules of rate coding, where the reordering of timesteps does not significantly impact overall accuracy. Furthermore, we tracked the average firing rates across each layer over time, presented in Figure 5 . As layers increase, the average spike rates per layer are closely aligned with the temporal mean, validating the idea of rate-coding approximation.\nThose two experiments support the notion that rate-based backpropagation proficiently captures rate-based representations during training. ",
+      "_text": "In this section, we conduct experiments on CIFAR-10 [37], CIFAR-100 [37] , ImageNet [11] , and CIFAR10-DVS [41] to evaluate the proposed training method. We implement SNNs training on the Pytorch [53] and SpikingJelly [19] frameworks. We set V th = 1, λ = 0.2, and employ the sigmoid-based surrogate function [19] for LIF neurons. Detailed setups are provided in Appendix C."
+    },
+    "6_Conclusion": "In this work, we propose rate-based backpropagation, utilizing rate-coding approximation to streamline the gradient computational graph, significantly reducing both memory usage and training time.\nThrough theoretical analyses and empirical validation, we show the method's feasibility in approximating the optimization direction of BPTT. Experimental results across benchmarks reveal that our method achieves comparable performance with BPTT and surpasses other state-of-the-art efficient training methods. We expect our work to pave the way for more scalable and resource-efficient training of SNNs."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Truenorth: Design and tool flow of a 65 mw 1 million neuron programmable neurosynaptic chip",
+      "authors": [
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Filipp Akopyan",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Sawada",
+          "suffix": ""
+        },
+        {
+          "first": "Rodrigo",
+          "middle": [],
+          "last": "Cassidy",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Alvarez-Icaza",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Arthur",
+          "suffix": ""
+        },
+        {
+          "first": "Nabil",
+          "middle": [],
+          "last": "Merolla",
+          "suffix": ""
+        },
+        {
+          "first": "Yutaka",
+          "middle": [],
+          "last": "Imam",
+          "suffix": ""
+        },
+        {
+          "first": "Pallab",
+          "middle": [],
+          "last": "Nakamura",
+          "suffix": ""
+        },
+        {
+          "first": "Gi-Joon",
+          "middle": [],
+          "last": "Datta",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Nam",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "IEEE transactions on computer-aided design of integrated circuits and systems"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "A solution to the learning dilemma for recurrent networks of spiking neurons",
+      "authors": [
+        {
+          "first": "Guillaume",
+          "middle": [],
+          "last": "Bellec",
+          "suffix": ""
+        },
+        {
+          "first": "Franz",
+          "middle": [],
+          "last": "Scherr",
+          "suffix": ""
+        },
+        {
+          "first": "Anand",
+          "middle": [],
+          "last": "Subramoney",
+          "suffix": ""
+        },
+        {
+          "first": "Elias",
+          "middle": [],
+          "last": "Hajek",
+          "suffix": ""
+        },
+        {
+          "first": "Darjan",
+          "middle": [],
+          "last": "Salaj",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Legenstein",
+          "suffix": ""
+        },
+        {
+          "first": "Wolfgang",
+          "middle": [],
+          "last": "Maass",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature communications"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Estimating or propagating gradients through stochastic neurons for conditional computation",
+      "authors": [
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "Nicholas",
+          "middle": [],
+          "last": "Léonard",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Online spatio-temporal learning in deep neural networks",
+      "authors": [
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Bohnstingl",
+          "suffix": ""
+        },
+        {
+          "first": "Stanisław",
+          "middle": [],
+          "last": "Woźniak",
+          "suffix": ""
+        },
+        {
+          "first": "Angeliki",
+          "middle": [],
+          "last": "Pantazi",
+          "suffix": ""
+        },
+        {
+          "first": "Evangelos",
+          "middle": [],
+          "last": "Eleftheriou",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "IEEE Transactions on Neural Networks and Learning Systems"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "High-performance large-scale image recognition without normalization",
+      "authors": [
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Brock",
+          "suffix": ""
+        },
+        {
+          "first": "Soham",
+          "middle": [],
+          "last": "De",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [
+            "L"
+          ],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "Karen",
+          "middle": [],
+          "last": "Simonyan",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Rate gradient approximation attack threats deep spiking neural networks",
+      "authors": [
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Bu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianhao",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Zecheng",
+          "middle": [],
+          "last": "Hao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofei",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Optimal ann-snn conversion for high-accuracy and ultra-low-latency spiking neural networks",
+      "authors": [
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Bu",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Jianhao",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Penglin",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofei",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Tiejun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Spiking deep convolutional neural networks for energy-efficient object recognition",
+      "authors": [
+        {
+          "first": "Yongqiang",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Yang",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Deepak",
+          "middle": [],
+          "last": "Khosla",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International Journal of Computer Vision"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Autoaugment: Learning augmentation strategies from data",
+      "authors": [
+        {
+          "first": "Barret",
+          "middle": [],
+          "last": "Ekin D Cubuk",
+          "suffix": ""
+        },
+        {
+          "first": "Dandelion",
+          "middle": [],
+          "last": "Zoph",
+          "suffix": ""
+        },
+        {
+          "first": "Vijay",
+          "middle": [],
+          "last": "Mane",
+          "suffix": ""
+        },
+        {
+          "first": "Quoc V",
+          "middle": [],
+          "last": "Vasudevan",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Loihi: A neuromorphic manycore processor with on-chip learning",
+      "authors": [
+        {
+          "first": "Mike",
+          "middle": [],
+          "last": "Davies",
+          "suffix": ""
+        },
+        {
+          "first": "Narayan",
+          "middle": [],
+          "last": "Srinivasa",
+          "suffix": ""
+        },
+        {
+          "first": "Tsung-Han",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Gautham",
+          "middle": [],
+          "last": "Chinya",
+          "suffix": ""
+        },
+        {
+          "first": "Yongqiang",
+          "middle": [],
+          "last": "Cao",
+          "suffix": ""
+        },
+        {
+          "first": "Sri",
+          "middle": [],
+          "last": "Harsha Choday",
+          "suffix": ""
+        },
+        {
+          "first": "Georgios",
+          "middle": [],
+          "last": "Dimou",
+          "suffix": ""
+        },
+        {
+          "first": "Prasad",
+          "middle": [],
+          "last": "Joshi",
+          "suffix": ""
+        },
+        {
+          "first": "Nabil",
+          "middle": [],
+          "last": "Imam",
+          "suffix": ""
+        },
+        {
+          "first": "Shweta",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Ieee Micro"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Imagenet: A largescale hierarchical image database",
+      "authors": [
+        {
+          "first": "Jia",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Socher",
+          "suffix": ""
+        },
+        {
+          "first": "Li-Jia",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kai",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": "IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Optimal conversion of conventional artificial neural networks to spiking neural networks",
+      "authors": [
+        {
+          "first": "Shikuang",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Shi",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Surrogate module learning: Reduce the gradient error accumulation in training spiking neural networks",
+      "authors": [
+        {
+          "first": "Shikuang",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Shi",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Improved regularization of convolutional neural networks with cutout",
+      "authors": [
+        {
+          "first": "Terrance",
+          "middle": [],
+          "last": "Devries",
+          "suffix": ""
+        },
+        {
+          "first": "Graham",
+          "middle": [
+            "W"
+          ],
+          "last": "Taylor",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Fast-classifying, high-accuracy spiking deep networks through weight and threshold balancing",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Peter U Diehl",
+          "suffix": ""
+        },
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Neil",
+          "suffix": ""
+        },
+        {
+          "first": "Matthew",
+          "middle": [],
+          "last": "Binas",
+          "suffix": ""
+        },
+        {
+          "first": "Shih-Chii",
+          "middle": [],
+          "last": "Cook",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Pfeiffer",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "International joint conference on neural networks (IJCNN)"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Optimal ann-snn conversion for fast and accurate inference in deep spiking neural networks",
+      "authors": [
+        {
+          "first": "Jianhao",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofei",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghong",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "Tiejun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Temporal effective batch normalization in spiking neural networks",
+      "authors": [
+        {
+          "first": "Chaoteng",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        },
+        {
+          "first": "Jianhao",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Shiyan",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofei",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Tiejun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Securing deep spiking neural networks against adversarial attacks through inherent structural parameters",
+      "authors": [
+        {
+          "first": "Rida",
+          "middle": [],
+          "last": "El-Allami",
+          "suffix": ""
+        },
+        {
+          "first": "Alberto",
+          "middle": [],
+          "last": "Marchisio",
+          "suffix": ""
+        },
+        {
+          "first": "Muhammad",
+          "middle": [],
+          "last": "Shafique",
+          "suffix": ""
+        },
+        {
+          "first": "Ihsen",
+          "middle": [],
+          "last": "Alouani",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "2021 Design, Automation & Test in Europe Conference & Exhibition (DATE)"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Spikingjelly: An open-source machine learning infrastructure platform for spike-based intelligence",
+      "authors": [
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Yanqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Jianhao",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofei",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Timothée",
+          "middle": [],
+          "last": "Masquelier",
+          "suffix": ""
+        },
+        {
+          "first": "Ding",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Liwei",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Huihui",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Guoqi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghong",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Science Advances"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Deep residual learning in spiking neural networks",
+      "authors": [
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofei",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Yanqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Tiejun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Timothée",
+          "middle": [],
+          "last": "Masquelier",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghong",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Incorporating learnable membrane time constant to enhance learning of spiking neural networks",
+      "authors": [
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofei",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Yanqi",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Timothée",
+          "middle": [],
+          "last": "Masquelier",
+          "suffix": ""
+        },
+        {
+          "first": "Tiejun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghong",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF international conference on computer vision"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Stca: Spatio-temporal credit assignment with delayed feedback in deep spiking neural networks",
+      "authors": [
+        {
+          "first": "Pengjie",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Rong",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Gang",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "Huajin",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "IJCAI"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Neural coding in spiking neural networks: A comparative study for robust neuromorphic systems",
+      "authors": [
+        {
+          "first": "Wenzhe",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Mohammed",
+          "middle": [
+            "E"
+          ],
+          "last": "Fouda",
+          "suffix": ""
+        },
+        {
+          "first": "Ahmed",
+          "middle": [
+            "M"
+          ],
+          "last": "Eltawil",
+          "suffix": ""
+        },
+        {
+          "first": "Khaled",
+          "middle": [],
+          "last": "Nabil",
+          "suffix": ""
+        },
+        {
+          "first": "Salama",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Frontiers in Neuroscience"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Im-loss: information maximization loss for spiking neural networks",
+      "authors": [
+        {
+          "first": "Yufei",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanpei",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Liwen",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaode",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Yinglei",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Xuhui",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhe",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Direct learning-based deep spiking neural networks: a review",
+      "authors": [
+        {
+          "first": "Yufei",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Xuhui",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhe",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Frontiers in Neuroscience"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Deep spiking neural network: Energy efficiency through time based coding",
+      "authors": [
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Kaushik",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "European Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Rmp-snn: Residual membrane potential neuron for enabling deeper high-accuracy and low-latency spiking neural network",
+      "authors": [
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Han",
+          "suffix": ""
+        },
+        {
+          "first": "Gopalakrishnan",
+          "middle": [],
+          "last": "Srinivasan",
+          "suffix": ""
+        },
+        {
+          "first": "Kaushik",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the IEEE/CVF conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Reducing ann-snn conversion error through residual membrane potential",
+      "authors": [
+        {
+          "first": "Zecheng",
+          "middle": [],
+          "last": "Hao",
+          "suffix": ""
+        },
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Bu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianhao",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Tiejun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofei",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Threaten spiking neural networks through combining rate and temporal information",
+      "authors": [
+        {
+          "first": "Zecheng",
+          "middle": [],
+          "last": "Hao",
+          "suffix": ""
+        },
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Bu",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyu",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Zihan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofei",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Tiejun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Threaten spiking neural networks through combining rate and temporal information",
+      "authors": [
+        {
+          "first": "Zecheng",
+          "middle": [],
+          "last": "Hao",
+          "suffix": ""
+        },
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Bu",
+          "suffix": ""
+        },
+        {
+          "first": "Xinyu",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Zihan",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofei",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Tiejun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Bridging the gap between anns and snns by calibrating offset spikes",
+      "authors": [
+        {
+          "first": "Zecheng",
+          "middle": [],
+          "last": "Hao",
+          "suffix": ""
+        },
+        {
+          "first": "Jianhao",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Tong",
+          "middle": [],
+          "last": "Bu",
+          "suffix": ""
+        },
+        {
+          "first": "Tiejun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofei",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Deep residual learning for image recognition",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shaoqing",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Identity mappings in deep residual networks",
+      "authors": [
+        {
+          "first": "Kaiming",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shaoqing",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Computer Vision-ECCV 2016: 14th European Conference"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "A unified optimization framework of ann-snn conversion: Towards optimal mapping from activation values to firing rates",
+      "authors": [
+        {
+          "first": "Haiyan",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Srinivas",
+          "middle": [],
+          "last": "Anumasa",
+          "suffix": ""
+        },
+        {
+          "first": "Giulia",
+          "middle": [],
+          "last": "De Masi",
+          "suffix": ""
+        },
+        {
+          "first": "Huan",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Unifying activation-and timing-based learning rules for spiking neural networks",
+      "authors": [
+        {
+          "first": "Jinseok",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Kyungsu",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Jae-Joon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Spiking-yolo: spiking neural network for energy-efficient object detection",
+      "authors": [
+        {
+          "first": "Seijoon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Seongsik",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Byunggook",
+          "middle": [],
+          "last": "Na",
+          "suffix": ""
+        },
+        {
+          "first": "Sungroh",
+          "middle": [],
+          "last": "Yoon",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Learning multiple layers of features from tiny images",
+      "authors": [
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Krizhevsky",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Hinton",
+          "suffix": ""
+        }
+      ],
+      "year": 2009,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Hire-snn: Harnessing the inherent robustness of energy-efficient deep spiking neural networks by training with crafted input noise",
+      "authors": [
+        {
+          "first": "Souvik",
+          "middle": [],
+          "last": "Kundu",
+          "suffix": ""
+        },
+        {
+          "first": "Massoud",
+          "middle": [],
+          "last": "Pedram",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [
+            "A"
+          ],
+          "last": "Beerel",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Training deep spiking neural networks using backpropagation",
+      "authors": [
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Haeng",
+          "suffix": ""
+        },
+        {
+          "first": "Lee",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Tobi",
+          "middle": [],
+          "last": "Delbruck",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Pfeiffer",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Frontiers in neuroscience"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Quantization framework for fast spiking neural networks",
+      "authors": [
+        {
+          "first": "Chen",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Steve",
+          "middle": [],
+          "last": "Furber",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Frontiers in Neuroscience"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Cifar10-dvs: an eventstream dataset for object classification",
+      "authors": [
+        {
+          "first": "Hongmin",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Hanchao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Xiangyang",
+          "middle": [],
+          "last": "Ji",
+          "suffix": ""
+        },
+        {
+          "first": "Guoqi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Luping",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Frontiers in neuroscience"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "A free lunch from ann: Towards efficient, accurate spiking neural networks calibration",
+      "authors": [
+        {
+          "first": "Yuhang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Shikuang",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Ruihao",
+          "middle": [],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Shi",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Differentiable spike: Rethinking gradient-descent for training spiking neural networks",
+      "authors": [
+        {
+          "first": "Yuhang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Yufei",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Shanghang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shikuang",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Yongqing",
+          "middle": [],
+          "last": "Hai",
+          "suffix": ""
+        },
+        {
+          "first": "Shi",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Uncovering the representation of spiking neural networks trained with surrogate gradient",
+      "authors": [
+        {
+          "first": "Yuhang",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Youngeun",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Hyoungseob",
+          "middle": [],
+          "last": "Park",
+          "suffix": ""
+        },
+        {
+          "first": "Priyadarshini",
+          "middle": [],
+          "last": "Panda",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Sgdr: Stochastic gradient descent with warm restarts",
+      "authors": [
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Loshchilov",
+          "suffix": ""
+        },
+        {
+          "first": "Frank",
+          "middle": [],
+          "last": "Hutter",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Networks of spiking neurons: the third generation of neural network models",
+      "authors": [
+        {
+          "first": "Wolfgang",
+          "middle": [],
+          "last": "Maass",
+          "suffix": ""
+        }
+      ],
+      "year": 1997,
+      "venue": "Neural networks"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Training high-performance low-latency spiking neural networks by differentiation on spike representation",
+      "authors": [
+        {
+          "first": "Qingyan",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Mingqing",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Shen",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Yisen",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhouchen",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhi-Quan",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Towards memory-and time-efficient backpropagation for training spiking neural networks",
+      "authors": [
+        {
+          "first": "Qingyan",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Mingqing",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Shen",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Yisen",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhouchen",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhi-Quan",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Supervised learning based on temporal coding in spiking neural networks",
+      "authors": [
+        {
+          "first": "Hesham",
+          "middle": [],
+          "last": "Mostafa",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "IEEE transactions on neural networks and learning systems"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Certified adversarial robustness for rate encoded spiking neural networks",
+      "authors": [
+        {
+          "first": "Hilal",
+          "middle": [],
+          "last": "Bhaskar Mukhoty",
+          "suffix": ""
+        },
+        {
+          "first": "Giulia",
+          "middle": [],
+          "last": "Alquabeh",
+          "suffix": ""
+        },
+        {
+          "first": "Huan",
+          "middle": [],
+          "last": "De Masi",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Surrogate gradient learning in spiking neural networks: Bringing the power of gradient-based optimization to spiking neural networks",
+      "authors": [
+        {
+          "first": "Hesham",
+          "middle": [],
+          "last": "Emre O Neftci",
+          "suffix": ""
+        },
+        {
+          "first": "Friedemann",
+          "middle": [],
+          "last": "Mostafa",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zenke",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "IEEE Signal Processing Magazine"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "A unified approach to the study of temporal, correlational, and rate coding",
+      "authors": [
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Panzeri",
+          "suffix": ""
+        },
+        {
+          "first": "Simon",
+          "middle": [
+            "R"
+          ],
+          "last": "Schultz",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "Neural Computation"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Pytorch: An imperative style, high-performance deep learning library",
+      "authors": [
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Paszke",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Gross",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Lerer",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "Gregory",
+          "middle": [],
+          "last": "Chanan",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Killeen",
+          "suffix": ""
+        },
+        {
+          "first": "Zeming",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Natalia",
+          "middle": [],
+          "last": "Gimelshein",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Antiga",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Towards artificial general intelligence with hybrid tianjic chip architecture",
+      "authors": [
+        {
+          "first": "Jing",
+          "middle": [],
+          "last": "Pei",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Sen",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Mingguo",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Youhui",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuang",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Guanrui",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhe",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "Zhenzhi",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Diet-snn: A low-latency spiking neural network with direct input encoding and leakage and threshold optimization",
+      "authors": [
+        {
+          "first": "Nitin",
+          "middle": [],
+          "last": "Rathi",
+          "suffix": ""
+        },
+        {
+          "first": "Kaushik",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE Transactions on Neural Networks and Learning Systems"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Towards spike-based machine intelligence with neuromorphic computing",
+      "authors": [
+        {
+          "first": "Kaushik",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        },
+        {
+          "first": "Akhilesh",
+          "middle": [],
+          "last": "Jaiswal",
+          "suffix": ""
+        },
+        {
+          "first": "Priyadarshini",
+          "middle": [],
+          "last": "Panda",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Nature"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Conversion of continuous-valued deep networks to efficient event-driven networks for image classification",
+      "authors": [
+        {
+          "first": "Bodo",
+          "middle": [],
+          "last": "Rueckauer",
+          "suffix": ""
+        },
+        {
+          "first": "Iulia-Alexandra",
+          "middle": [],
+          "last": "Lungu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhuang",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Pfeiffer",
+          "suffix": ""
+        },
+        {
+          "first": "Shih-Chii",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Frontiers in neuroscience"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Learning representations by back-propagating errors",
+      "authors": [
+        {
+          "first": "Geoffrey",
+          "middle": [
+            "E"
+          ],
+          "last": "David E Rumelhart",
+          "suffix": ""
+        },
+        {
+          "first": "Ronald",
+          "middle": [
+            "J"
+          ],
+          "last": "Hinton",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Williams",
+          "suffix": ""
+        }
+      ],
+      "year": 1986,
+      "venue": "nature"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Going deeper in spiking neural networks: Vgg and residual architectures",
+      "authors": [
+        {
+          "first": "Abhronil",
+          "middle": [],
+          "last": "Sengupta",
+          "suffix": ""
+        },
+        {
+          "first": "Yuting",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Chiao",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Kaushik",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Frontiers in neuroscience"
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Inherent adversarial robustness of deep spiking neural networks: Effects of discrete input encoding and non-linear activations",
+      "authors": [
+        {
+          "first": "Saima",
+          "middle": [],
+          "last": "Sharmin",
+          "suffix": ""
+        },
+        {
+          "first": "Nitin",
+          "middle": [],
+          "last": "Rathi",
+          "suffix": ""
+        },
+        {
+          "first": "Priyadarshini",
+          "middle": [],
+          "last": "Panda",
+          "suffix": ""
+        },
+        {
+          "first": "Kaushik",
+          "middle": [],
+          "last": "Roy",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Computer Vision-ECCV 2020: 16th European Conference"
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Exploiting high performance spiking neural networks with efficient spiking patterns",
+      "authors": [
+        {
+          "first": "Guobin",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Dongcheng",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Zeng",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Slayer: Spike layer error reassignment in time",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Sumit",
+          "suffix": ""
+        },
+        {
+          "first": "Garrick",
+          "middle": [],
+          "last": "Shrestha",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Orchard",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Very deep convolutional networks for large-scale image recognition",
+      "authors": [
+        {
+          "first": "Karen",
+          "middle": [],
+          "last": "Simonyan",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Zisserman",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF63",
+      "title": "Motor control by precisely timed spike patterns",
+      "authors": [
+        {
+          "first": "Caroline",
+          "middle": [
+            "M"
+          ],
+          "last": "Kyle H Srivastava",
+          "suffix": ""
+        },
+        {
+          "first": "Michiel",
+          "middle": [],
+          "last": "Holmes",
+          "suffix": ""
+        },
+        {
+          "first": "Andrea",
+          "middle": [
+            "R"
+          ],
+          "last": "Vellema",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Pack",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "H"
+          ],
+          "last": "Coen",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Elemans",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [
+            "J"
+          ],
+          "last": "Nemenman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Sober",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the National Academy of Sciences"
+    },
+    {
+      "id": "BIBREF64",
+      "title": "Optimized spiking neurons can classify images with high accuracy through temporal coding with two spikes",
+      "authors": [
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Stöckl",
+          "suffix": ""
+        },
+        {
+          "first": "Wolfgang",
+          "middle": [],
+          "last": "Maass",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Nature Machine Intelligence"
+    },
+    {
+      "id": "BIBREF65",
+      "title": "S3nn: Time step reduction of spiking surrogate gradients for training energy efficient single-step spiking neural networks",
+      "authors": [
+        {
+          "first": "Kazuma",
+          "middle": [],
+          "last": "Suetake",
+          "suffix": ""
+        },
+        {
+          "first": "Shin-Ichi",
+          "middle": [],
+          "last": "Ikegawa",
+          "suffix": ""
+        },
+        {
+          "first": "Ryuji",
+          "middle": [],
+          "last": "Saiin",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshihide",
+          "middle": [],
+          "last": "Sawada",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Neural Networks"
+    },
+    {
+      "id": "BIBREF66",
+      "title": "Spikegrad: An annequivalent computation model for implementing backpropagation with spikes",
+      "authors": [
+        {
+          "first": "Johannes",
+          "middle": [],
+          "last": "Christian Thiele",
+          "suffix": ""
+        },
+        {
+          "first": "Olivier",
+          "middle": [],
+          "last": "Bichler",
+          "suffix": ""
+        },
+        {
+          "first": "Antoine",
+          "middle": [],
+          "last": "Dupret",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF67",
+      "title": "Ssf: Accelerating training of spiking neural networks with stabilized spiking flow",
+      "authors": [
+        {
+          "first": "Jingtao",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zengjie",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Yuran",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuqi",
+          "middle": [],
+          "last": "Mei",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaoxiang",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF68",
+      "title": "Adaptive smoothing gradient learning for spiking neural networks",
+      "authors": [
+        {
+          "first": "Ziming",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Runhao",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuang",
+          "middle": [],
+          "last": "Lian",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Huajin",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF69",
+      "title": "Towards lossless ann-snn conversion under ultra-low latency with dual-phase optimization",
+      "authors": [
+        {
+          "first": "Ziming",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Shuang",
+          "middle": [],
+          "last": "Lian",
+          "suffix": ""
+        },
+        {
+          "first": "Yuhao",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoxin",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        },
+        {
+          "first": "Rui",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Huajin",
+          "middle": [],
+          "last": "Tang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF70",
+      "title": "A learning algorithm for continually running fully recurrent neural networks",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ronald",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Williams",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zipser",
+          "suffix": ""
+        }
+      ],
+      "year": 1989,
+      "venue": "Neural computation"
+    },
+    {
+      "id": "BIBREF71",
+      "title": "Training spiking neural networks with accumulated spiking flow",
+      "authors": [
+        {
+          "first": "Hao",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yueyi",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Wenming",
+          "middle": [],
+          "last": "Weng",
+          "suffix": ""
+        },
+        {
+          "first": "Yongting",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiwei",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng-Jun",
+          "middle": [],
+          "last": "Zha",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoyan",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Feng",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF72",
+      "title": "A tandem learning rule for effective training and rapid inference of deep spiking neural networks",
+      "authors": [
+        {
+          "first": "Jibin",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yansong",
+          "middle": [],
+          "last": "Chua",
+          "suffix": ""
+        },
+        {
+          "first": "Malu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Guoqi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Haizhou",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Kay",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Tan",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE Transactions on Neural Networks and Learning Systems"
+    },
+    {
+      "id": "BIBREF73",
+      "title": "Spatio-temporal backpropagation for training high-performance spiking neural networks",
+      "authors": [
+        {
+          "first": "Yujie",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Guoqi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Luping",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Frontiers in neuroscience"
+    },
+    {
+      "id": "BIBREF74",
+      "title": "Event-based backpropagation can compute exact gradients for spiking neural networks",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Timo",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Wunderlich",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Pehle",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Scientific Reports"
+    },
+    {
+      "id": "BIBREF75",
+      "title": "Online training through time for spiking neural networks",
+      "authors": [
+        {
+          "first": "Mingqing",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Qingyan",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Zongpeng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Di",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Zhouchen",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF76",
+      "title": "Training feedback spiking neural networks by implicit differentiation on the equilibrium state",
+      "authors": [
+        {
+          "first": "Mingqing",
+          "middle": [],
+          "last": "Xiao",
+          "suffix": ""
+        },
+        {
+          "first": "Qingyan",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Zongpeng",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yisen",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhouchen",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF77",
+      "title": "Near lossless transfer learning for spiking neural networks",
+      "authors": [
+        {
+          "first": "Zhanglu",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Jun",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Weng-Fai",
+          "middle": [],
+          "last": "Wong",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF78",
+      "title": "Temporal-wise attention spiking neural networks for event streams classification",
+      "authors": [
+        {
+          "first": "Man",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Huanhuan",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Guangshe",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Dingheng",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Yihan",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaoxu",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Guoqi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF79",
+      "title": "Glif: A unified gated leaky integrate-andfire neuron for spiking neural networks",
+      "authors": [
+        {
+          "first": "Xingting",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Fanrong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zitao",
+          "middle": [],
+          "last": "Mo",
+          "suffix": ""
+        },
+        {
+          "first": "Jian",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF80",
+      "title": "Effective and efficient computation with multiple-timescale spiking recurrent neural networks",
+      "authors": [
+        {
+          "first": "Bojian",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Federico",
+          "middle": [],
+          "last": "Corradi",
+          "suffix": ""
+        },
+        {
+          "first": "Sander",
+          "middle": [
+            "M"
+          ],
+          "last": "Bohté",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Neuromorphic Systems"
+    },
+    {
+      "id": "BIBREF81",
+      "title": "Accurate online training of dynamical spiking neural networks through forward propagation through time",
+      "authors": [
+        {
+          "first": "Bojian",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Federico",
+          "middle": [],
+          "last": "Corradi",
+          "suffix": ""
+        },
+        {
+          "first": "Sander",
+          "middle": [
+            "M"
+          ],
+          "last": "Bohté",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Nature Machine Intelligence"
+    },
+    {
+      "id": "BIBREF82",
+      "title": "Stsc-snn: Spatio-temporal synaptic connection with temporal convolution and attention for spiking neural networks",
+      "authors": [
+        {
+          "first": "Chengting",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Zheming",
+          "middle": [],
+          "last": "Gu",
+          "suffix": ""
+        },
+        {
+          "first": "Da",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Gaoang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Aili",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Erping",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Frontiers in Neuroscience"
+    },
+    {
+      "id": "BIBREF83",
+      "title": "Superspike: Supervised learning in multilayer spiking neural networks",
+      "authors": [
+        {
+          "first": "Friedemann",
+          "middle": [],
+          "last": "Zenke",
+          "suffix": ""
+        },
+        {
+          "first": "Surya",
+          "middle": [],
+          "last": "Ganguli",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Neural computation"
+    },
+    {
+      "id": "BIBREF84",
+      "title": "The remarkable robustness of surrogate gradient learning for instilling complex function in spiking neural networks",
+      "authors": [
+        {
+          "first": "Friedemann",
+          "middle": [],
+          "last": "Zenke",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [
+            "P"
+          ],
+          "last": "Vogels",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Neural computation"
+    },
+    {
+      "id": "BIBREF85",
+      "title": "Temporal spike sequence learning via backpropagation for deep spiking neural networks",
+      "authors": [
+        {
+          "first": "Wenrui",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Peng",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF86",
+      "title": "Going deeper with directly-trained larger spiking neural networks",
+      "authors": [
+        {
+          "first": "Hanle",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Yujie",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Yifan",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Guoqi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF87",
+      "title": "Temporalcoded deep spiking neural network with easy training and robust performance",
+      "authors": [
+        {
+          "first": "Shibo",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaohua",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Ying",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Arindam",
+          "middle": [],
+          "last": "Sanjeev T Chandrasekaran",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Sanyal",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the AAAI conference on artificial intelligence"
+    },
+    {
+      "id": "BIBREF88",
+      "title": "Online stabilization of spiking neural networks",
+      "authors": [
+        {
+          "first": "Yaoyu",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Jianhao",
+          "middle": [],
+          "last": "Ding",
+          "suffix": ""
+        },
+        {
+          "first": "Tiejun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaodong",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        },
+        {
+          "first": "Zhaofei",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "The Twelfth International Conference on Learning Representations"
+    }
+  ]
+}

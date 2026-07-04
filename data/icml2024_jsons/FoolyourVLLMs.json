@@ -1,0 +1,2679 @@
+{
+  "paper_id": "FoolyourVLLMs",
+  "title": "Fool Your (Vision and) Language Model with Embarrassingly Simple Permutations",
+  "authors": [
+    {
+      "first": "Yongshuo",
+      "middle": [],
+      "last": "Zong",
+      "affiliation": {}
+    },
+    {
+      "first": "Tingyang",
+      "middle": [],
+      "last": "Yu",
+      "affiliation": {}
+    },
+    {
+      "first": "Ruchika",
+      "middle": [],
+      "last": "Chavhan",
+      "affiliation": {}
+    },
+    {
+      "first": "Bingchen",
+      "middle": [],
+      "last": "Zhao",
+      "affiliation": {}
+    },
+    {
+      "first": "Timothy",
+      "middle": [],
+      "last": "Hospedales",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "Large language and vision-language models are rapidly being deployed in practice thanks to their impressive capabilities in instruction following, in-context learning, and so on. This raises an urgent need to carefully analyse their robustness so that stakeholders can understand if and when such models are trustworthy enough to be relied upon in any given application. In this paper, we highlight a specific vulnerability in popular models, namely permutation sensitivity in multiple-choice question answering (MCQA). Specifically, we show empirically that popular models are vulnerable to adversarial permutation in answer sets for multiple-choice prompting, which is surprising as models should ideally be as invariant to prompt permutation as humans are. These vulnerabilities persist across various model sizes, and exist in very recent language and vision-language models.",
+  "body": {
+    "4._Exploring_Mitigation_Strategies": "The previous analysis of adversarial permutation vulnerability should be concerning to stakeholders interested in trustworthy and reliable AI, and suggests a new focus for researchers in developing models with improved intrinsic permutation robustness. Nevertheless, one might ask whether any post-hoc engineering fixes or fine-tuning could alleviate this issue in practice for existing models. We explore this question in this section.",
+    "2.1._Experiment_Setup": "In an ideal scenario, robust models should offer consistent predictions that are invariant to permutations that have no semantic influence on the question being posed. To test this, we simply iterate through the possible permutations of MCQ options. A robust model should be correct in every case. While there are k! possible combinations in total, we cease permutation once the model produces an incorrect prediction (succumbs to the permutation attack), which usually requires far less than k! attemptsfoot_0 .\nFormally, Given a question q and an answer list A = {a 1 , a 2 , . . . , a k }, the permutation adversarial attack can be described by the Equation 1. We maximize the loss function (L) with respect to all possible permutations (Π) of the answer list. Here, prompt(q, A) prompts the model with the given query and answer list, and the model's response is then evaluated by the loss. \nEQUATION",
+    "3.2._Symbol-Content_Spurious_Correlation": "In this subsection, we investigate the potential existence of shortcut correlations between option symbols and content. We ask whether the permutation required to fool the model's prediction is independent of the chosen symbols or not. Here we consider two sets of symbols, Capital letters vs. Lowercase letters, and Capital letters vs. Roman Numerals. For each set of symbols, we calculated the correlations across all permutations of test set predictions. Specifically, we examined the similarity in response patterns to permutations between different symbol sets, with a high correlation indicating similar responses to permutations across two sets, and a low correlation indicating the opposite.\nOur findings reveal a notably low correlation between the sets of capital letters (A/B/C/D) and Roman numerals (I/II/III/IV), in stark contrast to the correlation observed between capital letters (A/B/C/D) and lowercase letters (a/b/c/d). This discrepancy suggests that, while the baseline and permuted accuracies remain largely consistent across different symbol sets, their responses to permutations diverge significantly. Such behavior implies that the model might be exploiting symbol-answer shortcuts (Geirhos et al., 2020; Du et al., 2023) and spurious correlations (Sagawa et al., 2020) inadvertently learned during training, indicating another potential underlying cause of our observed vulner- ability. Figure 2 illustrates these dynamics, showcasing the Llama2-13B model's predictions and correlation across various symbol sets.\nIn summary: not only are the models not invariant to permutation, but the specific way in which they are not invariant is dependent on the choice of symbols. ",
+    "6._Discussion": "In this paper, we present a comprehensive empirical analysis that unveils a critical but often overlooked vulnerability in both large language models (LLMs) and large visionlanguage models (VLLMs) in the context of multiple-choice question answering (MCQA). Despite their seemingly robust performance on established MCQA benchmarks, these models are highly susceptible to simple manipulations like option permutations. Our findings raise concerns about the widespread practice of evaluating and deploying these models based on MCQA tasks, urging caution in interpreting high benchmark scores as evidence of robust capabilities. We highlight the need for future work to develop training strategies and/or architectures that lead to intrinsic robustness to such adversarial attacks and develop parameter-efficient tuning approaches that can fine-tune or align existing pretrained LLMs and VLLMs to be invariant to permutations. Notably, although we do not offer a solution, we believe that our findings will be of interest to many researchers in the field and spur future works. Furthermore, these insights are crucial for industry professionals, particularly when deploying Large Language Models (LLMs) and Vision-Language Models (VLLMs) in real-world scenarios.",
+    "3.1._Posisition_Bias_and_Other_Attacks": "A concurrent study to ours argued for the existence of position bias in language model MCQA (Zheng et al., 2023a) . For example, in an A/B/C/D MCQ situation, a given model might have a predisposition to selecting a particular option such as \"C\" and an aversion to selecting some other option such as \"A\", irrespective of the correctness of the answer associated with each label. Position bias could potentially explain adversarial permutation vulnerability if a model is so averse to selecting a particular option, that rotating the true answer into that slot would reliably cause it to fail.\nTo analyse whether position bias can explain our results, we compare our adversarial permutation results to the performance of each LLM under position bias analysis -always rotating the correct answer to a specific slot (A/B/C/D) in the answer list.\nFrom the results in Table 6 , we do see the position bias effect remarked upon by Zheng et al. (2023a) . The models tested exhibit varying degrees of position bias, as results fluctuate with respect to original performance (left column). For example, Vicuna suffers limited position bias, while Falcon-7B is highly position biased. Falcon-7B's baseline accuracy of 31% rises to 70.9% when the true answer is placed in slot A -indicating a strong preference for choosing A; but drops to 3.7% when the true answer is placed in slot B, indicating a strong aversion to selecting B.\nComparing the observed position bias to the impact of our adversarial permutation, we can see that our adversarial permutation has a much stronger effect. The results after permutation (right column) are substantially worse than the position bias results. For example, Llama2-7B performs above chance level for answers in every possible position (A/B/C/D), but is reduced to below chance by our adversarial permutation. Thus we conclude that the impact of our adversarial permutation is not explainable by position bias. Evidently, models rely on the relationships between choices, including the distractors, which the adversarial permutation manipulates to fool them. I.e., it is not just the true answer, and the location of the true answer (position bias), but also the pattern of the distractor answers around the true answer (as explored by adversarial permutations) that determine model success or failure. This reveals a complex and concerning form of vulnerability.\nAdditionally, to further investigate the potential causes of the vulnerability and compare with other types of attacks, we consider circular evaluation (CircularEval) (Liu et al. , ",
+    "5._Related_Work_Large_Language_Models_and_Vision-Language_Models.": "In recent years, the natural language processing community has seen astonishing progress in large language models (LLMs) with billions of trained parameters, such as GPT-3 (Brown et al., 2020) and Llama (Touvron et al., 2023a; b) , and become more intelligent after instruction-following finetuning (Ouyang et al., 2022; Zheng et al., 2023b) . With the strong capabilities of LLMs, there is a growing interest in grounding vision with LLMs to enable the models to perceive multimodal information (Yin et al., 2023; Zong et al., 2023; Li et al., 2023c) , usually by utilizing pretrained language and vision encoders with trainable alignment modules to connect them. Such models have shown strong capabilities across a diverse range of tasks including multimodal generation, question-answering, dialogue, and more.",
+    "2._Simple_Adversarial_Attack_Breaks_LLMs_and_VLLMs": "In this section, we analyse the brittleness of a broad array of large language models and vision-language models to random adversarial attacks in MCQA. By simply shuffling answer choices, we find that these models fail to maintain their performance, revealing a critical vulnerability.",
+    "2.2._Main_Results": "We present the main results in Table 3 and 4 for language and vision-language models respectively.\nLanguage Models In our experiments, large language models manifested a significant susceptibility to adversarial permutations, a finding consistent across various MCQA benchmarks. Our evaluation extended beyond the typical four-option MCQA datasets to include more diverse formats like the two-option BoolQ (Clark et al., 2019) and the three-option SocialIQA (Sap et al., 2019) that are naturally more resilient to the permutations. Intriguingly, the presence of only one or two distractor options did not mitigate the model's vulnerability to permutations. For instance, Llama2-7B's accuracy on BoolQ plummeted from 61.79% to a mere 8.23%, a performance even worse than random chance. Moreover, out of 50 experiments conducted with large language models, only 12 non-GPT-3.5-turbo models managed to perform better than random chance. And all of them, including GPT-3.5-turbo, suffer from significant performance decreases.\nVision-Language Models In the vision-language model evaluations, the susceptibility to adversarial permutations is also severe. Despite the presence of visual context, which may intuitively add a layer of resilience, the VLLMs were not spared from the adverse effects of our permutation attacks. Among 48 experiments, more than half of them fell below random chance performance after the adversarial attack. While InstructBLIP (Dai et al., 2023) and LLaVA-v1.5 (Liu et al., 2023a) show relatively strong robustness to the adversarial attack, all of the models experienced significant accuracy drops ranging from 20% to 45%.",
+    "3._Understanding_Vulnerability_Causes": "In this section, we delve into a detailed analysis of the potential causes behind the demonstrated vulnerability and examine related attack types and potential symbol-content spurious correlation. We also refer readers to the Appendix A.2 for the effect of different prompting and attack techniques and A.4for qualitative results.",
+    "4.1._Post-hoc_Mitigation_Strategies": "For post-hoc strategies, we consider three strategies that have previously proven effective in improving model performance, namely, majority voting (Wang et al., 2023) , contextual calibration (Zhao et al., 2021) and confidence-based voting, and ask whether they can alleviate adversarial permutation vulnerability.\nSetup Majority voting (Wang et al., 2023) has been shown highly successful in self-ensembling over stochastic predictions. In our context, we apply it by obtaining the predictions for all possible permutations and then selecting the most frequent prediction. If most permutations lead to a correct prediction and there are only one or two pathological permutations that lead to an incorrect prediction, then majority voting should provide complete robustness to adversarial permutation. Contextual calibration (Zhao et al., 2021) is designed to mitigate the prior bias introduced from the in-context examples by estimating the model's bias toward each answer with a \"content-free\" query and fitting a calibration parameter. Here we consider the input question and options as the language prior bias. We first feed the model with content-free options (e.g. \"N/A\") as the content-free input, and then calibrate the real prediction based on the calibration parameters calculated from the content-free input. Additionally, we also apply confidence voting by taking the output that has maximum confidence among all permutations as the final prediction (M-confidence).\nResults From the results in Table 8 for LLMs, we can see that neither defense proved effective at restoring the original performance levels. The majority voting and Mconfidence certainly ameliorated the permutation attack as expected, but still fell short of the baseline accuracy with only very few models gaining improvement. This is despite their being highly impractical defenses due to imposing a k!fold increase in inference cost. We also additionally analyze the pattern of majority vote in Appendix Table 18 and 19 . Contextual calibration, on the other hand, completely failed to make a meaningful impact on mitigating the adversarial attack. This re-confirms that the position bias is not the primary reason for models' permutation vulnerability.\nWe additionally examine whether Pride (Zheng et al., 2023a) can alleviate this issue, which introduces an inference-time debiasing method to mitigate token selection bias. Here, we debiased the prediction distribution of all possible permutations using their method and report original option order accuracy and permuted accuracy on the MMLU dataset in Table 9 . Although PriDe can indeed improve accuracy for the original order, it cannot effectively restore the performance with the permutation attack. It is understandable why PriDE almost completely fails: It learns a recalibration matrix that adjusts the relative probabilities of options (A, B, C, D). But this recalibration matrix is not input dependent, making it in the end a sophisticated amelioration against fixed positional/option bias. However, as we show here, the different permutations can lead to radically different preferences over options. In this case, no single fixed recalibration matrix can possibly alleviate this attack.",
+    "4.2._Fine-tuning_on_Training_Set": "While (V)LLMs are typically evaluated in zero-shot on the MCQ benchmarks without within-dataset fine-tuning, we study whether fine-tuning on the training set can enhance the robustness to the permutation.\nSetup As many of the benchmarks do not provide a training set, we conduct two fine-tuning experiments using Llama2-7B on two datasets that do provide training sets: ARC-Challenge (Clark et al., 2018) and MedMCQA (Pal et al., 2022) . We also consider two fine-tuning variations: using the original training data and augmenting the training data with option permutations (n!) during fine-tuning. The latter is inspired by adversarial training (Madry et al., 2018) , to ensure that the model learns robustness to permutations during training. We fine-tune with LoRA (Hu et al., 2022) for 1 epoch.",
+    "1._Introduction": "Large language models (LLMs) (Brown et al., 2020; Ope-nAI, 2023a; Touvron et al., 2023a) and large visionlanguage models (VLLMs) (Alayrac et al., 2022; Li et al., 2023c) have made astonishing progress in recent years. They have attained strong capabilities across a diverse array of language tasks, enabling nuanced text generation, sophisticated instruction following, and natural dialogue with multimodal input and output. One task where they demonstrate particular prowess is multiple-choice question answering (MCQA) (Robinson & Wingate, 2023) . This is an important capability with many real-world applications, from education to recruitment exams. Current LLMs and VLLMs have widely utilized the task format of MCQA for 1 University of Einburgh 2 EPFL. Correspondence to: Yongshuo Zong <yongshuo.zong@ed.ac.uk>.",
+    "2.3._Answer_Set_Pruning": "In this subsection, we examine the impact of a stricter test condition on MCQA, specifically by reducing the number of distractor options, while obviously retaining the true answer. This is expected to improve baseline performance by increasing random chance level, but also we expected it to reduce vulnerability to adversarial permutation by substantially reducing the degrees of freedom that the permutation attack can explore. However, we found that models remain highly susceptible to even the few permutations available in the reduced set of options.\nExperiment Setup Specifically, we constrain the answer set by reducing the number of total choices from four to either three or two, inclusive of the ground-truth answer.\nWe then compare the performance metrics between these pruned sets in both permuted and non-permuted conditions to assess the relative susceptibility of the models."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Flamingo: a visual language model for few-shot learning",
+      "authors": [
+        {
+          "first": "J.-B",
+          "middle": [],
+          "last": "Alayrac",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Donahue",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Luc",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Miech",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Barr",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Hasson",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lenc",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Mensch",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Millican",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Reynolds",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Palm 2 technical report",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Anil",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "M"
+          ],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Firat",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Lepikhin",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Passos",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Shakeri",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Taropa",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bailey",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Openflamingo: An opensource framework for training large autoregressive visionlanguage models",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Awadalla",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gardner",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Hessel",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Hanafy",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Marathe",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Bitton",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gadre",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sagawa",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Jitsev",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Kornblith",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "W"
+          ],
+          "last": "Koh",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Ilharco",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Wortsman",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Schmidt",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Language models are few-shot learners",
+      "authors": [
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Ryder",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Subbiah",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "D"
+          ],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Neelakantan",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Shyam",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Are more llm calls all you need? towards scaling laws of compound inference systems",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "Q"
+          ],
+          "last": "Davis",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Hanin",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bailis",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Stoica",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Zaharia",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Vicuna: An open-source chatbot impressing gpt-4 with 90%* chatgpt quality",
+      "authors": [
+        {
+          "first": "W.-L",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "E"
+          ],
+          "last": "Gonzalez",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Exploring the surprising difficulty of natural yes/no questions",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "M.-W",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Kwiatkowski",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Collins",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Toutanova",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Boolq",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "NAACL"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Think you have solved question answering? try arc, the ai2 reasoning challenge",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Cowhey",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Etzioni",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Khot",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Sabharwal",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Schoenick",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Tafjord",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Instructblip: Towards general-purpose vision-language models with instruction tuning",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [
+            "M H"
+          ],
+          "last": "Tiong",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Fung",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Hoi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "NeurIPS"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Shortcut learning of large language models in natural language understanding",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Tao",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Communications of the ACM"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Shortcut learning in deep neural networks",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Geirhos",
+          "suffix": ""
+        },
+        {
+          "first": "J.-H",
+          "middle": [],
+          "last": "Jacobsen",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Michaelis",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Zemel",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Brendel",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Bethge",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [
+            "A"
+          ],
+          "last": "Wichmann",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature Machine Intelligence"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Measuring massive multitask language understanding",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Burns",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Basart",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Mazeika",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Steinhardt",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Low-rank adaptation of large language models",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [
+            "J"
+          ],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Wallis",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Allen-Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Lora",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Seed-bench: Benchmarking multimodal llms with generative comprehension",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ge",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Ge",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Shan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "A multi-modal model with in-context instruction tuning",
+      "authors": [
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Otter",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large language models",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Savarese",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Hoi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Holistic evaluation of language models",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Bommasani",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Tsipras",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Soylu",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Yasunaga",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Narayanan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Improved baselines with visual instruction tuning",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "J"
+          ],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Visual instruction tuning",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [
+            "J"
+          ],
+          "last": "Lee",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "What makes good in-context examples for gpt-3",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Dolan",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Carin",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Mmbench: Is your multi-modal model an all-around player",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Trustworthy llms: a survey and guideline for evaluating large language models' alignment",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "J.-F",
+          "middle": [],
+          "last": "Ton",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [
+            "G H"
+          ],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Klochkov",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "F"
+          ],
+          "last": "Taufiq",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Learn to explain: Multimodal reasoning via thought chains for science question answering",
+      "authors": [
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Mishra",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Qiu",
+          "suffix": ""
+        },
+        {
+          "first": "K.-W",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "S.-C",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Tafjord",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Kalyan",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Towards deep learning models resistant to adversarial attacks",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Madry",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Makelov",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Schmidt",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Tsipras",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Vladu",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Linearly mapping from image to text space",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Merullo",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Castricato",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Eickhoff",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Pavlick",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "ICLR"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Introducing chatgpt",
+      "authors": [
+        {
+          "first": "",
+          "middle": [],
+          "last": "Openai",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Gpt-4 technical report",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Openai",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Training language models to follow instructions with human feedback",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Almeida",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Wainwright",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Slama",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ray",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Medmcqa: A large-scale multi-subject multi-choice dataset for medical domain question answering",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Pal",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [
+            "K"
+          ],
+          "last": "Umapathi",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Sankarasubbu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Conference on Health, Inference, and Learning"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "The refinedweb dataset for falcon llm: outperforming curated corpora with web data, and web data only",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Penedo",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Malartic",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Hesslow",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Cojocaru",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Cappelli",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Alobeidli",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Pannier",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Almazrouei",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Launay",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Leveraging large language models for multiple choice question answering",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Robinson",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Wingate",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "An investigation of why overparameterization exacerbates spurious correlations",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Sagawa",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Raghunathan",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "W"
+          ],
+          "last": "Koh",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Social IQa: Commonsense reasoning about social interactions",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Sap",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Rashkin",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Le Bras",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Choi",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "A-okvqa: A benchmark for visual question answering using world knowledge",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Schwenk",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Khandelwal",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Marino",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Mottaghi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "European Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Large language models can be easily distracted by irrelevant context",
+      "authors": [
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Misra",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Scales",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Dohan",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "H"
+          ],
+          "last": "Chi",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Schärli",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Generative multimodal models are in-context learners",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Luo",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Rao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "CVPR"
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Internlm: A multilingual language model with progressively enhanced capabilities",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Team",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Introducing mpt-7b: A new standard for open-source, commercially usable llms",
+      "authors": [
+        {
+          "first": "M",
+          "middle": [
+            "N"
+          ],
+          "last": "Team",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Llama: Open and efficient foundation language models",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Lavril",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Izacard",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Martinet",
+          "suffix": ""
+        },
+        {
+          "first": "M.-A",
+          "middle": [],
+          "last": "Lachaux",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Lacroix",
+          "suffix": ""
+        },
+        {
+          "first": "B",
+          "middle": [],
+          "last": "Rozière",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Goyal",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hambro",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Azhar",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Llama 2: Open foundation and finetuned chat models",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Albert",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Almahairi",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Babaei",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Bashlykov",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Bhargava",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Bhosale",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Selfconsistency improves chain of thought reasoning in language models",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Schuurmans",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [
+            "V"
+          ],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "H"
+          ],
+          "last": "Chi",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Narang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Chowdhery",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Empowering large language models to follow complex instructions",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Geng",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Tao",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wizardlm",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "mplug-owl: Modularization empowers large language models with multimodality",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Yan",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Tian",
+          "suffix": ""
+        },
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Qi",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "A survey on multimodal large language models",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Calibrate before use: Improving few-shot performance of language models",
+      "authors": [
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Wallace",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Feng",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Klein",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "ICML"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "On large language models' selection bias in multi-choice questions",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Judging llm-as-a-judge with mt-bench and chatbot arena",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "W.-L",
+          "middle": [],
+          "last": "Chiang",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Sheng",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhuang",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "P"
+          ],
+          "last": "Xing",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "E"
+          ],
+          "last": "Gonzalez",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Stoica",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Agieval: A human-centric benchmark for evaluating foundation models",
+      "authors": [
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Cui",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Saied",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Duan",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Promptbench: Towards evaluating the robustness of large language models on adversarial prompts",
+      "authors": [
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "W",
+          "middle": [],
+          "last": "Ye",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [
+            "Z"
+          ],
+          "last": "Gong",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Selfsupervised multimodal learning: A survey",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zong",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Mac Aodha",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Hospedales",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "InstructBLIP7B"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Comparisons of different attacks on the MMLU Dataset. In-context learning (ICL) improves the zero-shot performance, and attacks on in-context examples can decrease the performance. However, our adversarial attack has the biggest impact on the final performance (largest drop). Model Original 0-shot ICL ICL Permutation",
+      "authors": [],
+      "year": null,
+      "venue": "ICL Search Permutation Attack Llama"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Comparisons of different attacks on the SocialIQA Dataset. In-context learning (ICL) improves the zero-shot performance, and the attack on in-context examples can decrease the performance. However, our adversarial attack has the biggest impact on the final performance (largest performance drop)",
+      "authors": [],
+      "year": null,
+      "venue": "Model Original 0-shot ICL ICL Permutation ICL Search Permutation Attack Llama"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Comparisons of different attacks on the MedMCQA Dataset. In-context learning (ICL) improves the zero-shot performance, and the attack on in-context examples can decrease the performance. However, our adversarial attack has the biggest impact on the final performance (largest performance drop)",
+      "authors": [],
+      "year": null,
+      "venue": "Model Original 0-shot ICL ICL Permutation ICL Search Permutation Attack Llama"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "60 Fool Your (Vision and) Language Model with Embarrassingly Simple Permutations Table 26. Results of using different sampling strategies and temperatures on MMLU dataset: before/after permutation. Model Greedy Decoding Temperature=0.5 Temperature=1.5 Top-k Sampling Nucleus Sampling Llama2-7B 40",
+      "authors": [],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Qualitative results of permutations of answer options and corresponding predictions (Llama2-7B) from ARC-challenge dataset",
+      "authors": [],
+      "year": null,
+      "venue": ") variable Model Prediction: C. Permutation 2: A"
+    }
+  ]
+}

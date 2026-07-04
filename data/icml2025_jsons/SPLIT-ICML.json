@@ -1,0 +1,1123 @@
+{
+  "paper_id": "SPLIT-ICML",
+  "title": "Near-Optimal Decision Trees in a SPLIT Second",
+  "authors": [
+    {
+      "first": "Varun",
+      "middle": [],
+      "last": "Babbar",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Duke University",
+        "location": {
+          "settlement": "Durham",
+          "country": "USA"
+        }
+      }
+    },
+    {
+      "first": "Hayden",
+      "middle": [],
+      "last": "Mctavish",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Duke University",
+        "location": {
+          "settlement": "Durham",
+          "country": "USA"
+        }
+      }
+    },
+    {
+      "first": "Cynthia",
+      "middle": [],
+      "last": "Rudin",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "Duke University",
+        "location": {
+          "settlement": "Durham",
+          "country": "USA"
+        }
+      }
+    },
+    {
+      "first": "Margo",
+      "middle": [],
+      "last": "Seltzer",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of British Columbia",
+        "location": {
+          "settlement": "Vancouver",
+          "country": "Canada"
+        }
+      }
+    }
+  ],
+  "abstract": "Decision tree optimization is fundamental to interpretable machine learning. The most popular approach is to greedily search for the best feature at every decision point, which is fast but provably suboptimal. Recent approaches find the global optimum using branch and bound with dynamic programming, showing substantial improvements in accuracy and sparsity at great cost to scalability. An ideal solution would have the accuracy of an optimal method and the scalability of a greedy method. We introduce a family of algorithms called SPLIT (SParse Lookahead for Interpretable Trees) that moves us significantly forward in achieving this ideal balance. We demonstrate that not all sub-problems need to be solved to optimality to find high quality trees; greediness suffices near the leaves. Since each depth adds an exponential number of possible trees, this change makes our algorithms orders of magnitude faster than existing optimal methods, with negligible loss in performance. We extend this algorithm to allow scalable computation of sets of near-optimal trees (i.e., the Rashomon set).",
+  "body": {
+    "7.1._How_do_our_algorithms_compare_to_GOSDT?": "Our first experiments support the claim that our method is significantly faster than GOSDT whilst achieving similar regularized test losses. This is shown in Figure 3 . Here, we vary the sparsity penalty, λ, which is a common input to all algorithms in this figure, and compute the regularized test objective from Equation 1 for each value of λ. We set a timeout limit of 1200 seconds for GOSDT, after which it gives the best solution found so far. We note two regimes:\n• When all methods have lower regularized objective values (left side of each plot), our methods are orders of magnitude faster than GOSDT. For instance, on the Bike dataset, SPLIT has training times of ∼10 seconds, while GOSDT runs for ∼10 3 seconds. LicketySPLIT takes merely a second in most cases. This is the regime most relevant to our algorithms.\n• When the optimal objective is high and the tree is supersparse (right side of each plot), SPLIT and Lickety-SPLIT have small overhead costs and can be slower, because we need to train a greedy tree for each subproblem encountered at the lookahead depth in order to initialize bounds via Algorithm 1. However, in this regime, all methods already have runtimes of ∼1 second, so the extra overhead cost is insignificant. This is especially seen in the COMPAS and Netherlands datasets.",
+    "5.3._RESPLIT:_Rashomon_set_Estimation_with_SPLIT": "At the cutting edge of compute requirements for decision tree optimization is the computation of Rashomon sets of decision trees. Xin et al. (2022) compute a Rashomon set of all near-optimal trees, based on the GOSDT algorithm (Lin et al., 2020) . This task generates an extraordinary number of trees and has high memory and runtime costs. To make this tractable, Xin et al. (2022) leverage depth constraints and feature selection from prior work to reduce the depth and set of features considered (McTavish et al., 2022) . While necessary for scalability, this can prevent exploration of near-optimal models across all features or at greater decision tree depths. Both factors are relevant for work on variable importance based on Rashomon sets (Fisher et al., 2019; Dong & Rudin, 2020; Donnelly et al., 2023) . We leverage SPLIT as a way to dramatically improve scalability of Rashomon set computation, reliably approximating the full Rashomon set and allowing feasible exploration while relaxing or removing depth and feature constraints.\nOur algorithm, RESPLIT, is described in Appendix A.10; it first leverages SPLIT as a subroutine to obtain a set of prefix trees such that completing them greedily up to the depth budget would result in an ϵ approximation of the optimal solution to Equation 4. At each leaf of each prefix tree, it calls TreeFARMS (Xin et al., 2022) to find a large set of shallow subtrees that are at least as good as being greedy, yielding an approximate Rashomon set computed much faster than state of the art. We also show a novel indexing mechanism to query RESPLIT trees in Appendix A.11.",
+    "7.3._Rashomon_Set_Approximation": "We now show that RESPLIT enables fast, accurate approximation of the Rashomon set of near-optimal trees, while scaling much more favorably than state-of-the-art method TreeFARMS (Xin et al., 2022) . We demonstrate that variable importance conclusions using RID (Donnelly et al., 2023) remain almost identical under RESPLIT, relative to the full Rashomon set. That is, RESPLIT allows accurate summary statistics of the full Rashomon set to be computed at greater depths and over more binary features while enhancing scalability. Table 1 shows computation of RID with and without RESPLIT. RESPLIT enables 10 -20× faster variable importance computation. Furthermore, the correlation between variable importances is very close to 1, suggesting that RESPLIT trees serve as good proxies for estimating importances derived from the complete Rashomon set. ",
+    "3._Preliminaries": "We consider a typical supervised machine learning setup, with a dataset D = {(x i , y i )} N i=1 sampled from a distribution D, where x i ∈ {0, 1} K is a binary feature vector and y i ∈ {0, 1} is a binary label.foot_0 Let F be the set of features. Define D(f ) as the subset of D consisting of all samples where feature f ∈ F is 1 (and D( f ) as the subset where feature f is 0). Let D + and D -denote the set of examples with positive and negative labels, respectively.\nNode specific notation Let D t be the support set of node t in a tree (i.e., the set of training examples assigned to this node); we call each D t a subproblem. Let f t ∈ F be the feature we split on at t. Let D t (f t ) and D t ( ft ) be the support sets of the children of t. Unless stated otherwise, a greedy split at node t chooses the feature f that maximizes the information gain, which is equivalent to solving:\nf t = min f ∈F |D t (f )| |D t | H |D + t (f )| |D t (f )| + |D t ( f )| |D t | H |D + t ( f )| |D t ( f )| with entropy H(p) = -p log p -(1 -p) log(1 -p).\nTree specific notation We now briefly discuss sparse greedy and optimal trees. We define T g (D, d, λ) to be a decision tree of depth at most d trained greedily on D with sparsity penalty λ. Intuitively, this sparse greedy algorithm will make a split at a node only when the gain in overall accuracy is greater than λ. Algorithm 4 in the Appendix illustrates this procedure. Modern methods such as Lin et al. (2020); McTavish et al. (2022) , on the other hand, find a tree T in the space of decision trees T that solves the following optimization problem:\nL * (D, d, λ) = min T ∈T L(T, D, λ) s.t. depth(T ) ≤ d (1) = min T ∈T |D| i=1 1 N l T (x i ), y i + λS(T ) s.t. depth(T ) ≤ d\nwhere L(T, D, λ) is the regularized loss of tree T on dataset (or data subset) D, S(T ) is the number of leaves in T , ℓ(T (x), y) is the loss incurred by T in its prediction on x (for this paper, we set ℓ to be the 0-1 loss), and N is the global dataset size. As discussed in Section 2, the fastest contemporary methods solve this problem using a branchand-bound approach (Costa & Pedreira, 2023; Lin et al., 2020; Demirović et al., 2022; McTavish et al., 2022) .\nRashomon Sets Our work is motivated by the properties of near-optimal decision trees and allows for scalable approximation of that set. Xin et al. (2022) define the Rashomon set, denoted by R(D, λ, ϵ, d), as the collection of all trees whose objective is within ϵ of the minimum value in Equation 1. Formally:\nEQUATION\nIn Section 4, we use Rashomon sets to investigate properties of near-optimal trees.\nRashomon sets can be used for a range of downstream tasks (Rudin et al., 2024) ; one crucial task is the measurement of variable importance over a set of near-optimal models instead of only for a single model (Donnelly et al., 2023; Fisher et al., 2019) . Reliable variable importance measures in this setting rely on minimal feature selection prior to computing the Rashomon set and minimal constraints on the tree's depth to allow high-order interactions. Our approach can be used to accelerate the computation of a Rashomon set, supporting the feasibility of these approaches.\nBranch and Bound Given a depth budget d, branch and bound with a sparsity penalty (Lin et al., 2020; McTavish et al., 2022) finds the optimal loss L * (D, d, λ) that minimizes Equation 1.\nThe key insight behind branch and bound is that the optimal solution for dataset D at depth d ′ has a dependency on the optimal solution for datasets D(f ) and D( f ) at depth d ′ -1, for each f ∈ F. Starting from the root, branch and bound algorithms consider different candidate features, f , on which to split in the process of determining the objective. As candidates are considered, we identify the subproblems we encounter by the subset of data they relate to and their remaining depth. We track current upper and lower bounds of subproblems in order to prune parts of the search space as we explore it. In particular, if our lower bounds on L * (D t (f 1 ), d ′ -1, λ) and L * (D t ( f1 ), d ′ -1, λ) sum to a larger value than the sum of upper bounds on L * (D t (f 2 ), d ′ -1, λ) and L * (D t ( f2 ), d ′ -1, λ), for example, then we have proven that f 1 is not the minimizing split for dataset D.\nL(D t , d ′ , λ) can always start with an upper bound of ub = λ + min\n|D - t | |Dt| , |D + t | |Dt| . A universal lower bound is λ.\nTo get a tighter lower bound, if d ′ > 0, the lower bound can start at min(ub, 2λ), since either L(D t , d ′ , λ) = ub, or the objective will be the sum of two other L calls, both of which must necessarily have cost at least λ. These upper and lower bounds are then updated as we explore a graph structure containing these subproblems. Once these bounds have converged, and we know the value of L(D, d ′ , λ) for the whole dataset D, we can extract the optimal tree by simply tracking the feature f that leads to the optimal score for D and then successively track the splits for the optimal value with respect to D(f ) and D( f ), and so on.\nDiscretization Our algorithm will assume feature vectors to be binary, i.e., x i ∈ {0, 1} K . Real-world datasets often have features that require discretization to fit our setting. While some methods preserve optimality (e.g., splitting at the mean between unique values in the training set), others such as bucketization (described and proven to be suboptimal in Lin et al., 2020) , binning into quantiles, and feature engineering reduce the search space at the cost of optimality.\nIn our experiments, we use threshold guessing (McTavish et al., 2022) , which sacrifices optimality with respect to a real-valued dataset but maintains theoretical and empirical guarantees relative to a reference decision tree ensemble.",
+    "2._Related_Work": "We are interested in accurate, interpretable decision tree classifiers that we can find efficiently. We discuss these three goals as they pertain to existing work.\nConsistent with recommendations from Rudin et al. (2022) ; Costa & Pedreira (2023) , we emphasize sparsity, expressed in terms of the number of leaves, as the primary mechanism for tree interpretability. Sparsity has a strong correlation with user comprehension (Piltaver et al., 2016) . Zhou et al. (2018) fit a regression model to user-reported interpretability for decision trees, also finding that trees with fewer leaves were more interpretable. They also found that deep, sparse trees were more interpretable than shallow trees with the same sparsity. Izza et al. (2022) provides a way to use a sparse decision tree to provide succinct individual explanations. However, finding deep, sparse trees with existing methods can be computationally infeasible. We bridge this gap -our algorithms are capable of finding sparse trees without constraining them to be shallow.",
+    "7._Experiments": "Our experiments provide an evaluation of decision trees, considering aspects of performance, interpretability, and training budget. To this end, our evaluation addresses the following questions:\n1. How fast are SPLIT and LicketySPLIT compared to unmodified GOSDT?\n2. Are SPLIT and LicketySPLIT able to produce trees that lie on the frontier of sparsity, test loss performance, and training time?\n3. How good is the Rashomon set approximation produced by RESPLIT?\nFor all experiments below we set the depth budget of our algorithms to 5. The lookahead depth for Algorithm 2 is set to 2 since, from Corollary 6.2, this produces the lowest runtime for the chosen depth budget. We defer more details of our experimental setup and datasets to Appendix A.7.4. Appendix A.3 has additional evaluations of our methods.",
+    "6._Theoretical_Analysis_of_Runtime_and_Optimality": "We present theoretical results establishing the performance and scalability of our algorithms. All proofs, including additional lemmas not described below, are in Appendix Section A.8. Even without the speedups discussed in Section 5.2, Algorithm 2 is quite scalable. Theorem 6.1 shows the asymptotic analysis of the algorithm, with and without caching. Note that the default behaviour of Algorithm 2 is to cache repeated sub-problems. Theorem 6.1 (Runtime Complexity of SPLIT). For a dataset D with k features and n samples, depth constraint d such that d ≪ k, and lookahead depth 0\n≤ d l < d, Al- gorithm 2 has runtime O n(d -d l )k d l +1 + nk d-d l .\nIf we cache repeated subproblems, the runtime reduces to\nO n(d-d l )k d l +1 d l ! + nk d-d l (d-d l )! .\nThis algorithm is linear in sample size and, because d l < d and d -d l < d, is exponentially faster than a globally optimal approach, which searches through O((2k) d ) subproblems in the worst case.\nCorollaries 6.2 and 6.3 show that, compared to globally optimal approaches, we see substantial improvements in runtime when lookahead depth is around half the global search depth. Corollary 6.2 (Optimal Lookahead Depth for Minimal Runtime). The optimal lookahead depth that minimizes the asymptotic runtime of Algorithm 2 is d l = (d-1) 2 for large k, regardless of whether subproblems are cached.\nCorollary 6.3 (Runtime Savings of SPLIT Relative to Globally Optimal Approaches). Asymptotically, under the same conditions as Theorem 6.1 and with caching repeated subproblems, Algorithm 2 saves a factor of O k d-1 2 d 2 ! in runtime relative to globally optimal approaches (e.g., GOSDT).\nTheorem 6.4 describes the runtime complexity of our Lick-etySPLIT method from Section 5.2, showing that it can be even faster than Algorithm 2 (indeed, achieving low-order polynomial runtime).\nTheorem 6.4 (Runtime Complexity of LicketySPLIT). For a dataset D with k features and n samples, and for depth constraint d, Algorithm 3 has runtime O(nk 2 d 2 ).\nWe can thus use Algorithm 3 to leverage a recursive search while remaining comfortably polynomial. This is a dramatic improvement to asymptotic scalability relative to globally optimal decision tree construction methods, which solve an NP-hard problem.\nTheorem 6.5 (SPLIT Can be Arbitrarily Better than Greedy). For every ϵ > 0 and depth budget d, there exists a data distribution D and sample size n for which, with high probability over a random sample S ∼ D n , Algorithm 2 with d l = d-1 2 achieves accuracy at least 1 -ϵ but a pure greedy approach achieves accuracy at most 1 2 + ϵ.\nTheorem 6.5 shows that Algorithm 2 can arbitrarily outperform greedy methods in accuracy, even when we choose its minimum runtime configuration of d l = d-1 2 . We prove a similar claims for LicketySPLIT and RESPLIT in the appendix (see Theorems A.7 and A.6).",
+    "4._Algorithm_Motivation": "A key motivating property of SPLIT is that we can find high quality trees even when splitting greedily far from the root of the tree. To support this intuition, we empirically investigate how frequently near optimal trees behave greedily far from the root. To do so, we first generate the Rashomon set of decision trees for various values of sparsity penalty λ and Rashomon bound ϵ. Let T ∈ R(D, λ, ϵ, d) be a tree in the Rashomon set, and let n ∈ T be any node in T . Then, we compute the fraction of all nodes at a given level ℓ ≤ d (where level 0 corresponds to the root) that were greedy (by which we mean that the split at this node in the tree is optimal with respect to information gain). This corresponds to the following proportion:\nT ∈R(D,λ,ϵ,d) n∈T 1[n is greedy ∧ level(n) = ℓ] T ∈R(D,λ,ϵ,d) n∈T 1[level(n) = ℓ] .\n(3)\nFigure 2 shows the results of this investigation for 6 different datasets for different values of ϵ and λ. We note that there is a general increase in percentage of greedy splits as one goes deeper in the tree.\n4 1e 3 0.01 0.02 0.03 covertype Level 0 2 4 1e 3 Level 1 2 4 1e 3 Level 2 2 4 1e 3 Level 3 0.5 1.0 1e 2 0.01 0.02 0.03 netherlands 0.5 1.0 1e 2 0.5 1.0 1e 2 0.5 1.0 1e 2 0.5 1.0 1e 2 0.01 0.02 0.03 compas 0.5 1.0 1e 2 0.5 1.0 1e 2 0.5 1.0 1e 2 2.5 5.0 7.5 1e 3 0.01 0.02 0.03 bike 2.5 5.0 7.5 1e 3 2.5 5.0 7.5 1e 3 2.5 5.0 7.5 1e 3 2 4 1e 3 0.01 0.02 0.03 heloc 2 4 1e 3 2 4 1e 3 2 4 1e 3 2 4 6 1e 3 0.01 0.02 0.03 adult 2 4 6 1e 3 2 4 6 1e 3 2 4 6 1e 3 0.000 0.375 0.750",
+    "5.1._SParse_Lookahead_for_Interpretable_Trees_(SPLIT)": "We now formalize our main algorithm, SPLIT, which takes as input a lookahead depth parameter. This is the depth up to which a search algorithm optimizes over all combinations of feature splits, conditioned on splits beyond this depth behaving greedily. Our algorithm exploits the fact that subproblems closer to the leaves exhibit smaller optimality gaps than those at the root, providing a mechanism to trade off among runtime, accuracy, and sparsity.\nFormulating the optimization problem Concretely, for a given depth budget d, lookahead depth d l < d, and feature set F, we first solve the following recursive equation:\nEQUATION\n)\nWhere N is the size of the dataset at the root. We can con-\nAlgorithm 1 get bounds(D, d l , d, d ′ , N ) → lb, ub Require: D, d l , d, d ′ , N {support, lookahead depth, cur- rent search depth, maximum search depth, size of full dataset in GOSDT call} 1: if d ′ = d l then 2: T g = Greedy(D, d -d l , λ) {Find greedy tree rooted at D (Alg 4 in the Appendix)} 3: S(T g ) = # Leaves in T g 4: α ← 1 N (x,y)∈D 1[y ̸ = T g (x)] + λS(T g )\n5: lb ← α 6: ub ← α {subproblem solved because ub = lb} 7: else {use basic initial bounds} 8: lb ← 2λ 9: ub ← λ + min |D -| N , |D + | N 10: end if 11: return lb,ub {Return Lower and Upper Bounds} strain the search space to include only greedy trees past the lookahead depth by modifying the lower and upper bounds used in branch and bound (see Algorithm 1). In particular, sub-problem nodes initialized at depths up to the lookahead depth are assigned initial lower and upper bounds equivalent to that in GOSDT (Lin et al., 2020) (see Section 2). At the lookahead depth, however, the lower and upper bounds for a subproblem are fixed to be the loss of a greedy subtree trained on that subproblem. After these bound assignments, our algorithm uses the GOSDT algorithm with these new bounds to solve Equation 4 -this is summarized by Lines 1-2 in Algorithm 2. We defer more details of the GOSDT algorithm to Section A.12 in the Appendix. Postprocessing with Optimal Subtrees Once we have solved Equation 4, we do not need to use greedy sub-trees past the lookahead depth. We can improve our approach by Algorithm 2 SPLIT(ℓ, D, λ, d l , d, p) Require: ℓ, D, λ, d l , d , p {loss function, samples, regularizer, lookahead depth, depth budget, postprocess flag} 1: ModifiedGOSDT = GOSDT reconfigured to use get bounds (Algorithm 1) whenever it encounters a new subproblem 1: t lookahead = ModifiedGOSDT(ℓ, D, λ, d l ) {Call Mod-ifiedGOSDT with depth budget d l } 2: if p then {Fill in the leaves of this prefix} 3: for leaf u ∈ t lookahead do 4: d u = depth of leaf 5: D(u) = subproblem associated with u 6: λ u = λ |D| |D(u)| {Renormalize λ for the subproblem in question} 7:\nt u = GOSDT(D(u), d-d u , λ u ) {Find the optimal subtree for D(u)} 8:\nif t u is not a leaf then 9:\nReplace leaf u with sub-tree t u 10: end if 11:\nend for 12: end if 13: return t lookahead replacing these subtrees with fully optimal decision trees. Lines 3-9 in Algorithm 2 illustrate this. Thus, the performance of the lookahead tree with the aforementioned greedy subtrees is just an upper bound on the objective of the tree our method ultimately finds.\nNote that the renormalization in line 6 of Algorithm 2 ensures that the λ penalty stays proportional to the penalty for each misclassified point. Our objective (Equation 1) assigns a 1 N penalty for each misclassification, where N is the size of the full dataset with which GOSDT was called. If the original dataset is D, then when we call GOSDT on any descendent subproblem D(u), our penalty per misclassification goes up by a factor of |D| |D(u)| . We need to scale λ appropriately to stay proportional to the original dataset D.",
+    "5.2._LicketySPLIT:_Polynomial-time_SPLIT": "We present a polynomial-time variant of SPLIT, called Lick-etySPLIT, in Algorithm 3. This method works by recursively applying SPLIT with lookahead depth 1. That is, we first find the optimal initial split for the dataset, given that we are fully greedy henceforth. Then, during postprocessing, instead of doing what SPLIT would do -running a fully optimal decision tree algorithm on the root's left and right subproblems -we run LicketySPLIT recursively on these two subproblems. We stop considering further calls to LicketySPLIT for a subproblem if SPLIT returns a leaf instead of making splits (either due to the depth limit or λ).\nAlgorithm 3 LicketySPLIT(ℓ, D, λ, d) Require: ℓ, D, λ, d {loss function, samples, regularizer, full depth} 0: t lookahead = SPLIT(ℓ, D, λ, 1, d, 0) {Call SPLIT with lookahead depth 1 and no post-processing} 1: if t lookahead is not a leaf then 2:\nfor child u ∈ t lookahead do 3: D(u) = subproblem associated with u 4:\nλ u = λ |D| |D(u)| {Renormalize λ for the subproblem in question} 5: t u = LicketySPLIT(ℓ, D(u), λ u , d -1) 6:\nReplace u with subtree t u 7:\nend for 8: end if 9: return t lookahead",
+    "8._Conclusion": "We introduced SPLIT, LicketySPLIT, and RESPLIT, a novel family of decision tree optimization algorithms. At their core, these algorithms perform branch and bound search up to a lookahead depth, beyond which they switch to greedy splitting. Our experimental results show dramatic improvements in runtime compared to state of the art algorithms, with negligible loss in accuracy or sparsity. RESPLIT also scalably finds a set of near-optimal trees without adversely impacting downstream variable importance tasks. ",
+    "1._Introduction": "Decision tree optimization is core to interpretable machine learning (Rudin et al., 2022) . Simple decision trees present the entire model reasoning process transparently, directly allowing faithful interpretations of the model (Arrieta et al., 2020) . This helps users choose whether to trust the model and to critically examine any perceived flaws.\nFigure 1 . An illustration of the power of our optimization algorithm. We train 3 decision trees on the Bike dataset, with the aim of predicting bike rentals in Washington DC in a given time period. A greedy tree is fast but suboptimal. An optimal tree is well performing but very slow. Our algorithm strikes the perfect balance, providing well performing trees in a SPLIT second, orders of magnitude faster than optimal approaches seen in literature.\nOptimizing the performance of decision trees while preserving their simplicity presents a significant challenge. Traditional greedy methods scale linearly with both dataset size and the number of features (Breiman, 1984; Quinlan, 2014) .\nHowever, these methods tend to yield suboptimal results, lacking general guarantees on either sparsity or accuracy. Recent advances in decision tree algorithms use dynamic programming techniques combined with branch-and-bound strategies, offering solutions that are faster than brute-force approaches and provably optimal (Lin et al., 2020; Aglin et al., 2020; Demirović et al., 2022; McTavish et al., 2022) . In fact, Demirović et al. (2022) and van der Linden et al. (2024) reveal an average gap of 1-2 percentage points between greedy and optimal trees, with Demirović et al. (2022) showing that some datasets can exhibit gaps as large as 10 percentage points. These algorithms struggle to scale to datasets with hundreds or thousands of features or to deeper trees. It seems that we should return to greedy methods for larger-scale problems, but this would come at a loss of performance. Ideally, we should leverage greed only when it does not significantly deviate from optimality and use dynamic programming otherwise. Dynamic programming approaches build trees recursively, downward from the root. Problems farther from the root contain fewer samples and produce fewer splits. As we show, greedy splits near the root sacrifice performance, while greedy splits near the leaves produce performance close to the optimal. This suggests that we can tolerate less precision on problems close to leaves than on problems closer to the root -and that full optimization on those problems closer to the leaves yields only marginal returns relative to greedy, since we only have a few splits remaining. This has enormous implications, since the number of candidate trees increases exponentially with increases in depth; using greedy splitting closer to the leaves of the tree massively reduces the search space.\nWe leverage this observation to construct SPLIT (SParse Lookahead for Interpretable Trees), a family of decision tree algorithms that are over 100× faster than state of the art optimal decision tree algorithms, with negligible sacrifice in performance. They can also be tuned to a user-defined level of sparsity. Instead of searching through the entire space of decision trees up to a given depth, our algorithm performs dynamic programming with branch and bound up to only a shallow \"lookahead\" depth, conditioned on all splits henceforth being chosen greedily.\nOur contributions are as follows.\n-We develop a family of decision tree algorithms that scale with the dataset size and number of features comparably to standard greedy algorithms but produce trees that are as accurate and sparse as optimal ones (e.g., Lin et al., 2020 ).\n-We extend our decision tree algorithms to allow scalable, accurate approximations of the Rashomon set of decision trees (Breiman, 2001; Xin et al., 2022 ).\n-We theoretically prove that our algorithms scale exponentially faster in the number of features than optimal decision tree methods and are capable of performing arbitrarily better than a purely greedy approach.",
+    "7.2._Characterising_the_Frontier_of_Test_Loss,_Sparsity,_and_Runtime": "Figure 4 characterises the frontier of training time, sparsity, and test loss for several algorithms. Here, we vary hyperparameters associated with each algorithm to produce trees of varying sparsity levels (where sparsity is the number of leaves). We see that there exists a frontier between test loss and sparsity, and different methods lie on different parts of the frontier. To maximize interpretability and accuracy, we want a tree to lie in the bottom left corner of the frontier, within the highlighted red rectangle. Out of all algorithms tested, ours consistently lie on the frontier and in the red rectangle. Alongside state of the art performance, our algorithms are often over 100× faster than their contemporaries. For more datasets, see Figure 5 in the Appendix."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Learning optimal decision trees using caching branch-and-bound search",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Aglin",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Nijssen",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Schaus",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Explainable artificial intelligence (XAI): Concepts, taxonomies, opportunities and challenges toward responsible AI",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "B"
+          ],
+          "last": "Arrieta",
+          "suffix": ""
+        },
+        {
+          "first": "N",
+          "middle": [],
+          "last": "Díaz-Rodríguez",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Del Ser",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bennetot",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Tabik",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Barbado",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "García",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Gil-López",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Molina",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Benjamins",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Information Fusion"
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Learning accurate and interpretable decision trees",
+      "authors": [
+        {
+          "first": "M.-F",
+          "middle": [],
+          "last": "Balcan",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the Fortieth Conference on Uncertainty in Artificial Intelligence, UAI '24. JMLR"
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Optimal classification trees",
+      "authors": [
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Bertsimas",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Dunn",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Machine Learning"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Top-down induction of decision trees: rigorous guarantees and inherent limitations",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Blanc",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lange",
+          "suffix": ""
+        },
+        {
+          "first": "L.-Y",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Harnessing the power of choices in decision tree learning",
+      "authors": [
+        {
+          "first": "G",
+          "middle": [],
+          "last": "Blanc",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lange",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Pabbaraju",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Sullivan",
+          "suffix": ""
+        },
+        {
+          "first": "L.-Y",
+          "middle": [],
+          "last": "Tan",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Tiwari",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Classification and regression trees",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Breiman",
+          "suffix": ""
+        }
+      ],
+      "year": 1984,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Statistical modeling: The two cultures (with comments and a rejoinder by the author)",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Breiman",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "Statistical Science"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Online learning of decision trees with Thompson sampling",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Chaouki",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Read",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Bifet",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of The 27th International Conference on Artificial Intelligence and Statistics"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Bounds on the lambert function and their application to the outage analysis of user cooperation",
+      "authors": [
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Chatzigeorgiou",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "IEEE Communications Letters"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Recent advances in decision trees: An updated survey",
+      "authors": [
+        {
+          "first": "V",
+          "middle": [
+            "G"
+          ],
+          "last": "Costa",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [
+            "E"
+          ],
+          "last": "Pedreira",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Artificial Intelligence Review"
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Optimal decision trees via dynamic programming and search",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Demirović",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Lukina",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hebrard",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Chan",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Bailey",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Leckie",
+          "suffix": ""
+        },
+        {
+          "first": "K",
+          "middle": [],
+          "last": "Ramamohanarao",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [
+            "J"
+          ],
+          "last": "Stuckey",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Murtree",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Blossom: an anytime algorithm for computing optimal decision trees",
+      "authors": [
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Demirović",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Hebrard",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Jean",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "Exploring the cloud of variable importance for the set of all good models",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature Machine Intelligence"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "The rashomon importance distribution: Getting RID of unstable, single model-based variable importance",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Donnelly",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Katta",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [
+            "P"
+          ],
+          "last": "Browne",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Event labeling combining ensemble detectors and background knowledge",
+      "authors": [
+        {
+          "first": "Fanaee-T",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Gama",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2013,
+      "venue": "Progress in Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Home equity line of credit (heloc) dataset",
+      "authors": [],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "All models are wrong, but many are useful: Learning a variable's importance by studying an entire class of prediction models simultaneously",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Fisher",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Dominici",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Journal of Machine Learning Research"
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Optimal sparse decision trees",
+      "authors": [
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Seltzer",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "On tackling explanation redundancy in decision trees",
+      "authors": [
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Izza",
+          "suffix": ""
+        },
+        {
+          "first": "A",
+          "middle": [],
+          "last": "Ignatiev",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Marques-Silva",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Journal of Artificial Intelligence Research"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Generalized and scalable optimal sparse decision trees",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Seltzer",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Explicit and recursive estimates of the Lambert W function",
+      "authors": [
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Lóczi",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Quant-BnB: A scalable branch-and-bound method for optimal decision trees with continuous features",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Mazumder",
+          "suffix": ""
+        },
+        {
+          "first": "X",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Fast sparse decision tree optimization via reference ensembles",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Mctavish",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Achermann",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [],
+          "last": "Karimalis",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Seltzer",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Lookahead and pathology in decision tree induction",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Murthy",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Salzberg",
+          "suffix": ""
+        }
+      ],
+      "year": 1995,
+      "venue": "International Joint Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Generating better decision trees",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [
+            "W"
+          ],
+          "last": "Norton",
+          "suffix": ""
+        }
+      ],
+      "year": 1989,
+      "venue": "International Joint Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF26",
+      "title": "What makes classification trees comprehensible?",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Piltaver",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Luštrek",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Gams",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Martinčić-Ipšić",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "Expert Systems with Applications"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "C4.5: programs for machine learning",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "R"
+          ],
+          "last": "Quinlan",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": "Elsevier"
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Interpretable machine learning: Fundamental principles and 10 grand challenges",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Semenova",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Statistics Surveys"
+    },
+    {
+      "id": "BIBREF29",
+      "title": "Amazing things come from having many good models",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "L",
+          "middle": [],
+          "last": "Semenova",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Seltzer",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Parr",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Katta",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Donnelly",
+          "suffix": ""
+        },
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Boner",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Beating \"optimal\" decision trees with Bayesian decision trees",
+      "authors": [
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Sullivan",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Tiwari",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Thrun",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Maptree",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Optimal or greedy decision trees? revisiting their objectives, tuning, and performance",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "G"
+          ],
+          "last": "Van Der Linden",
+          "suffix": ""
+        },
+        {
+          "first": "D",
+          "middle": [],
+          "last": "Vos",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [
+            "M"
+          ],
+          "last": "De Weerdt",
+          "suffix": ""
+        },
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Verwer",
+          "suffix": ""
+        },
+        {
+          "first": "E",
+          "middle": [],
+          "last": "Demirović",
+          "suffix": ""
+        }
+      ],
+      "year": 2024,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Learning optimal classification trees using a binary linear program formulation",
+      "authors": [
+        {
+          "first": "S",
+          "middle": [],
+          "last": "Verwer",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the AAAI Conference on Artificial Intelligence"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Exploring the whole rashomon set of sparse decision trees",
+      "authors": [
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Xin",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Zhong",
+          "suffix": ""
+        },
+        {
+          "first": "Z",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "T",
+          "middle": [],
+          "last": "Takagi",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Seltzer",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Rudin",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Measuring interpretability for different types of machine learning models",
+      "authors": [
+        {
+          "first": "Q",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "F",
+          "middle": [],
+          "last": "Liao",
+          "suffix": ""
+        },
+        {
+          "first": "C",
+          "middle": [],
+          "last": "Mou",
+          "suffix": ""
+        },
+        {
+          "first": "P",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Trends and Applications in Knowledge Discovery and Data Mining: PAKDD 2018 Workshops, BDASC, BDM, ML4Cyber"
+    }
+  ]
+}

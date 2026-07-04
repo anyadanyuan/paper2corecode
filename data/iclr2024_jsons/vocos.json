@@ -1,0 +1,2211 @@
+{
+  "paper_id": "vocos",
+  "title": "VOCOS: CLOSING THE GAP BETWEEN TIME-DOMAIN AND FOURIER-BASED NEURAL VOCODERS FOR HIGH-QUALITY AUDIO SYNTHESIS",
+  "authors": [
+    {
+      "first": "Hubert",
+      "middle": [],
+      "last": "Siuzdak",
+      "affiliation": {}
+    }
+  ],
+  "abstract": "Recent advancements in neural vocoding are predominantly driven by Generative Adversarial Networks (GANs) operating in the time-domain. While effective, this approach neglects the inductive bias offered by time-frequency representations, resulting in reduntant and computionally-intensive upsampling operations. Fourierbased time-frequency representation is an appealing alternative, aligning more accurately with human auditory perception, and benefitting from well-established fast algorithms for its computation. Nevertheless, direct reconstruction of complexvalued spectrograms has been historically problematic, primarily due to phase recovery issues. This study seeks to close this gap by presenting Vocos, a new model that directly generates Fourier spectral coefficients. Vocos not only matches the state-of-the-art in audio quality, as demonstrated in our evaluations, but it also substantially improves computational efficiency, achieving an order of magnitude increase in speed compared to prevailing time-domain neural vocoding approaches. The source code and model weights have been open-sourced at https://github.com/gemelo-ai/vocos.",
+  "body": {
+    "1_INTRODUCTION": {
+      "1.1_CHALLENGES_OF_MODELING_PHASE_SPECTRUM": "Despite considerable advancements in time-domain audio synthesis, efforts to generate spectral representations of signals have been relatively limited. While it's possible to perfectly reconstruct the original signal from its Short-Time Fourier Transform (STFT), in many applications, only the magnitude of the STFT is utilized, leading to inherent information loss. The magnitude of the STFT provides a clear understanding of the signal by indicating the amplitude of different frequency components throughout its duration. In contrast, phase information is less intuitive and its manipulation can often yield unpredictable results.\nModeling the phase distribution presents challenges due to its intricate nature in the time-frequency domain. Phase spectrum exhibits a periodic structure causing wrapping around the principal values within the range of (-π, π] (Figure 1 ). Furthermore, the literature does not provide a definitive answer regarding the perceptual importance of phase-related information in speech (Wang & Lim, 1982; Paliwal et al., 2011) . However, improved phase spectrum estimates have been found to minimize perceptual impairments (Saratxaga et al., 2012) . Researchers have explored the use of deep learning for directly modeling the phase spectrum, but this remains a challenging area (Williamson et al., 2015) .",
+      "1.2_CONTRIBUTION": "Attempts to model Fourier-related coefficients with generative models have not achieved the same level of success as has been seen with modeling audio in the time-domain. This study focuses on bridging that gap with the following contributions:\n• We propose Vocos -a GAN-based vocoder, trained to produce complex STFT coefficients of an audio clip. Unlike conventional neural vocoder architectures that rely on transposed convolutions for upsampling, this work proposes maintaining the same feature temporal resolution across all layers. The upsampling to waveform is realized through the Inverse Fast Fourier Transform.\n• To estimate phase angles, we propose a simple activation function defined in terms of a unit circle. This approach naturally incorporates implicit phase wrapping, ensuring meaningful values across all phase angles.\n• As Vocos maintains a low temporal resolution throughout the network, we revisited the need to use dilated convolutions, typical to time-domain vocoders. Our results indicate that integrating ConvNeXt (Liu et al., 2022) blocks contributes to better performance.\n• Our extensive evaluation shows that Vocos matches the state-of-the-art in audio quality while demonstrating over an order of magnitude increase in speed compared to time-domain counterparts. The source code and model weights have been made open-source, enabling further exploration and potential advancements in the field of neural vocoding.",
+      "_text": "Sound synthesis, the process of generating audio signals through electronic and computational means, has a long and rich history of innovation . Within the scope of text-to-speech (TTS), concatenative synthesis (Moulines & Charpentier, 1990; Hunt & Black, 1996) and statistical parametric synthesis (Yoshimura et al., 1999) were the prevailing approaches. The latter strategy relied on a source-filter theory of speech production, where the speech signal was seen as being produced by a source (the vocal cords) and then shaped by a filter (the vocal tract). In this framework, various parameters such as pitch, vocal tract shape, and voicing were estimated and then used to control a vocoder (Dudley, 1939) which would reconstruct the final audio signal. While vocoders evolved significantly (Kawahara et al., 1999; Morise et al., 2016) , they tended to oversimplify speech production, generating a distinctive \"buzzy\" sound and thus compromising the naturalness of the speech.\nA significant breakthrough in speech synthesis was achieved with the introduction of WaveNet (Oord et al., 2016) , a deep generative model for raw audio waveforms. WaveNet proposed a novel approach to handle audio signals by modeling them autoregressively in the time-domain, using dilated convolutions to broaden receptive fields and consequently capture long-range temporal dependencies. In contrast to the traditional parametric vocoders which incorporate prior knowledge about audio signals, WaveNet solely depends on end-to-end learning.\nSince the advent of WaveNet, modeling distribution of audio samples in the time-domain has become the most popular approach in the field of audio synthesis. The primary methods have fallen into two major categories: autoregressive models and non-autoregressive models. Autoregressive models, like WaveNet, generate audio samples sequentially, conditioning each new sample on all previously generated ones (Mehri et al., 2016; Kalchbrenner et al., 2018; Valin & Skoglund, 2019) . On the other hand, nonautoregressive models generate all samples independently, parallelizing the process and making it more computationally efficient (Oord et al., 2018; Prenger et al., 2019; Donahue et al., 2018) .\n200 400 Hz (a) ω(t) 1 1 (b) sin(ωt) (c) φ(t)\nFigure 1 : This illustrates the phase wrapping using an example sinusoidal signal (b) generated with a time-varying frequency (a). The instantaneous phase, φ(t), is shown in (c). The apparent discontinuities observed around -π and π are the result of phase wrapping. Nevertheless, when viewed on the complex plane, these discontinuities represent continuous rotations. The instantaneous phase is computed as φ(t) = arg {ŝ(t)}, where ŝ(t) denotes the Hilbert transform of s(t) = sin(ωt)."
+    },
+    "3_VOCOS": {
+      "3.2_MODEL": "Backbone Vocos adapts ConvNeXt (Liu et al., 2022) as the foundational backbone for the generator. It first embeds the input features into a hidden dimensionality and then applies a stack of 1D convolutional blocks. Each block consists of a depthwise convolution, followed by an inverted bottleneck that projects features into a higher dimensionality using pointwise convolution. GELU (Gaussian Error Linear Unit) activations are used within the bottleneck, and Layer Normalization is employed between the blocks.\nHead Fourier transform of real-valued signals is conjugate symmetric, so we use only a single side band spectrum, resulting in n f f t /2 + 1 coefficients per frame. As we parameterize the model to output phase and magnitude values, hidden-dim activations are projected into a tensor h with n f f t + 2 channels and splitted into:\nm, p = h[1 : (n f f t /2 + 1)], h[(n f f t /2 + 2) : n]\nTo represent the magnitude, we apply the exponential function to m: M = exp(m).\nWe map p onto the unit circle by calculating the cosine and sine of p to obtain x and y, respectively:\nx = cos(p) y = sin(p)\nFinally, we represent complex-valued coefficients as: STFT = M • (x + jy).\nImportantly, this simple formulation allows to express phase angle φ = atan2(y, x) for any real argument p, and it ensures that φ is correctly wrapped into the desired range (-π, π].\nDiscriminator We employ the multi-period discriminator (MPD) as defined by Kong et al. (2020) , and multi-resolution discriminator (MRD) (Jang et al., 2021) .",
+      "3.3_LOSS": "Following the approach proposed by Kong et al. (2020) , the training objective of Vocos consists of reconstruction loss, adversarial loss and feature matching loss. However, we adopt a hinge loss formulation instead of the least squares GAN objective, as suggested by Zeghidour et al. (2021) :\nℓ G ( x) = 1 K k max (0, 1 -D k ( x)) ℓ D (x, x) = 1 K k max (0, 1 -D k (x)) + max (0, 1 + D k ( x))\nwhere D k is the kth subdiscriminator. The reconstruction loss, denoted as L mel , is defined as the L1 distance between the mel-scaled magnitude spectrograms of the ground truth sample x and the synthesized sample: x: L mel = ∥M(x) -M( x)∥ 1 . The feature matching loss, denoted as L f eat is calculated as the mean of the distances between the lth feature maps of the kth subdistriminator:\nL f eat = 1 KL k l D l k (x) -D l k ( x) 1 .",
+      "_text": "3.1 OVERVIEW At its core, the proposed GAN model uses Fourier-based time-frequency representation as the target data distribution for the generator. Vocos is constructed without any transposed convolutions; instead, 3x1 dilated Conv. + Transposed Conv. ResBlock ResBlock ResBlock Input features tanh Audio (a) ConvNeXt Block ConvNeXt Block + Input features 7x1 depthwise Conv. 1x1 pointwise Conv. 1x1 pointwise Conv. the upsample operation is realized solely through the fast inverse STFT. This approach permits a unique model design compared to time-domain vocoders, which typically employ a series of upsampling layers to inflate input features to the target waveform's resolution, often necessitating upscaling by several hundred times. In contrast, Vocos maintains the same temporal resolution throughout the network (Figure 2 ). This design, known as an isotropic architecture, has been found to work well in various settings, including Transformer (Vaswani et al., 2017) . This approach can also be particularly beneficial for audio synthesis. Traditional methods often use transposed convolutions that can introduce aliasing artifacts, necessitating additional measures to mitigate the issue (Karras et al., 2021; Lee et al., 2022) . Vocos eliminates learnable upsampling layers, and instead employs the well-establish inverse Fourier transform to reconstruct the original-scale waveform. In the context of converting mel-spectrograms into audio signal, the temporal resolution is dictated by the hop size of the STFT.\nVocos uses the Short-Time Fourier Transform (STFT) to represent audio signals in the time-frequency domain:\nEQUATION\n)\nThe STFT applies the Fourier transform to successive windowed sections of the signal. In practice, the STFT is computed by taking a sequence of Fast Fourier Transforms (FFTs) on overlapping, windowed frames of data, which are created as the window function advances or \"hops\" through time."
+    },
+    "4.1_MEL-SPECTROGRAMS": {
+      "4.1.1_EVALUATION": "Objective Evaluation For objective evaluation of our models, we employ the UTMOS (Saeki et al., 2022) automatic Mean Opinion Score (MOS) prediction system. Although UTMOS can yield scores highly correlated with human evaluations, it is restricted to 16 kHz sample rate. To assess perceptual quality, we also utilize ViSQOL (Chinen et al., 2020) in audio-mode, which operates in the full band.\nOur evaluation process also encompasses several other metrics, including the Perceptual Evaluation of Speech Quality (PESQ) (Rix et al., 2001) , periodicity error, and the F1 score for voiced/unvoiced classification (V/UV F1), following the methodology proposed by Morrison et al. (2021) . The results are presented in Table 1 . Vocos achieves superior performance in most of the metrics compared to the other models. It obtains the highest scores in VISQOL and PESQ. Importantly, it also effectively mitigates the periodicity issues frequently associated with time-domain GANs. BigVGAN stands out as the closest competitor, especially in the UTMOS metric, where it slightly outperforms Vocos.\nIn our ablation study, we examined the impact of specific design decisions on Vocos's performance:\n• Vocos with absolute phase: In this variant, we predict phase angles using a tanh nonlinearity, scaled to fit within the range of [-π, π] . This formulation does not give the model an inductive bias regarding the periodic nature of phase, and the results show it leads to degraded quality. This finding emphasizes the importance of implicit phase wrapping in the effectiveness of Vocos.\n• Vocos with Snake activation: Although Snake (Ziyin et al., 2020) has been shown to enhance time-domain vocoders such as BigVGAN, in our case, it did not result in performance gains; in fact, it showed a slight decline. The primary purpose of the Snake function is to induce periodicity, addressing the limitations of time-domain vocoders. Vocos, on the other hand, explicitly incorporates periodicity through the use of Fourier basis functions, eliminating the need for specialized modules like Snake.\n• Vocos without ConvNeXt: Replacing ConvNeXt blocks with traditional ResBlocks with dilated convolutions, slightly lowers scores across all evaluated metrics. This finding highlights the integral role of ConvNeXt blocks in Vocos, contributing significantly to its overall success. To ensure the quality of responses, we carefully selected participants through a third-party crowdsourcing platform. Our criteria included the use of headphones, fluent English proficiency, and a declared interest in music listening as a hobby. A total of 1560 ratings were collected from 39 participants.\nThe results are detailed in\nTable 2. Vocos performs on par with the state-of-the-art in both perceived quality and similarity. Statistical tests show no significant differences between Vocos and BigVGAN in MOS and SMOS scores, with p-values greater than 0.05 from the Wilcoxon signed-rank test. Out-of-distribution data A crucial aspect of a vocoder is its ability to generalize to unseen acoustic conditions. In this context, we evaluate the performance of Vocos with out-of-distribution audio using the MUSDB18 dataset (Rafii et al., 2017) , which includes a variety of multi-track music audio like vocals, drums, bass, and other instruments, along with the original mixture. The VISQOL scores for this evaluation are provided in Table 3 . From the table, Vocos consistently outperforms the other models, achieving the highest scores across all categories.\nFigure 3 presents spectrogram visualization of an out-of-distribution singing voice sample, as reproduced by different models. Periodicity artifacts are commonly observed when employing time-domain GANs. BigVGAN, with its anti-aliasing filters, is able to recover some of the harmonics in the upper frequency ranges, marking an improvement over HiFi-GAN. Nonetheless, Vocos appears to provide a more accurate reconstruction of these harmonics, without the need for additional modules.",
+      "_text": "Reconstructing audio waveforms from mel-spectrograms has become a fundamental task for vocoders in contemporary speech synthesis pipelines. In this section, we assess the performance of Vocos relative to established baseline methods."
+    },
+    "4.2_NEURAL_AUDIO_CODEC": "While traditionally, neural vocoders reconstruct the audio waveform from a mel-scaled spectrogram -an approach widely adopted in many speech synthesis pipelines -recent research has started to utilize learnt features (Siuzdak et al., 2022) , often in a quantized form (Borsos et al., 2022) .\nIn this section, we draw a comparison with EnCodec (Défossez et al., 2022) , an open-source neural audio codec, which follows a typical time-domain GAN vocoder architecture and uses Residual Vector Quantization (RVQ) (Zeghidour et al., 2021) to compress the latent space. RVQ cascades multiple layers of Vector Quantization, iteratively quantizing the residuals from the previous stage to form a multi-stage structure, thereby enabling support for multiple bandwidth targets. In EnCodec, dedicated discriminators are trained for each bandwidth. In contrast, we have adapted Vocos to be a conditional GAN with a projection discriminator (Miyato & Koyama, 2018) , and have incorporated adaptive layer normalization (Huang & Belongie, 2017) into the generator.",
+    "4.3_INFERENCE_SPEED": "Our inference speed benchmarks were conducted using an Nvidia Tesla A100 GPU and an AMD EPYC 7542 CPU. The code was implemented in Pytorch, with no hardware-specific optimizations. The forward pass was computed using a batch of 16 samples, each one second long. Table 6 presents the synthesis speed and model footprint of Vocos in comparison to other models.\nVocos showcases notable speed advantages compared to other models, operating approximately 13 times faster than HiFi-GAN and nearly 70 times faster than BigVGAN. This speed advantage is particularly pronounced when running without GPU acceleration. This is primarily due to the use of the Inverse Short-Time Fourier Transform (ISTFT) algorithm instead of transposed convolutions. We also evaluate a variant of Vocos that utilizes ResBlock's dilated convolutions instead of ConvNeXt blocks. Depthwise separable convolutions offer an additional speedup when executed on a GPU. "
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Avocodo: Generative adversarial network for artifact-free vocoder",
+      "authors": [
+        {
+          "first": "Taejun",
+          "middle": [],
+          "last": "Bak",
+          "suffix": ""
+        },
+        {
+          "first": "Junmo",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Hanbin",
+          "middle": [],
+          "last": "Bae",
+          "suffix": ""
+        },
+        {
+          "first": "Jinhyeok",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Jae-Sung",
+          "middle": [],
+          "last": "Bae",
+          "suffix": ""
+        },
+        {
+          "first": "Young-Sun",
+          "middle": [],
+          "last": "Joo",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Audiolm: a language modeling approach to audio generation",
+      "authors": [
+        {
+          "first": "Zalán",
+          "middle": [],
+          "last": "Borsos",
+          "suffix": ""
+        },
+        {
+          "first": "Raphaël",
+          "middle": [],
+          "last": "Marinier",
+          "suffix": ""
+        },
+        {
+          "first": "Damien",
+          "middle": [],
+          "last": "Vincent",
+          "suffix": ""
+        },
+        {
+          "first": "Eugene",
+          "middle": [],
+          "last": "Kharitonov",
+          "suffix": ""
+        },
+        {
+          "first": "Olivier",
+          "middle": [],
+          "last": "Pietquin",
+          "suffix": ""
+        },
+        {
+          "first": "Matt",
+          "middle": [],
+          "last": "Sharifi",
+          "suffix": ""
+        },
+        {
+          "first": "Olivier",
+          "middle": [],
+          "last": "Teboul",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Grangier",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Tagliasacchi",
+          "suffix": ""
+        },
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Zeghidour",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Introduction to digital audio coding and standards",
+      "authors": [
+        {
+          "first": "Marina",
+          "middle": [],
+          "last": "Bosi",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [
+            "E"
+          ],
+          "last": "Goldberg",
+          "suffix": ""
+        }
+      ],
+      "year": 2002,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF3",
+      "title": "Rave: A variational autoencoder for fast and high-quality neural audio synthesis",
+      "authors": [
+        {
+          "first": "Antoine",
+          "middle": [],
+          "last": "Caillon",
+          "suffix": ""
+        },
+        {
+          "first": "Philippe",
+          "middle": [],
+          "last": "Esling",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Visqol v3: An open source production ready objective speech and audio metric",
+      "authors": [
+        {
+          "first": "Felicia",
+          "middle": [
+            "Sc"
+          ],
+          "last": "Michael Chinen",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Lim",
+          "suffix": ""
+        },
+        {
+          "first": "Nikita",
+          "middle": [],
+          "last": "Skoglund",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gureev",
+          "suffix": ""
+        },
+        {
+          "first": "O",
+          "middle": [],
+          "last": "Feargus",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "'gorman",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Hines",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "2020 twelfth international conference on quality of multimedia experience (QoMEX)"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "High fidelity neural audio compression",
+      "authors": [
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Défossez",
+          "suffix": ""
+        },
+        {
+          "first": "Jade",
+          "middle": [],
+          "last": "Copet",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Synnaeve",
+          "suffix": ""
+        },
+        {
+          "first": "Yossi",
+          "middle": [],
+          "last": "Adi",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "Adversarial audio synthesis",
+      "authors": [
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Donahue",
+          "suffix": ""
+        },
+        {
+          "first": "Julian",
+          "middle": [],
+          "last": "Mcauley",
+          "suffix": ""
+        },
+        {
+          "first": "Miller",
+          "middle": [],
+          "last": "Puckette",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF7",
+      "title": "Icassp 2022 deep noise suppression challenge",
+      "authors": [
+        {
+          "first": "Harishchandra",
+          "middle": [],
+          "last": "Dubey",
+          "suffix": ""
+        },
+        {
+          "first": "Vishak",
+          "middle": [],
+          "last": "Gopal",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "Cutler",
+          "suffix": ""
+        },
+        {
+          "first": "Ashkan",
+          "middle": [],
+          "last": "Aazami",
+          "suffix": ""
+        },
+        {
+          "first": "Sergiy",
+          "middle": [],
+          "last": "Matusevych",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Braun",
+          "suffix": ""
+        },
+        {
+          "first": "Sefik",
+          "middle": [
+            "Emre"
+          ],
+          "last": "Eskimez",
+          "suffix": ""
+        },
+        {
+          "first": "Manthan",
+          "middle": [],
+          "last": "Thakker",
+          "suffix": ""
+        },
+        {
+          "first": "Takuya",
+          "middle": [],
+          "last": "Yoshioka",
+          "suffix": ""
+        },
+        {
+          "first": "Hannes",
+          "middle": [],
+          "last": "Gamper",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ICASSP 2022-2022 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)"
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Remaking speech",
+      "authors": [
+        {
+          "first": "Homer",
+          "middle": [],
+          "last": "Dudley",
+          "suffix": ""
+        }
+      ],
+      "year": 1939,
+      "venue": "The Journal of the Acoustical Society of America"
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Gansynth: Adversarial neural audio synthesis",
+      "authors": [
+        {
+          "first": "Jesse",
+          "middle": [],
+          "last": "Engel",
+          "suffix": ""
+        },
+        {
+          "first": "Krishna",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Shuo",
+          "middle": [],
+          "last": "Agrawal",
+          "suffix": ""
+        },
+        {
+          "first": "Ishaan",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Gulrajani",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Donahue",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Roberts",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Generative adversarial nets",
+      "authors": [
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Goodfellow",
+          "suffix": ""
+        },
+        {
+          "first": "Jean",
+          "middle": [],
+          "last": "Pouget-Abadie",
+          "suffix": ""
+        },
+        {
+          "first": "Mehdi",
+          "middle": [],
+          "last": "Mirza",
+          "suffix": ""
+        },
+        {
+          "first": "Bing",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Warde-Farley",
+          "suffix": ""
+        },
+        {
+          "first": "Sherjil",
+          "middle": [],
+          "last": "Ozair",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Signal estimation from modified short-time fourier transform",
+      "authors": [
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Griffin",
+          "suffix": ""
+        },
+        {
+          "first": "Jae",
+          "middle": [],
+          "last": "Lim",
+          "suffix": ""
+        }
+      ],
+      "year": 1984,
+      "venue": "IEEE Transactions on acoustics, speech, and signal processing"
+    },
+    {
+      "id": "BIBREF13",
+      "title": "A spectral energy distance for parallel speech synthesis",
+      "authors": [
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Gritsenko",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Salimans",
+          "suffix": ""
+        },
+        {
+          "first": "Rianne",
+          "middle": [],
+          "last": "Van Den",
+          "suffix": ""
+        },
+        {
+          "first": "Jasper",
+          "middle": [],
+          "last": "Berg",
+          "suffix": ""
+        },
+        {
+          "first": "Nal",
+          "middle": [],
+          "last": "Snoek",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Kalchbrenner",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Mastering diverse domains through world models",
+      "authors": [
+        {
+          "first": "Danijar",
+          "middle": [],
+          "last": "Hafner",
+          "suffix": ""
+        },
+        {
+          "first": "Jurgis",
+          "middle": [],
+          "last": "Pasukonis",
+          "suffix": ""
+        },
+        {
+          "first": "Jimmy",
+          "middle": [],
+          "last": "Ba",
+          "suffix": ""
+        },
+        {
+          "first": "Timothy",
+          "middle": [],
+          "last": "Lillicrap",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Arbitrary style transfer in real-time with adaptive instance normalization",
+      "authors": [
+        {
+          "first": "Xun",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Serge",
+          "middle": [],
+          "last": "Belongie",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Proceedings of the IEEE international conference on computer vision"
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Unit selection in a concatenative speech synthesis system using a large speech database",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Andrew",
+          "suffix": ""
+        },
+        {
+          "first": "Alan",
+          "middle": [
+            "W"
+          ],
+          "last": "Hunt",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Black",
+          "suffix": ""
+        }
+      ],
+      "year": 1996,
+      "venue": "IEEE International Conference on Acoustics, Speech, and Signal Processing Conference Proceedings"
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Univnet: A neural vocoder with multi-resolution spectrogram discriminators for high-fidelity waveform generation",
+      "authors": [
+        {
+          "first": "Won",
+          "middle": [],
+          "last": "Jang",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Lim",
+          "suffix": ""
+        },
+        {
+          "first": "Jaesam",
+          "middle": [],
+          "last": "Yoon",
+          "suffix": ""
+        },
+        {
+          "first": "Bongwan",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Juntae",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Efficient neural audio synthesis",
+      "authors": [
+        {
+          "first": "Nal",
+          "middle": [],
+          "last": "Kalchbrenner",
+          "suffix": ""
+        },
+        {
+          "first": "Erich",
+          "middle": [],
+          "last": "Elsen",
+          "suffix": ""
+        },
+        {
+          "first": "Karen",
+          "middle": [],
+          "last": "Simonyan",
+          "suffix": ""
+        },
+        {
+          "first": "Seb",
+          "middle": [],
+          "last": "Noury",
+          "suffix": ""
+        },
+        {
+          "first": "Norman",
+          "middle": [],
+          "last": "Casagrande",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [],
+          "last": "Lockhart",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Stimberg",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Oord",
+          "suffix": ""
+        },
+        {
+          "first": "Sander",
+          "middle": [],
+          "last": "Dieleman",
+          "suffix": ""
+        },
+        {
+          "first": "Koray",
+          "middle": [],
+          "last": "Kavukcuoglu",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "International Conference on Machine Learning"
+    },
+    {
+      "id": "BIBREF19",
+      "title": "istftnet: Fast and lightweight mel-spectrogram vocoder incorporating inverse short-time fourier transform",
+      "authors": [
+        {
+          "first": "Takuhiro",
+          "middle": [],
+          "last": "Kaneko",
+          "suffix": ""
+        },
+        {
+          "first": "Kou",
+          "middle": [],
+          "last": "Tanaka",
+          "suffix": ""
+        },
+        {
+          "first": "Hirokazu",
+          "middle": [],
+          "last": "Kameoka",
+          "suffix": ""
+        },
+        {
+          "first": "Shogo",
+          "middle": [],
+          "last": "Seki",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "ICASSP 2022-2022 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)"
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Alias-free generative adversarial networks",
+      "authors": [
+        {
+          "first": "Tero",
+          "middle": [],
+          "last": "Karras",
+          "suffix": ""
+        },
+        {
+          "first": "Miika",
+          "middle": [],
+          "last": "Aittala",
+          "suffix": ""
+        },
+        {
+          "first": "Samuli",
+          "middle": [],
+          "last": "Laine",
+          "suffix": ""
+        },
+        {
+          "first": "Erik",
+          "middle": [],
+          "last": "Härkönen",
+          "suffix": ""
+        },
+        {
+          "first": "Janne",
+          "middle": [],
+          "last": "Hellsten",
+          "suffix": ""
+        },
+        {
+          "first": "Jaakko",
+          "middle": [],
+          "last": "Lehtinen",
+          "suffix": ""
+        },
+        {
+          "first": "Timo",
+          "middle": [],
+          "last": "Aila",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Restructuring speech representations using a pitch-adaptive time-frequency smoothing and an instantaneous-frequency-based f0 extraction: Possible role of a repetitive structure in sounds",
+      "authors": [
+        {
+          "first": "Hideki",
+          "middle": [],
+          "last": "Kawahara",
+          "suffix": ""
+        },
+        {
+          "first": "Ikuyo",
+          "middle": [],
+          "last": "Masuda-Katsuse",
+          "suffix": ""
+        },
+        {
+          "first": "Alain",
+          "middle": [
+            "De"
+          ],
+          "last": "Cheveigne",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": "Speech communication"
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Perceptual phase quantization of speech",
+      "authors": [
+        {
+          "first": "Doh-Suk",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        }
+      ],
+      "year": 2003,
+      "venue": "IEEE transactions on speech and audio processing"
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Hifi-gan: Generative adversarial networks for efficient and high fidelity speech synthesis",
+      "authors": [
+        {
+          "first": "Jungil",
+          "middle": [],
+          "last": "Kong",
+          "suffix": ""
+        },
+        {
+          "first": "Jaehyeon",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Jaekyoung",
+          "middle": [],
+          "last": "Bae",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Melgan: Generative adversarial networks for conditional waveform synthesis",
+      "authors": [
+        {
+          "first": "Kundan",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Rithesh",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Thibault",
+          "middle": [],
+          "last": "De Boissiere",
+          "suffix": ""
+        },
+        {
+          "first": "Lucas",
+          "middle": [],
+          "last": "Gestin",
+          "suffix": ""
+        },
+        {
+          "first": "Jose",
+          "middle": [],
+          "last": "Wei Zhen Teoh",
+          "suffix": ""
+        },
+        {
+          "first": "Alexandre",
+          "middle": [],
+          "last": "Sotelo",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "De Brébisson",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [
+            "C"
+          ],
+          "last": "Bengio",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Bigvgan: A universal neural vocoder with large-scale training",
+      "authors": [
+        {
+          "first": "Sang-Gil",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Wei",
+          "middle": [],
+          "last": "Ping",
+          "suffix": ""
+        },
+        {
+          "first": "Boris",
+          "middle": [],
+          "last": "Ginsburg",
+          "suffix": ""
+        },
+        {
+          "first": "Bryan",
+          "middle": [],
+          "last": "Catanzaro",
+          "suffix": ""
+        },
+        {
+          "first": "Sungroh",
+          "middle": [],
+          "last": "Yoon",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "A convnet for the 2020s",
+      "authors": [
+        {
+          "first": "Zhuang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Hanzi",
+          "middle": [],
+          "last": "Mao",
+          "suffix": ""
+        },
+        {
+          "first": "Chao-Yuan",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Christoph",
+          "middle": [],
+          "last": "Feichtenhofer",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Darrell",
+          "suffix": ""
+        },
+        {
+          "first": "Saining",
+          "middle": [],
+          "last": "Xie",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Samplernn: An unconditional end-to-end neural audio generation model",
+      "authors": [
+        {
+          "first": "Soroush",
+          "middle": [],
+          "last": "Mehri",
+          "suffix": ""
+        },
+        {
+          "first": "Kundan",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Ishaan",
+          "middle": [],
+          "last": "Gulrajani",
+          "suffix": ""
+        },
+        {
+          "first": "Rithesh",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Shubham",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Jose",
+          "middle": [],
+          "last": "Sotelo",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "cgans with projection discriminator",
+      "authors": [
+        {
+          "first": "Takeru",
+          "middle": [],
+          "last": "Miyato",
+          "suffix": ""
+        },
+        {
+          "first": "Masanori",
+          "middle": [],
+          "last": "Koyama",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF29",
+      "title": "World: a vocoder-based high-quality speech synthesis system for real-time applications",
+      "authors": [
+        {
+          "first": "Masanori",
+          "middle": [],
+          "last": "Morise",
+          "suffix": ""
+        },
+        {
+          "first": "Fumiya",
+          "middle": [],
+          "last": "Yokomori",
+          "suffix": ""
+        },
+        {
+          "first": "Kenji",
+          "middle": [],
+          "last": "Ozawa",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": "IEICE TRANSACTIONS on Information and Systems"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Chunked autoregressive gan for conditional waveform synthesis",
+      "authors": [
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Morrison",
+          "suffix": ""
+        },
+        {
+          "first": "Rithesh",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Kundan",
+          "middle": [],
+          "last": "Kumar",
+          "suffix": ""
+        },
+        {
+          "first": "Prem",
+          "middle": [],
+          "last": "Seetharaman",
+          "suffix": ""
+        },
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Courville",
+          "suffix": ""
+        },
+        {
+          "first": "Yoshua",
+          "middle": [],
+          "last": "Bengio",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Pitch-synchronous waveform processing techniques for text-to-speech synthesis using diphones",
+      "authors": [
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Moulines",
+          "suffix": ""
+        },
+        {
+          "first": "Francis",
+          "middle": [],
+          "last": "Charpentier",
+          "suffix": ""
+        }
+      ],
+      "year": 1990,
+      "venue": "Speech communication"
+    },
+    {
+      "id": "BIBREF32",
+      "title": "Daps (device and produced speech) dataset",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Gautham",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Mysore",
+          "suffix": ""
+        }
+      ],
+      "year": 2014,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Parallel wavenet: Fast high-fidelity speech synthesis",
+      "authors": [
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Oord",
+          "suffix": ""
+        },
+        {
+          "first": "Yazhe",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Igor",
+          "middle": [],
+          "last": "Babuschkin",
+          "suffix": ""
+        },
+        {
+          "first": "Karen",
+          "middle": [],
+          "last": "Simonyan",
+          "suffix": ""
+        },
+        {
+          "first": "Oriol",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "Koray",
+          "middle": [],
+          "last": "Kavukcuoglu",
+          "suffix": ""
+        },
+        {
+          "first": "George",
+          "middle": [],
+          "last": "Driessche",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [],
+          "last": "Lockhart",
+          "suffix": ""
+        },
+        {
+          "first": "Luis",
+          "middle": [],
+          "last": "Cobo",
+          "suffix": ""
+        },
+        {
+          "first": "Florian",
+          "middle": [],
+          "last": "Stimberg",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "International conference on machine learning"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Wavenet: A generative model for raw audio",
+      "authors": [
+        {
+          "first": "Aaron",
+          "middle": [],
+          "last": "Van Den Oord",
+          "suffix": ""
+        },
+        {
+          "first": "Sander",
+          "middle": [],
+          "last": "Dieleman",
+          "suffix": ""
+        },
+        {
+          "first": "Heiga",
+          "middle": [],
+          "last": "Zen",
+          "suffix": ""
+        },
+        {
+          "first": "Karen",
+          "middle": [],
+          "last": "Simonyan",
+          "suffix": ""
+        },
+        {
+          "first": "Oriol",
+          "middle": [],
+          "last": "Vinyals",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Graves",
+          "suffix": ""
+        },
+        {
+          "first": "Nal",
+          "middle": [],
+          "last": "Kalchbrenner",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Senior",
+          "suffix": ""
+        },
+        {
+          "first": "Koray",
+          "middle": [],
+          "last": "Kavukcuoglu",
+          "suffix": ""
+        }
+      ],
+      "year": 2016,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Generative adversarial network-based approach to signal reconstruction from magnitude spectrogram",
+      "authors": [
+        {
+          "first": "Keisuke",
+          "middle": [],
+          "last": "Oyamada",
+          "suffix": ""
+        },
+        {
+          "first": "Hirokazu",
+          "middle": [],
+          "last": "Kameoka",
+          "suffix": ""
+        },
+        {
+          "first": "Takuhiro",
+          "middle": [],
+          "last": "Kaneko",
+          "suffix": ""
+        },
+        {
+          "first": "Kou",
+          "middle": [],
+          "last": "Tanaka",
+          "suffix": ""
+        },
+        {
+          "first": "Nobukatsu",
+          "middle": [],
+          "last": "Hojo",
+          "suffix": ""
+        },
+        {
+          "first": "Hiroyasu",
+          "middle": [],
+          "last": "Ando",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "26th European Signal Processing Conference (EUSIPCO)"
+    },
+    {
+      "id": "BIBREF37",
+      "title": "The importance of phase in speech enhancement",
+      "authors": [
+        {
+          "first": "Kuldip",
+          "middle": [],
+          "last": "Paliwal",
+          "suffix": ""
+        },
+        {
+          "first": "Kamil",
+          "middle": [],
+          "last": "Wójcicki",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Shannon",
+          "suffix": ""
+        }
+      ],
+      "year": 2011,
+      "venue": "speech communication"
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Musika! fast infinite waveform music generation",
+      "authors": [
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Pasini",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Schlüter",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Speech resynthesis from discrete disentangled self-supervised representations",
+      "authors": [
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Polyak",
+          "suffix": ""
+        },
+        {
+          "first": "Yossi",
+          "middle": [],
+          "last": "Adi",
+          "suffix": ""
+        },
+        {
+          "first": "Jade",
+          "middle": [],
+          "last": "Copet",
+          "suffix": ""
+        },
+        {
+          "first": "Eugene",
+          "middle": [],
+          "last": "Kharitonov",
+          "suffix": ""
+        },
+        {
+          "first": "Kushal",
+          "middle": [],
+          "last": "Lakhotia",
+          "suffix": ""
+        },
+        {
+          "first": "Wei-Ning",
+          "middle": [],
+          "last": "Hsu",
+          "suffix": ""
+        },
+        {
+          "first": "Abdelrahman",
+          "middle": [],
+          "last": "Mohamed",
+          "suffix": ""
+        },
+        {
+          "first": "Emmanuel",
+          "middle": [],
+          "last": "Dupoux",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Waveglow: A flow-based generative network for speech synthesis",
+      "authors": [
+        {
+          "first": "Ryan",
+          "middle": [],
+          "last": "Prenger",
+          "suffix": ""
+        },
+        {
+          "first": "Rafael",
+          "middle": [],
+          "last": "Valle",
+          "suffix": ""
+        },
+        {
+          "first": "Bryan",
+          "middle": [],
+          "last": "Catanzaro",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ICASSP 2019-2019 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)"
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Musdb18-a corpus for music separation",
+      "authors": [
+        {
+          "first": "Zafar",
+          "middle": [],
+          "last": "Rafii",
+          "suffix": ""
+        },
+        {
+          "first": "Antoine",
+          "middle": [],
+          "last": "Liutkus",
+          "suffix": ""
+        },
+        {
+          "first": "Fabian-Robert",
+          "middle": [],
+          "last": "Stöter",
+          "suffix": ""
+        },
+        {
+          "first": "Stylianos",
+          "middle": [],
+          "last": "Ioannis Mimilakis",
+          "suffix": ""
+        },
+        {
+          "first": "Rachel",
+          "middle": [],
+          "last": "Bittner",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Perceptual evaluation of speech quality (pesq)-a new method for speech quality assessment of telephone networks and codecs",
+      "authors": [
+        {
+          "first": "Antony",
+          "middle": [
+            "W"
+          ],
+          "last": "Rix",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [
+            "G"
+          ],
+          "last": "Beerends",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "P"
+          ],
+          "last": "Hollier",
+          "suffix": ""
+        },
+        {
+          "first": "Andries",
+          "middle": [
+            "P"
+          ],
+          "last": "Hekstra",
+          "suffix": ""
+        }
+      ],
+      "year": 2001,
+      "venue": "IEEE international conference on acoustics, speech, and signal processing. Proceedings (Cat. No. 01CH37221)"
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Utmos: Utokyo-sarulab system for voicemos challenge",
+      "authors": [
+        {
+          "first": "Takaaki",
+          "middle": [],
+          "last": "Saeki",
+          "suffix": ""
+        },
+        {
+          "first": "Detai",
+          "middle": [],
+          "last": "Xin",
+          "suffix": ""
+        },
+        {
+          "first": "Wataru",
+          "middle": [],
+          "last": "Nakata",
+          "suffix": ""
+        },
+        {
+          "first": "Tomoki",
+          "middle": [],
+          "last": "Koriyama",
+          "suffix": ""
+        },
+        {
+          "first": "Shinnosuke",
+          "middle": [],
+          "last": "Takamichi",
+          "suffix": ""
+        },
+        {
+          "first": "Hiroshi",
+          "middle": [],
+          "last": "Saruwatari",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Perceptual importance of the phase related information in speech",
+      "authors": [
+        {
+          "first": "Ibon",
+          "middle": [],
+          "last": "Saratxaga",
+          "suffix": ""
+        },
+        {
+          "first": "Inma",
+          "middle": [],
+          "last": "Hernaez",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Pucher",
+          "suffix": ""
+        },
+        {
+          "first": "Eva",
+          "middle": [],
+          "last": "Navas",
+          "suffix": ""
+        },
+        {
+          "first": "Iñaki",
+          "middle": [],
+          "last": "Sainz",
+          "suffix": ""
+        }
+      ],
+      "year": 2012,
+      "venue": "Thirteenth Annual Conference of the International Speech Communication Association"
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Natural tts synthesis by conditioning wavenet on mel spectrogram predictions",
+      "authors": [
+        {
+          "first": "Jonathan",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Ruoming",
+          "middle": [],
+          "last": "Pang",
+          "suffix": ""
+        },
+        {
+          "first": "Ron",
+          "middle": [
+            "J"
+          ],
+          "last": "Weiss",
+          "suffix": ""
+        },
+        {
+          "first": "Mike",
+          "middle": [],
+          "last": "Schuster",
+          "suffix": ""
+        },
+        {
+          "first": "Navdeep",
+          "middle": [],
+          "last": "Jaitly",
+          "suffix": ""
+        },
+        {
+          "first": "Zongheng",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Zhifeng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxuan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Rj",
+          "middle": [],
+          "last": "Skerrv-Ryan",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "IEEE international conference on acoustics, speech and signal processing (ICASSP)"
+    },
+    {
+      "id": "BIBREF46",
+      "title": "WavThruVec: Latent speech representation as intermediate features for neural speech synthesis",
+      "authors": [
+        {
+          "first": "Hubert",
+          "middle": [],
+          "last": "Siuzdak",
+          "suffix": ""
+        },
+        {
+          "first": "Piotr",
+          "middle": [],
+          "last": "Dura",
+          "suffix": ""
+        },
+        {
+          "first": "Pol",
+          "middle": [],
+          "last": "Van Rijn",
+          "suffix": ""
+        },
+        {
+          "first": "Nori",
+          "middle": [],
+          "last": "Jacoby",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Proc. Interspeech 2022"
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Bark: Text-prompted generative audio model",
+      "authors": [
+        {
+          "first": "A",
+          "middle": [
+            "I"
+          ],
+          "last": "Suno",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "Phasenet: Discretized phase modeling with deep neural networks for audio source separation",
+      "authors": [
+        {
+          "first": "Naoya",
+          "middle": [],
+          "last": "Takahashi",
+          "suffix": ""
+        },
+        {
+          "first": "Purvi",
+          "middle": [],
+          "last": "Agrawal",
+          "suffix": ""
+        },
+        {
+          "first": "Nabarun",
+          "middle": [],
+          "last": "Goswami",
+          "suffix": ""
+        },
+        {
+          "first": "Yuki",
+          "middle": [],
+          "last": "Mitsufuji",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "Interspeech"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Phase reconstruction from amplitude spectrograms based on von-mises-distribution deep neural network",
+      "authors": [
+        {
+          "first": "Shinnosuke",
+          "middle": [],
+          "last": "Takamichi",
+          "suffix": ""
+        },
+        {
+          "first": "Yuki",
+          "middle": [],
+          "last": "Saito",
+          "suffix": ""
+        },
+        {
+          "first": "Norihiro",
+          "middle": [],
+          "last": "Takamune",
+          "suffix": ""
+        },
+        {
+          "first": "Daichi",
+          "middle": [],
+          "last": "Kitamura",
+          "suffix": ""
+        },
+        {
+          "first": "Hiroshi",
+          "middle": [],
+          "last": "Saruwatari",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": "16th International Workshop on Acoustic Signal Enhancement (IWAENC)"
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Lpcnet: Improving neural speech synthesis through linear prediction",
+      "authors": [
+        {
+          "first": "Jean-Marc",
+          "middle": [],
+          "last": "Valin",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Skoglund",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "ICASSP 2019-2019 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)"
+    },
+    {
+      "id": "BIBREF51",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Niki",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Llion",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Łukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Illia",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "The unimportance of phase in speech enhancement",
+      "authors": [
+        {
+          "first": "Dequan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Jae",
+          "middle": [],
+          "last": "Lim",
+          "suffix": ""
+        }
+      ],
+      "year": 1982,
+      "venue": "IEEE Transactions on Acoustics, Speech, and Signal Processing"
+    },
+    {
+      "id": "BIBREF53",
+      "title": "Modified discrete cosine transform: Its implications for audio coding and error concealment",
+      "authors": [
+        {
+          "first": "Ye",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Mikka",
+          "middle": [],
+          "last": "Vilermo",
+          "suffix": ""
+        }
+      ],
+      "year": 2003,
+      "venue": "Journal of the Audio Engineering Society"
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Complex ratio masking for monaural speech separation",
+      "authors": [
+        {
+          "first": "Yuxuan",
+          "middle": [],
+          "last": "Donald S Williamson",
+          "suffix": ""
+        },
+        {
+          "first": "Deliang",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": "IEEE/ACM transactions on audio, speech, and language processing"
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Simultaneous modeling of spectrum, pitch and duration in hmm-based speech synthesis",
+      "authors": [
+        {
+          "first": "Takayoshi",
+          "middle": [],
+          "last": "Yoshimura",
+          "suffix": ""
+        },
+        {
+          "first": "Keiichi",
+          "middle": [],
+          "last": "Tokuda",
+          "suffix": ""
+        },
+        {
+          "first": "Takashi",
+          "middle": [],
+          "last": "Masuko",
+          "suffix": ""
+        },
+        {
+          "first": "Takao",
+          "middle": [],
+          "last": "Kobayashi",
+          "suffix": ""
+        },
+        {
+          "first": "Tadashi",
+          "middle": [],
+          "last": "Kitamura",
+          "suffix": ""
+        }
+      ],
+      "year": 1999,
+      "venue": "Sixth European Conference on Speech Communication and Technology"
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Gan vocoder: Multi-resolution discriminator is all you need",
+      "authors": [
+        {
+          "first": "Jaeseong",
+          "middle": [],
+          "last": "You",
+          "suffix": ""
+        },
+        {
+          "first": "Dalhyun",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Gyuhyeon",
+          "middle": [],
+          "last": "Nam",
+          "suffix": ""
+        },
+        {
+          "first": "Geumbyeol",
+          "middle": [],
+          "last": "Hwang",
+          "suffix": ""
+        },
+        {
+          "first": "Gyeongsu",
+          "middle": [],
+          "last": "Chae",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Soundstream: An end-to-end neural audio codec",
+      "authors": [
+        {
+          "first": "Neil",
+          "middle": [],
+          "last": "Zeghidour",
+          "suffix": ""
+        },
+        {
+          "first": "Alejandro",
+          "middle": [],
+          "last": "Luebs",
+          "suffix": ""
+        },
+        {
+          "first": "Ahmed",
+          "middle": [],
+          "last": "Omran",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Skoglund",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Tagliasacchi",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "IEEE/ACM Transactions on Audio, Speech, and Language Processing"
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Libritts: A corpus derived from librispeech for text-to-speech",
+      "authors": [
+        {
+          "first": "Heiga",
+          "middle": [],
+          "last": "Zen",
+          "suffix": ""
+        },
+        {
+          "first": "Viet",
+          "middle": [],
+          "last": "Dang",
+          "suffix": ""
+        },
+        {
+          "first": "Rob",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Ron",
+          "middle": [
+            "J"
+          ],
+          "last": "Weiss",
+          "suffix": ""
+        },
+        {
+          "first": "Ye",
+          "middle": [],
+          "last": "Jia",
+          "suffix": ""
+        },
+        {
+          "first": "Zhifeng",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Yonghui",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Neural networks fail to learn periodic functions and how to fix it",
+      "authors": [
+        {
+          "first": "Tilman",
+          "middle": [],
+          "last": "Liu Ziyin",
+          "suffix": ""
+        },
+        {
+          "first": "Masahito",
+          "middle": [],
+          "last": "Hartwig",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Ueda",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in Neural Information Processing Systems"
+    }
+  ]
+}

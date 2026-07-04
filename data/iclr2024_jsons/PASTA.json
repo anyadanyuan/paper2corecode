@@ -1,0 +1,3224 @@
+{
+  "paper_id": "PASTA",
+  "title": "TELL YOUR MODEL WHERE TO ATTEND: POST-HOC ATTENTION STEERING FOR LLMS",
+  "authors": [
+    {
+      "first": "Qingru",
+      "middle": [],
+      "last": "Zhang",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of California",
+        "location": {}
+      }
+    },
+    {
+      "first": "Chandan",
+      "middle": [],
+      "last": "Singh",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of California",
+        "location": {}
+      }
+    },
+    {
+      "first": "Liyuan",
+      "middle": [],
+      "last": "Liu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of California",
+        "location": {}
+      }
+    },
+    {
+      "first": "Xiaodong",
+      "middle": [],
+      "last": "Liu",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of California",
+        "location": {}
+      }
+    },
+    {
+      "first": "Jianfeng",
+      "middle": [],
+      "last": "Gao",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of California",
+        "location": {}
+      }
+    },
+    {
+      "first": "Tuo",
+      "middle": [],
+      "last": "Zhao",
+      "affiliation": {
+        "laboratory": "",
+        "institution": "University of California",
+        "location": {}
+      }
+    }
+  ],
+  "abstract": "In human-written articles, we often leverage the subtleties of text style, such as bold and italics, to guide the attention of readers. These textual emphases are vital for the readers to grasp the conveyed information. When interacting with large language models (LLMs), we have a similar need -steering the model to pay closer attention to user-specified information, e.g., an instruction. Existing methods, however, are constrained to process plain text and do not support such a mechanism. This motivates us to introduce PASTA -Post-hoc Attention STeering Approach, a method that allows LLMs to read text with user-specified emphasis marks. To this end, PASTA identifies a small subset of attention heads and applies precise attention reweighting on them, directing the model attention to user-specified parts. Like prompting, PASTA is applied at inference time and does not require changing any model parameters. Experiments demonstrate that PASTA can substantially enhance an LLM's ability to follow user instructions or integrate new knowledge from user inputs, leading to a significant performance improvement on a variety of tasks, e.g., an average accuracy improvement of 22% for LLAMA-7B. Our code is publicly available at https://github.com/QingruZhang/PASTA.\n* Work is done during Qingru Zhang's internship at Microsoft Research. 1 We use prompts to refer to all LLM text inputs, including user instructions, and the other background information (which we refer to as context).",
+  "body": {
+    "1_INTRODUCTION": "The advent of large language models (LLMs) has marked a significant milestone in natural language processing (NLP) and artificial intelligence (AI), showcasing exceptional performance across a wide range of tasks (Vaswani et al., 2017; Brown et al., 2020a; OpenAI, 2023) . Efforts to further refine these models have been relentless, aiming to enable them to process and respond to natural and programming languages with human-like expertise (Stiennon et al., 2020; Yao et al., 2023) .\nDespite their remarkable achievements, LLMs often encounter challenges in understanding their contextual inputs during interactions with users (Shen et al., 2023; Lu et al., 2021) . This difficulty becomes particular evident when they are presented prompts 1 containing extensive background contexts or complex user instructions. Lengthy contexts can overwhelm LLMs, as their attention modules, learned from data, are unable to fully capture crucial details (Liu et al., 2023) . Complex instructions can further inhibit the model from focusing on the user's intentions, resulting in undesired outputs (Wei et al., 2022) . Additionally, for time-sensitive data, such as news articles, there can exist factual knowledge within contexts, which contradicts with model prior beliefs induced from outdated pre-training. As a result, a model may generate outputs conditioned on its pre-existing belief instead of attending to new facts within the contexts (Meng et al., 2022a; b; Mitchell et al., 2022; Hernandez et al., 2023) . All of these challenges contribute to LLMs struggling to comprehend user intentions.\nCompared to LLMs, human readers rarely struggle to understand the emphases of articles and intentions of writers. Writers often leverage a variety of text styles, such as bold and italics, to emphasize specific contents. This mechanism enables writers to direct and maintain the attention of human readers, ensuring that the intended information is accurately captured. In interactions between users and LLMs, it is users also need to highlight specific information for the model. Consequently, model generation can be effectively biased in accordance with user guidance, thus addressing the challenges mentioned earlier. This feature is particularly essential when designing user-AI interfaces, and can be frequently applied in extensive conversations between users and models. Existing methods, however, do not support such a mechanism. LLMs are inherently limited to processing plain texts, devoid of any stylistic cues or emphasis markers (Brown et al., 2020b; Liu et al., 2021; Wei et al., 2022) . Even when emphasis markers are added to prompts, state-of-the-art LLMs often struggle to discern weak signals from a couple of marker tokens (See evidence in Section 5.1).\nMotivated by the need to convey user emphasis, we introduce PASTA (Post-hoc Attention STeering Approach), a post-hoc methodfoot_0 that enables users to highlight specific information, e.g., an instruction as in Figure 1 , and steer models to interpret emphasized texts like human readers. Specifically, PASTA selects a small subset of attention heads and applies precise attention reweighting on them. As illustrated in Figure 1 , PASTA upweights the attention scores of the user-specified tokens while downweighting the other tokens at specific attention heads. Our method is inspired by the observation that attention modules exhibit various token-attending patterns across different heads (Michel et al., 2019; Voita et al., 2019; Clark et al., 2019) . These attention patterns can be interpreted as encoding diverse semantic or syntactic information, and altering them can substantially influence model behaviors (Shi et al., 2023a; Hu et al., 2021b) . Through steering attention modules, PASTA directs the model to pay close attention to the user-specified parts and hence generate the desired output aligning with the highlighted contents. Notably, PASTA is applied after training and does not require changing any model parameters; PASTA only requires access to the attention scores of specific heads of an LLM.\nSince attention heads can serve different functions (Tenney et al., 2019; Deb et al., 2023) , we introduce an efficient model profiling algorithm to identify which heads are effective for steering. Specifically, we subsample small training sets from multiple tasks and evaluate the performance of attention steering for each individual head across these tasks. PASTA selects the attention heads that, when steered, generally improve the multi-task performance. We empirically observe that steering these heads not only benefits the existing tasks but also enhances the performance on unseen tasks. Notably, the model profiling is performed only once for an LLM. The selected attention heads can be regarded as a model-level profile, effective for steering the LLM on unseen tasks.\nWe conduct experiments on diverse tasks to demonstrate the effectiveness of PASTA. Specifically, we evaluate PASTA using GPT-J-6B (Wang & Komatsuzaki, 2021) and LLAMA-7B (Touvron et al., 2023) on tasks that span complex instructions, lengthy contexts, and knowledge conflicts within contexts. The results demonstrate that PASTA consistently provides a significant performance improvement over baseline prompting strategies. For example, PASTA achieve an average accuracy improvement of 22% over few-shot prompting for LLAMA-7B across 4 challenging tasks.",
+    "2_BACKGROUND": "Problem description In standard LLM prompting, we are given a pre-trained LLM and a text prompt x. In our setting, we additionally require (i) access to attention scores produced by attention modules in the LLMfoot_1 and (ii) we are provided a user-specified subset of the prompt x g ⊂ x to be emphasized.\nAs in the example in Figure 1 , x can be a string that ends in an instruction, such as Mary is a doctor but used to be a nurse...Return her occupation in json format. If a user emphasizes the instruction, x g can simply be the final instruction Return her occupation in json format. In evaluation datasets, we assume that the user-specified part of each example is already provided by enclosing at its both ends in some emphasis markers, like ' * ' marker in Markdown. Generating these well-structured data often incurs little overhead. For example, in the dataset tailored for evaluting model ability to follow user instruction, we can simply mark the final instruction for every example, which are fixed and shared across examples. When it comes to user-LLM interface, users can specify x g by enclosing it with the same emphasis markers. x g can be specified flexibly. Namely, it need not be a continuous span, and can be used to emphasize diverse information.",
+    "3_METHOD": {
+      "3.1_POST-HOC_ATTENTION_STEERING": "PASTA emphasizes the user-specified input subset by downweighting the attention scores of tokens that are not specified by the user. Specifically, given the index set of highlighted input spans as G, PASTA emphasizes these user-specified tokens by an attention projection T :\nEQUATION\nwhere 0 ≤ α < 1 is a scaling coefficient and G -= [n] -G is the index set of tokens that are not in G. The term C i = j∈G A ij + j∈G -αA ij normalizes the scores so that they sum to one. The attention steering (2) is conducted during the inference time and does not require any training.\n(2) steers the model attention by scaling down the scores of tokens that are not highlighted by the user.\nWhen the coefficient α is set very small, user-specified segments are highlighted given their increased attention scores after renormalization. Consequently, we can direct the model to concentrate more on the user-specified tokens, biasing the generation to align with the specified contents.\nPASTA scales down the attention scores of non-specified tokens by α. As renormalization is followed, it is equivalent to scaling up the attention scores of user-specified tokens by 1/α. The reason of selecting (2) is that it can be more numerically stable compared to scaling up scores. Alternatively, one can also scale the attention scores by adding a positive constant to the underlined tokens G.\nThe reason of we select multiplication in (2) instead of addition is that it preserves the difference on attention magnitude among the highlighted tokens. As such, the steering operation only adjusts overall attention scales of two groups of tokens. In contrast, addition by a large constant to the highlighted tokens results in their attention scores almost uniformly distributed, leading to unnecessary information loss and performance degeneration.",
+      "3.2_MULTI-TASK_MODEL_PROFILING": "Empirically, we find that applying attention steering in (2) to all attention heads performs worse than applying it only to specific heads (see Section 5.3). It is important to specify the correct attention heads, given that different heads serve distinctive roles in encoding semantic/syntactic information.\nTo this end, we propose a multi-task model profiling algorithm to identify the effective attention heads for steering. Specifically, given m tasks involving user emphases, we subsample a small training set\nD (i) (e.g., |D (i) | = 1000\n) from each task i. Then, we evaluate the performance of steering every individual attention head\n(l, h) (1 ≤ l ≤ L, 1 ≤ h ≤ H) on each small subset D (i) (1 ≤ i ≤ m).\nFor every task i, we rank all of heads according to their steering performance on D (i) and regard the ranking R (i) = [(l 1 , h 1 ), (l 2 , h 2 ), . . . ] as the profiling of task i. We then set the attention head set H for steering as the intersection of top-k performing heads, H = ∩ m i=1 R (i) 1:k (see Section 5.3 for alternative choices). Intuitively, we expect performance to improve as the number of tasks m increases.\nLike attention steering, model profiling requires only access to attention scores, in addition to its inputs and outputs (model weights and gradients are not required). Importantly, this process needs to be performed only once for a LLM, similar to finetuning. However, unlike finetuning, model steering does not modify model weights and, more importantly, generalizes to new tasks. The resulting head set H can be regarded as a model-level profile. Once it is determined, we can apply the attention steering on H to both existing tasks and unseen tasks to enhance model contextual understanding and benefit downstream performance.",
+      "_text": "PASTA (Algorithm 1) consists of two components: (i) post-hoc attention steering, which emphasizes the user-specified parts of the input during inference, see Section 3.1 and (ii) multi-task model profiling, which selects the effective attention heads for steering, see Section 3.2."
+    },
+    "5.1_MAIN_RESULT:_PASTA_IMPROVES_MODEL_GENERATION": "Tables 1 and 2 present the main results for PASTA applied to LLAMA-7B and GPT-J respectively. Few-shot prompting is the strongest baseline, and task-agnostic PASTA outperforms it on the main metric for each task for all settings except JSON Formatting with GPT-J. Multi-task PASTA outperforms all baselines across all settings.\nPASTA can improve LLM instruction following. The results from JSON Formatting and Pronouns Changing tasks indicate that, by highlighting the user instruction at the end of inputs, PASTA effectively steers models to focus on user intentions, thereby biasing their generation to fulfill specific requirements or formats. For example, while GPT-J only achieves 39.9% of its zero-shot generations complying the user requirement on the Pronouns Changing task, PASTA yields a remarkable 53% accuracy improvement by emphasizing the instruction. Moreover, PASTA achieves an impressive 96.64% format accuracy and 85.09% prediction accuracy when applied to LLAMA-7B on the JSON Formatting task. This performance exceeds that of few-shot prompting by 11%, even though few-shot prompting explicitly provides the model with correct JSON examples through additional demonstrations.\nTable 3 presents a few examples generated by LLAMA-7B when applying PASTA.\nPASTA can help models capture crucial contextual information. In the case of BiasBios and CounterFact tasks, we apply PASTA to emphasize specific context spans for LLMs. Consequently, the models are guided to pay close attention to the specific contextual information or new facts within contexts. The results from these two tasks illustrate that PASTA can direct the models to interpret the crucial information or resolve the knowledge conflicts within contexts, yielding significant improvement in prediction performance of both tasks. For example, PASTA achieves a prediction accuracy of 94.96% for GPT-J on the BiasBios task, which is 16.32% higher than the best baseline.\nTables 1 and 2 also suggest that marked prompting, a baseline that highlights specific texts akin to human writers, struggles to effectively convey emphasis to LLMs. One possible reason is that these emphasis markers rarely appear in the massive pre-training data. In contrast, few-shot prompting sometimes leads to improvements in model performance. However, a drawback of few-shot prompting is its instability, i.e. its performance exhibits high variance across different samples in the demonstration (See Appendix B). It is well-known that the the performance of LLMs can be sensitive to minor changes in prompts, such as rephrasing and reformatting, even when these prompts convey the same meaning (Reynolds & McDonell, 2021; Liu et al., 2021) . We find that PASTA can alleviate the sensitivity of model performance to varying prompts. Specifically, Table 4 evaluates the performance of LLAMA-7B and GPT-J on JSON Formatting and Pronouns Changing task given different instructions in the prompt template, all of which convey the same meaning (see precise prompts in Appendix A.1). The results show that zero-shot performance is sensitive to different prompts and can significantly deteriorate with poorly crafted templates. In contrast, PASTA consistently improves model performance over zero-shot prompting for all prompts, effectively mitigating sensitivity to variations in the prompts.",
+    "5.3_ANALYSIS_AND_ABLATIONS": "In this section, we investigate different hyperparameter choices and modeling decisions that affect the performance of PASTA.\nModel profiling Figure 2 presents the results on the importance of model profiling introduced in Section 3.2. We compare PASTA when steering the selected heads versus other reasonable choices: steering (i) all heads, (ii) entire layers, or (iii) individual heads on the JSON Formatting task (See\n1 4 8 12 16 20 24 28 32 Layer 0 25 50 75 100 F. Acc Zero-shot PASTA Steer all heads Steer entire layer Steer single head degrades performance compared to the baseline zero-shot performance (dashed black line). This is likely because steering all heads over-amplifies the user-specified information at the expense of other essential information required for effective generation and prediction. Interestingly, we find that the performance varies significantly when steering different layers (yellow) or heads (blue violin plot). As mentioned in Section 1, attention heads play distinct roles in encoding diverse semantic and syntactic information (Tenney et al., 2019) . When steering heads, which are appropriately involved in encoding of user-specified information, the model can be guided to capture and reinforce these specific signals. Conversely, modifying the attention of unrelated heads not only fails to emphasize the desired information but also interferes with their original functions, resulting in performance deterioration. Therefore, it is important to identify the effective heads through model profiling prior to applying the steering.\nVarying strategies for selecting heads during profiling. As described in Sec. 5.3, our model profiling selects the Intersection of the top-k performing heads to steer across multiple tasks. Alternatively, when evaluating on task j, we can select heads for steering with different strategies: (i) Task-specificsteer the top-k 2 performing heads of only the task j, i.e., R (j) 1:k2 ; or (ii) Union -the union of these heads across multiple tasks, i.e., ∪ m i=1 R (i) 1:k2 . Table 5 compares their performance. Using task-specific heads rather than intersection-selected heads sometimes yields improved performance, but requires selecting a different set of heads for each new task. Varying the number of heads to be steered. Figures 3a and 3b illustrate the performance of PASTA when steering different number of heads on two tasks. The results suggest that as more heads are included for steering, the model follows the user even more closely, achieving higher efficacy (JSON Format Acc. and Pron. Change Acc.). However, at some point, this it results in a decrease in the metrics reflecting the generation quality (JSON Pred. Acc and Fluency). Thus, there is a trade-off between emphasizing efficacy and generation quality. Overemphasizing can lead the model to focus solely on satisfying the user requirements and ignore the other parts. Therefore, we recommend applying PASTA to a moderate number of heads (typically 50 to 150), striking a balance between the efficacy and generation quality.\nVarying the scaling coefficient α. hyperparameter; in practice, we fix it as 0.01. Notice that setting α to zero should be avoided, as this leads to the complete removal of other crucial contexts at the steered heads, resulting in performance degeneration.",
+    "6_RELATED_WORK": "The primary method for controlling LLMs has been through prompting, often yielding impressive improvements in performance (Brown et al., 2020b; Liu et al., 2021; Wei et al., 2022) and spurring a line of work aiming to make prompting easier, e.g. (Strobelt et al., 2022; Bach et al., 2022; Shin et al., 2020; Deng et al., 2022; Singh et al., 2023b) . However, LLMs remain extremely sensitive to nuances in prompts (Webson & Pavlick, 2021; Lu et al., 2021) ; PASTA complements these approaches by making it easier for a user to specify a prompt in difficult scenarios.\nAnother line of work aims to make LLMs more amenable to prompting by modifying them during training. Most prominent among these approaches are instruction finetuning (Wei et al., 2021; Chung et al., 2022) , Reinforcement Learning from Human Feedback (Ziegler et al., 2019; Ouyang et al., 2022) , and other related methods, e.g. (Lee et al., 2023) . There are also a few methods for directly specifying which parts on an input are important during training, e.g. (Ross et al., 2017; Rieger et al., 2019; Schramowski et al., 2020; Krishna et al., 2023) . PASTA can be used in addition to these approaches to improve some aspects of model steerability (e.g. instruction following).\nPASTA is related to variety of methods for adapting to new tasks, including LoRA (Hu et al., 2021a) , AdaLoRA (Zhang et al., 2023) , QLoRA (Dettmers et al., 2023) , and TOAST (Shi et al., 2023b) . PASTA is also related to a variety of research on model editing, e.g. ROME (Meng et al., 2022a) , MEMIT (Meng et al., 2022b) , MEND (Mitchell et al., 2022) , and REMEDI (Hernandez et al., 2023) . Unlike these works, PASTA preserves an LLMs ability to transfer to new tasks using prompts and human-selected info, rather than using new labeled examples.\nFinally, PASTA is also motivated by works which have aimed to mechanistically understand attention scores (Zou et al., 2023) , e.g. by studying them through feature importance (Jain & Wallace, 2019; Wiegreffe & Pinter, 2019; Deb et al., 2023) , probing (Conneau et al., 2018; Liu & Avci, 2019) , visualization (Karpathy et al., 2015; Olah et al., 2017) , localizing knowledge (Meng et al., 2022a; Dai et al., 2021) , categorizing directions in representation space (Kim et al., 2017; Schwettmann et al., 2021) , or natural-language explanations (Bills et al., 2023; Singh et al., 2023a) .",
+    "7_CONCLUSION": "In this study, we propose PASTA, a novel approach aimed at enabling LLMs to move beyond the limitations of plain text and effectively perceive user guidance embodied as highlighted parts of prompts. By making precise adjustments to attention scores in selected heads, PASTA directs the model's focus to the relevant context, mirroring the way humans benefit from textual cues. Unlike traditional fine-tuning methods, PASTA is applied at inference time and requires neither parameter updates nor gradient computation; PASTA requires only selecting which attention heads to apply the re-weighting to, a one-time profiling operation for a LLM. Experimental results show that PASTA can significantly improve model performance on a variety of tasks. In the future, we plan to integrate PASTA with various other methods, such as few-shot in-context learning, aiming to highlight effective examples to enhance its stability."
+  },
+  "references": [
+    {
+      "id": "BIBREF0",
+      "title": "Promptsource: An integrated development environment and repository for natural language prompts",
+      "authors": [
+        {
+          "first": "H",
+          "middle": [],
+          "last": "Stephen",
+          "suffix": ""
+        },
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Bach",
+          "suffix": ""
+        },
+        {
+          "first": "Zheng-Xin",
+          "middle": [],
+          "last": "Sanh",
+          "suffix": ""
+        },
+        {
+          "first": "Albert",
+          "middle": [],
+          "last": "Yong",
+          "suffix": ""
+        },
+        {
+          "first": "Colin",
+          "middle": [],
+          "last": "Webson",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Raffel",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Nihal",
+          "suffix": ""
+        },
+        {
+          "first": "Abheesht",
+          "middle": [],
+          "last": "Nayak",
+          "suffix": ""
+        },
+        {
+          "first": "Taewoon",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "M",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Thibault",
+          "middle": [],
+          "last": "Saiful Bari",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Fevry",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF1",
+      "title": "Language models can explain neurons in language models",
+      "authors": [
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Bills",
+          "suffix": ""
+        },
+        {
+          "first": "Nick",
+          "middle": [],
+          "last": "Cammarata",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Mossing",
+          "suffix": ""
+        },
+        {
+          "first": "Henk",
+          "middle": [],
+          "last": "Tillman",
+          "suffix": ""
+        },
+        {
+          "first": "Leo",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        },
+        {
+          "first": "Gabriel",
+          "middle": [],
+          "last": "Goh",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Jan",
+          "middle": [],
+          "last": "Leike",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Saunders",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF2",
+      "title": "Language models are few-shot learners",
+      "authors": [
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Nick",
+          "middle": [],
+          "last": "Ryder",
+          "suffix": ""
+        },
+        {
+          "first": "Melanie",
+          "middle": [],
+          "last": "Subbiah",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [
+            "D"
+          ],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Arvind",
+          "middle": [],
+          "last": "Neelakantan",
+          "suffix": ""
+        },
+        {
+          "first": "Pranav",
+          "middle": [],
+          "last": "Shyam",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Ariel",
+          "middle": [],
+          "last": "Herbert-Voss",
+          "suffix": ""
+        },
+        {
+          "first": "Gretchen",
+          "middle": [],
+          "last": "Krueger",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Henighan",
+          "suffix": ""
+        },
+        {
+          "first": "Rewon",
+          "middle": [],
+          "last": "Child",
+          "suffix": ""
+        },
+        {
+          "first": "Aditya",
+          "middle": [],
+          "last": "Ramesh",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [],
+          "last": "Ziegler",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Clemens",
+          "middle": [],
+          "last": "Winter",
+          "suffix": ""
+        },
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Hesse",
+          "suffix": ""
+        },
+        {
+          "first": "Mark",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Sigler",
+          "suffix": ""
+        },
+        {
+          "first": "Mateusz",
+          "middle": [],
+          "last": "Litwin",
+          "suffix": ""
+        },
+        {
+          "first": "Scott",
+          "middle": [],
+          "last": "Gray",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Chess",
+          "suffix": ""
+        },
+        {
+          "first": "Jack",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [],
+          "last": "Berner",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Mccandlish",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Ilya",
+          "middle": [],
+          "last": "Sutskever",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF4",
+      "title": "Language models are few-shot learners",
+      "authors": [
+        {
+          "first": "Tom",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Mann",
+          "suffix": ""
+        },
+        {
+          "first": "Nick",
+          "middle": [],
+          "last": "Ryder",
+          "suffix": ""
+        },
+        {
+          "first": "Melanie",
+          "middle": [],
+          "last": "Subbiah",
+          "suffix": ""
+        },
+        {
+          "first": "Jared",
+          "middle": [
+            "D"
+          ],
+          "last": "Kaplan",
+          "suffix": ""
+        },
+        {
+          "first": "Prafulla",
+          "middle": [],
+          "last": "Dhariwal",
+          "suffix": ""
+        },
+        {
+          "first": "Arvind",
+          "middle": [],
+          "last": "Neelakantan",
+          "suffix": ""
+        },
+        {
+          "first": "Pranav",
+          "middle": [],
+          "last": "Shyam",
+          "suffix": ""
+        },
+        {
+          "first": "Girish",
+          "middle": [],
+          "last": "Sastry",
+          "suffix": ""
+        },
+        {
+          "first": "Amanda",
+          "middle": [],
+          "last": "Askell",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Advances in neural information processing systems"
+    },
+    {
+      "id": "BIBREF5",
+      "title": "Scaling instruction-finetuned language models",
+      "authors": [
+        {
+          "first": "Chung",
+          "middle": [],
+          "last": "Hyung Won",
+          "suffix": ""
+        },
+        {
+          "first": "Le",
+          "middle": [],
+          "last": "Hou",
+          "suffix": ""
+        },
+        {
+          "first": "Shayne",
+          "middle": [],
+          "last": "Longpre",
+          "suffix": ""
+        },
+        {
+          "first": "Barret",
+          "middle": [],
+          "last": "Zoph",
+          "suffix": ""
+        },
+        {
+          "first": "Yi",
+          "middle": [],
+          "last": "Tay",
+          "suffix": ""
+        },
+        {
+          "first": "William",
+          "middle": [],
+          "last": "Fedus",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Xuezhi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Mostafa",
+          "middle": [],
+          "last": "Dehghani",
+          "suffix": ""
+        },
+        {
+          "first": "Siddhartha",
+          "middle": [],
+          "last": "Brahma",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF6",
+      "title": "What does BERT look at? an analysis of BERT's attention",
+      "authors": [
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Clark",
+          "suffix": ""
+        },
+        {
+          "first": "Urvashi",
+          "middle": [],
+          "last": "Khandelwal",
+          "suffix": ""
+        },
+        {
+          "first": "Omer",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 2019 ACL Workshop BlackboxNLP: Analyzing and Interpreting Neural Networks for NLP"
+    },
+    {
+      "id": "BIBREF7",
+      "title": "What you can cram into a single vector: Probing sentence embeddings for linguistic properties",
+      "authors": [
+        {
+          "first": "Alexis",
+          "middle": [],
+          "last": "Conneau",
+          "suffix": ""
+        },
+        {
+          "first": "German",
+          "middle": [],
+          "last": "Kruszewski",
+          "suffix": ""
+        },
+        {
+          "first": "Guillaume",
+          "middle": [],
+          "last": "Lample",
+          "suffix": ""
+        },
+        {
+          "first": "Loïc",
+          "middle": [],
+          "last": "Barrault",
+          "suffix": ""
+        },
+        {
+          "first": "Marco",
+          "middle": [],
+          "last": "Baroni",
+          "suffix": ""
+        }
+      ],
+      "year": 2018,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF8",
+      "title": "Knowledge neurons in pretrained transformers",
+      "authors": [
+        {
+          "first": "Damai",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Yaru",
+          "middle": [],
+          "last": "Hao",
+          "suffix": ""
+        },
+        {
+          "first": "Zhifang",
+          "middle": [],
+          "last": "Sui",
+          "suffix": ""
+        },
+        {
+          "first": "Baobao",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Furu",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF9",
+      "title": "Bias in bios: A case study of semantic representation bias in a high-stakes setting",
+      "authors": [
+        {
+          "first": "Maria",
+          "middle": [],
+          "last": "De-Arteaga",
+          "suffix": ""
+        },
+        {
+          "first": "Alexey",
+          "middle": [],
+          "last": "Romanov",
+          "suffix": ""
+        },
+        {
+          "first": "Hanna",
+          "middle": [],
+          "last": "Wallach",
+          "suffix": ""
+        },
+        {
+          "first": "Jennifer",
+          "middle": [],
+          "last": "Chayes",
+          "suffix": ""
+        },
+        {
+          "first": "Christian",
+          "middle": [],
+          "last": "Borgs",
+          "suffix": ""
+        },
+        {
+          "first": "Alexandra",
+          "middle": [],
+          "last": "Chouldechova",
+          "suffix": ""
+        },
+        {
+          "first": "Sahin",
+          "middle": [],
+          "last": "Geyik",
+          "suffix": ""
+        },
+        {
+          "first": "Krishnaram",
+          "middle": [],
+          "last": "Kenthapadi",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Tauman",
+          "suffix": ""
+        },
+        {
+          "first": "Kalai",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "proceedings of the Conference on Fairness, Accountability, and Transparency"
+    },
+    {
+      "id": "BIBREF10",
+      "title": "Atman: Understanding transformer predictions through memory efficient attention manipulation",
+      "authors": [
+        {
+          "first": "Mayukh",
+          "middle": [],
+          "last": "Deb",
+          "suffix": ""
+        },
+        {
+          "first": "Björn",
+          "middle": [],
+          "last": "Deiseroth",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Weinbach",
+          "suffix": ""
+        },
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Schramowski",
+          "suffix": ""
+        },
+        {
+          "first": "Kristian",
+          "middle": [],
+          "last": "Kersting",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF11",
+      "title": "Rlprompt: Optimizing discrete text prompts with reinforcement learning",
+      "authors": [
+        {
+          "first": "Mingkai",
+          "middle": [],
+          "last": "Deng",
+          "suffix": ""
+        },
+        {
+          "first": "Jianyu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Cheng-Ping",
+          "middle": [],
+          "last": "Hsieh",
+          "suffix": ""
+        },
+        {
+          "first": "Yihan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Han",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Tianmin",
+          "middle": [],
+          "last": "Shu",
+          "suffix": ""
+        },
+        {
+          "first": "Meng",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [
+            "P"
+          ],
+          "last": "Xing",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiting",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF12",
+      "title": "Qlora: Efficient finetuning of quantized llms",
+      "authors": [
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Dettmers",
+          "suffix": ""
+        },
+        {
+          "first": "Artidoro",
+          "middle": [],
+          "last": "Pagnoni",
+          "suffix": ""
+        },
+        {
+          "first": "Ari",
+          "middle": [],
+          "last": "Holtzman",
+          "suffix": ""
+        },
+        {
+          "first": "Luke",
+          "middle": [],
+          "last": "Zettlemoyer",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF13",
+      "title": "A survey on in-context learning",
+      "authors": [
+        {
+          "first": "Qingxiu",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Damai",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "Ce",
+          "middle": [],
+          "last": "Zheng",
+          "suffix": ""
+        },
+        {
+          "first": "Zhiyong",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Baobao",
+          "middle": [],
+          "last": "Chang",
+          "suffix": ""
+        },
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Sun",
+          "suffix": ""
+        },
+        {
+          "first": "Jingjing",
+          "middle": [],
+          "last": "Xu",
+          "suffix": ""
+        },
+        {
+          "first": "Lei",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Zhifang",
+          "middle": [],
+          "last": "Sui",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF14",
+      "title": "Inspecting and editing knowledge representations in language models",
+      "authors": [
+        {
+          "first": "Evan",
+          "middle": [],
+          "last": "Hernandez",
+          "suffix": ""
+        },
+        {
+          "first": "Belinda",
+          "middle": [
+            "Z"
+          ],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Andreas",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF15",
+      "title": "Lora: Low-rank adaptation of large language models",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [],
+          "last": "Edward",
+          "suffix": ""
+        },
+        {
+          "first": "Yelong",
+          "middle": [],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Zeyuan",
+          "middle": [],
+          "last": "Wallis",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhi",
+          "middle": [],
+          "last": "Allen-Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Shean",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Weizhu",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF16",
+      "title": "Lora: Low-rank adaptation of large language models",
+      "authors": [
+        {
+          "first": "J",
+          "middle": [
+            "Edward"
+          ],
+          "last": "Hu",
+          "suffix": ""
+        },
+        {
+          "first": "Yelong",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Wallis",
+          "suffix": ""
+        },
+        {
+          "first": "Zeyuan",
+          "middle": [],
+          "last": "Allen-Zhu",
+          "suffix": ""
+        },
+        {
+          "first": "Yuanzhi",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Shean",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Weizhu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF17",
+      "title": "Attention is not explanation",
+      "authors": [
+        {
+          "first": "Sarthak",
+          "middle": [],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Byron",
+          "middle": [
+            "C"
+          ],
+          "last": "Wallace",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF18",
+      "title": "Visualizing and understanding recurrent networks",
+      "authors": [
+        {
+          "first": "Andrej",
+          "middle": [],
+          "last": "Karpathy",
+          "suffix": ""
+        },
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Johnson",
+          "suffix": ""
+        },
+        {
+          "first": "Li",
+          "middle": [],
+          "last": "Fei-Fei",
+          "suffix": ""
+        }
+      ],
+      "year": 2015,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF19",
+      "title": "Interpretability beyond feature attribution: Quantitative testing with concept activation vectors",
+      "authors": [
+        {
+          "first": "Been",
+          "middle": [],
+          "last": "Kim",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Wattenberg",
+          "suffix": ""
+        },
+        {
+          "first": "Justin",
+          "middle": [],
+          "last": "Gilmer",
+          "suffix": ""
+        },
+        {
+          "first": "Carrie",
+          "middle": [],
+          "last": "Cai",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Wexler",
+          "suffix": ""
+        },
+        {
+          "first": "Fernanda",
+          "middle": [],
+          "last": "Viegas",
+          "suffix": ""
+        },
+        {
+          "first": "Rory",
+          "middle": [],
+          "last": "Sayres",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF20",
+      "title": "Post hoc explanations of language models can improve language models",
+      "authors": [
+        {
+          "first": "Satyapriya",
+          "middle": [],
+          "last": "Krishna",
+          "suffix": ""
+        },
+        {
+          "first": "Jiaqi",
+          "middle": [],
+          "last": "Ma",
+          "suffix": ""
+        },
+        {
+          "first": "Dylan",
+          "middle": [],
+          "last": "Slack",
+          "suffix": ""
+        },
+        {
+          "first": "Asma",
+          "middle": [],
+          "last": "Ghandeharioun",
+          "suffix": ""
+        },
+        {
+          "first": "Sameer",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "Himabindu",
+          "middle": [],
+          "last": "Lakkaraju",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF21",
+      "title": "Rlaif: Scaling reinforcement learning from human feedback with ai feedback",
+      "authors": [
+        {
+          "first": "Harrison",
+          "middle": [],
+          "last": "Lee",
+          "suffix": ""
+        },
+        {
+          "first": "Samrat",
+          "middle": [],
+          "last": "Phatale",
+          "suffix": ""
+        },
+        {
+          "first": "Hassan",
+          "middle": [],
+          "last": "Mansoor",
+          "suffix": ""
+        },
+        {
+          "first": "Kellie",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Mesnard",
+          "suffix": ""
+        },
+        {
+          "first": "Colton",
+          "middle": [],
+          "last": "Bishop",
+          "suffix": ""
+        },
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Carbune",
+          "suffix": ""
+        },
+        {
+          "first": "Abhinav",
+          "middle": [],
+          "last": "Rastogi",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF22",
+      "title": "Incorporating priors with feature attribution on text classification",
+      "authors": [
+        {
+          "first": "Frederick",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Besim",
+          "middle": [],
+          "last": "Avci",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF23",
+      "title": "Lost in the middle: How language models use long contexts",
+      "authors": [
+        {
+          "first": "Nelson",
+          "middle": [
+            "F"
+          ],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [],
+          "last": "Hewitt",
+          "suffix": ""
+        },
+        {
+          "first": "Ashwin",
+          "middle": [],
+          "last": "Paranjape",
+          "suffix": ""
+        },
+        {
+          "first": "Michele",
+          "middle": [],
+          "last": "Bevilacqua",
+          "suffix": ""
+        },
+        {
+          "first": "Fabio",
+          "middle": [],
+          "last": "Petroni",
+          "suffix": ""
+        },
+        {
+          "first": "Percy",
+          "middle": [],
+          "last": "Liang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF24",
+      "title": "Pre-train, prompt, and predict: A systematic survey of prompting methods in natural language processing",
+      "authors": [
+        {
+          "first": "Pengfei",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Weizhe",
+          "middle": [],
+          "last": "Yuan",
+          "suffix": ""
+        },
+        {
+          "first": "Jinlan",
+          "middle": [],
+          "last": "Fu",
+          "suffix": ""
+        },
+        {
+          "first": "Zhengbao",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Hiroaki",
+          "middle": [],
+          "last": "Hayashi",
+          "suffix": ""
+        },
+        {
+          "first": "Graham",
+          "middle": [],
+          "last": "Neubig",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF25",
+      "title": "Fantastically ordered prompts and where to find them: Overcoming few-shot prompt order sensitivity",
+      "authors": [
+        {
+          "first": "Yao",
+          "middle": [],
+          "last": "Lu",
+          "suffix": ""
+        },
+        {
+          "first": "Max",
+          "middle": [],
+          "last": "Bartolo",
+          "suffix": ""
+        },
+        {
+          "first": "Alastair",
+          "middle": [],
+          "last": "Moore",
+          "suffix": ""
+        },
+        {
+          "first": "Sebastian",
+          "middle": [],
+          "last": "Riedel",
+          "suffix": ""
+        },
+        {
+          "first": "Pontus",
+          "middle": [],
+          "last": "Stenetorp",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF26",
+      "title": "Locating and editing factual associations in gpt",
+      "authors": [
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Bau",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Andonian",
+          "suffix": ""
+        },
+        {
+          "first": "Yonatan",
+          "middle": [],
+          "last": "Belinkov",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF27",
+      "title": "Mass-editing memory in a transformer",
+      "authors": [
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Meng",
+          "suffix": ""
+        },
+        {
+          "first": "Sen",
+          "middle": [],
+          "last": "Arnab",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Sharma",
+          "suffix": ""
+        },
+        {
+          "first": "Yonatan",
+          "middle": [],
+          "last": "Andonian",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Belinkov",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Bau",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF28",
+      "title": "Are sixteen heads really better than one?",
+      "authors": [
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Michel",
+          "suffix": ""
+        },
+        {
+          "first": "Omer",
+          "middle": [],
+          "last": "Levy",
+          "suffix": ""
+        },
+        {
+          "first": "Graham",
+          "middle": [],
+          "last": "Neubig",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF30",
+      "title": "Fast model editing at scale",
+      "authors": [
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Mitchell",
+          "suffix": ""
+        },
+        {
+          "first": "Charles",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Antoine",
+          "middle": [],
+          "last": "Bosselut",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Finn",
+          "suffix": ""
+        },
+        {
+          "first": "Christopher",
+          "middle": [
+            "D"
+          ],
+          "last": "Manning",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF31",
+      "title": "Feature visualization",
+      "authors": [
+        {
+          "first": "Chris",
+          "middle": [],
+          "last": "Olah",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Mordvintsev",
+          "suffix": ""
+        },
+        {
+          "first": "Ludwig",
+          "middle": [],
+          "last": "Schubert",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": "Distill"
+    },
+    {
+      "id": "BIBREF33",
+      "title": "Training language models to follow instructions with human feedback",
+      "authors": [
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Xu",
+          "middle": [],
+          "last": "Jiang",
+          "suffix": ""
+        },
+        {
+          "first": "Diogo",
+          "middle": [],
+          "last": "Almeida",
+          "suffix": ""
+        },
+        {
+          "first": "Carroll",
+          "middle": [],
+          "last": "Wainwright",
+          "suffix": ""
+        },
+        {
+          "first": "Pamela",
+          "middle": [],
+          "last": "Mishkin",
+          "suffix": ""
+        },
+        {
+          "first": "Chong",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Sandhini",
+          "middle": [],
+          "last": "Agarwal",
+          "suffix": ""
+        },
+        {
+          "first": "Katarina",
+          "middle": [],
+          "last": "Slama",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Ray",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF34",
+      "title": "Pytorch: An imperative style, high-performance deep learning library",
+      "authors": [
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Paszke",
+          "suffix": ""
+        },
+        {
+          "first": "Sam",
+          "middle": [],
+          "last": "Gross",
+          "suffix": ""
+        },
+        {
+          "first": "Francisco",
+          "middle": [],
+          "last": "Massa",
+          "suffix": ""
+        },
+        {
+          "first": "Adam",
+          "middle": [],
+          "last": "Lerer",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Bradbury",
+          "suffix": ""
+        },
+        {
+          "first": "Gregory",
+          "middle": [],
+          "last": "Chanan",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Killeen",
+          "suffix": ""
+        },
+        {
+          "first": "Zeming",
+          "middle": [],
+          "last": "Lin",
+          "suffix": ""
+        },
+        {
+          "first": "Natalia",
+          "middle": [],
+          "last": "Gimelshein",
+          "suffix": ""
+        },
+        {
+          "first": "Luca",
+          "middle": [],
+          "last": "Antiga",
+          "suffix": ""
+        },
+        {
+          "first": "Alban",
+          "middle": [],
+          "last": "Desmaison",
+          "suffix": ""
+        },
+        {
+          "first": "Andreas",
+          "middle": [],
+          "last": "Köpf",
+          "suffix": ""
+        },
+        {
+          "first": "Edward",
+          "middle": [],
+          "last": "Yang",
+          "suffix": ""
+        },
+        {
+          "first": "Zachary",
+          "middle": [],
+          "last": "Devito",
+          "suffix": ""
+        },
+        {
+          "first": "Martin",
+          "middle": [],
+          "last": "Raison",
+          "suffix": ""
+        },
+        {
+          "first": "Alykhan",
+          "middle": [],
+          "last": "Tejani",
+          "suffix": ""
+        },
+        {
+          "first": "Sasank",
+          "middle": [],
+          "last": "Chilamkurthy",
+          "suffix": ""
+        },
+        {
+          "first": "Benoit",
+          "middle": [],
+          "last": "Steiner",
+          "suffix": ""
+        },
+        {
+          "first": "Lu",
+          "middle": [],
+          "last": "Fang",
+          "suffix": ""
+        },
+        {
+          "first": "Junjie",
+          "middle": [],
+          "last": "Bai",
+          "suffix": ""
+        },
+        {
+          "first": "Soumith",
+          "middle": [],
+          "last": "Chintala",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Advances in Neural Information Processing Systems 32: Annual Conference on Neural Information Processing Systems 2019, NeurIPS 2019"
+    },
+    {
+      "id": "BIBREF35",
+      "title": "Prompt programming for large language models: Beyond the few-shot paradigm",
+      "authors": [
+        {
+          "first": "Laria",
+          "middle": [],
+          "last": "Reynolds",
+          "suffix": ""
+        },
+        {
+          "first": "Kyle",
+          "middle": [],
+          "last": "Mcdonell",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF36",
+      "title": "Interpretations are useful: penalizing explanations to align neural networks with prior knowledge",
+      "authors": [
+        {
+          "first": "Laura",
+          "middle": [],
+          "last": "Rieger",
+          "suffix": ""
+        },
+        {
+          "first": "Chandan",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Murdoch",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF37",
+      "title": "Right for the right reasons: Training differentiable models by constraining their explanations",
+      "authors": [
+        {
+          "first": "Andrew",
+          "middle": [],
+          "last": "Slavin",
+          "suffix": ""
+        },
+        {
+          "first": "Ross",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "C"
+          ],
+          "last": "Hughes",
+          "suffix": ""
+        },
+        {
+          "first": "Finale",
+          "middle": [],
+          "last": "Doshi-Velez",
+          "suffix": ""
+        }
+      ],
+      "year": 2017,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF38",
+      "title": "Making deep neural networks right for the right scientific reasons by interacting with their explanations",
+      "authors": [
+        {
+          "first": "Patrick",
+          "middle": [],
+          "last": "Schramowski",
+          "suffix": ""
+        },
+        {
+          "first": "Wolfgang",
+          "middle": [],
+          "last": "Stammer",
+          "suffix": ""
+        },
+        {
+          "first": "Stefano",
+          "middle": [],
+          "last": "Teso",
+          "suffix": ""
+        },
+        {
+          "first": "Anna",
+          "middle": [],
+          "last": "Brugger",
+          "suffix": ""
+        },
+        {
+          "first": "Franziska",
+          "middle": [],
+          "last": "Herbert",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoting",
+          "middle": [],
+          "last": "Shao",
+          "suffix": ""
+        },
+        {
+          "first": "Hans-Georg",
+          "middle": [],
+          "last": "Luigs",
+          "suffix": ""
+        },
+        {
+          "first": "Anne-Katrin",
+          "middle": [],
+          "last": "Mahlein",
+          "suffix": ""
+        },
+        {
+          "first": "Kristian",
+          "middle": [],
+          "last": "Kersting",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": "Nature Machine Intelligence"
+    },
+    {
+      "id": "BIBREF39",
+      "title": "Toward a visual concept vocabulary for gan latent space",
+      "authors": [
+        {
+          "first": "Sarah",
+          "middle": [],
+          "last": "Schwettmann",
+          "suffix": ""
+        },
+        {
+          "first": "Evan",
+          "middle": [],
+          "last": "Hernandez",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Bau",
+          "suffix": ""
+        },
+        {
+          "first": "Samuel",
+          "middle": [],
+          "last": "Klein",
+          "suffix": ""
+        },
+        {
+          "first": "Jacob",
+          "middle": [],
+          "last": "Andreas",
+          "suffix": ""
+        },
+        {
+          "first": "Antonio",
+          "middle": [],
+          "last": "Torralba",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": "Proceedings of the IEEE/CVF International Conference on Computer Vision"
+    },
+    {
+      "id": "BIBREF40",
+      "title": "Large language model alignment: A survey",
+      "authors": [
+        {
+          "first": "Tianhao",
+          "middle": [],
+          "last": "Shen",
+          "suffix": ""
+        },
+        {
+          "first": "Renren",
+          "middle": [],
+          "last": "Jin",
+          "suffix": ""
+        },
+        {
+          "first": "Yufei",
+          "middle": [],
+          "last": "Huang",
+          "suffix": ""
+        },
+        {
+          "first": "Chuang",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Weilong",
+          "middle": [],
+          "last": "Dong",
+          "suffix": ""
+        },
+        {
+          "first": "Zishan",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Xinwei",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Yan",
+          "middle": [],
+          "last": "Liu",
+          "suffix": ""
+        },
+        {
+          "first": "Deyi",
+          "middle": [],
+          "last": "Xiong",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF41",
+      "title": "Toast: Transfer learning via attention steering",
+      "authors": [
+        {
+          "first": "Baifeng",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Siyu",
+          "middle": [],
+          "last": "Gai",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Darrell",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF42",
+      "title": "Refocusing is key to transfer learning",
+      "authors": [
+        {
+          "first": "Baifeng",
+          "middle": [],
+          "last": "Shi",
+          "suffix": ""
+        },
+        {
+          "first": "Siyu",
+          "middle": [],
+          "last": "Gai",
+          "suffix": ""
+        },
+        {
+          "first": "Trevor",
+          "middle": [],
+          "last": "Darrell",
+          "suffix": ""
+        },
+        {
+          "first": "Xin",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF43",
+      "title": "Autoprompt: Eliciting knowledge from language models with automatically generated prompts",
+      "authors": [
+        {
+          "first": "Taylor",
+          "middle": [],
+          "last": "Shin",
+          "suffix": ""
+        },
+        {
+          "first": "Yasaman",
+          "middle": [],
+          "last": "Razeghi",
+          "suffix": ""
+        },
+        {
+          "first": "Robert",
+          "middle": [
+            "L"
+          ],
+          "last": "Logan",
+          "suffix": ""
+        },
+        {
+          "first": "I",
+          "middle": [
+            "V"
+          ],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Eric",
+          "middle": [],
+          "last": "Wallace",
+          "suffix": ""
+        },
+        {
+          "first": "Sameer",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF44",
+      "title": "Explaining black box text modules in natural language with language models",
+      "authors": [
+        {
+          "first": "Chandan",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "R",
+          "middle": [],
+          "last": "Aliyah",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Hsu",
+          "suffix": ""
+        },
+        {
+          "first": "Shailee",
+          "middle": [],
+          "last": "Antonello",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [
+            "G"
+          ],
+          "last": "Jain",
+          "suffix": ""
+        },
+        {
+          "first": "Bin",
+          "middle": [],
+          "last": "Huth",
+          "suffix": ""
+        },
+        {
+          "first": "Jianfeng",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF45",
+      "title": "Explaining patterns in data with language models via interpretable autoprompting",
+      "authors": [
+        {
+          "first": "Chandan",
+          "middle": [],
+          "last": "Singh",
+          "suffix": ""
+        },
+        {
+          "first": "John",
+          "middle": [
+            "X"
+          ],
+          "last": "Morris",
+          "suffix": ""
+        },
+        {
+          "first": "Jyoti",
+          "middle": [],
+          "last": "Aneja",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [
+            "M"
+          ],
+          "last": "Rush",
+          "suffix": ""
+        },
+        {
+          "first": "Jianfeng",
+          "middle": [],
+          "last": "Gao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF46",
+      "title": "Learning to summarize from human feedback",
+      "authors": [
+        {
+          "first": "Nisan",
+          "middle": [],
+          "last": "Stiennon",
+          "suffix": ""
+        },
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Ouyang",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Daniel",
+          "middle": [
+            "M"
+          ],
+          "last": "Ziegler",
+          "suffix": ""
+        },
+        {
+          "first": "Ryan",
+          "middle": [
+            "J"
+          ],
+          "last": "Lowe",
+          "suffix": ""
+        },
+        {
+          "first": "Chelsea",
+          "middle": [],
+          "last": "Voss",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Christiano",
+          "suffix": ""
+        }
+      ],
+      "year": 2020,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF47",
+      "title": "Interactive and visual prompt engineering for ad-hoc task adaptation with large language models",
+      "authors": [
+        {
+          "first": "Hendrik",
+          "middle": [],
+          "last": "Strobelt",
+          "suffix": ""
+        },
+        {
+          "first": "Albert",
+          "middle": [],
+          "last": "Webson",
+          "suffix": ""
+        },
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Sanh",
+          "suffix": ""
+        },
+        {
+          "first": "Benjamin",
+          "middle": [],
+          "last": "Hoover",
+          "suffix": ""
+        },
+        {
+          "first": "Johanna",
+          "middle": [],
+          "last": "Beyer",
+          "suffix": ""
+        },
+        {
+          "first": "Hanspeter",
+          "middle": [],
+          "last": "Pfister",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [
+            "M"
+          ],
+          "last": "Rush",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF48",
+      "title": "BERT rediscovers the classical NLP pipeline",
+      "authors": [
+        {
+          "first": "Ian",
+          "middle": [],
+          "last": "Tenney",
+          "suffix": ""
+        },
+        {
+          "first": "Dipanjan",
+          "middle": [],
+          "last": "Das",
+          "suffix": ""
+        },
+        {
+          "first": "Ellie",
+          "middle": [],
+          "last": "Pavlick",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": "Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics"
+    },
+    {
+      "id": "BIBREF49",
+      "title": "Llama 2: Open foundation and fine-tuned chat models",
+      "authors": [
+        {
+          "first": "Hugo",
+          "middle": [],
+          "last": "Touvron",
+          "suffix": ""
+        },
+        {
+          "first": "Louis",
+          "middle": [],
+          "last": "Martin",
+          "suffix": ""
+        },
+        {
+          "first": "Kevin",
+          "middle": [],
+          "last": "Stone",
+          "suffix": ""
+        },
+        {
+          "first": "Peter",
+          "middle": [],
+          "last": "Albert",
+          "suffix": ""
+        },
+        {
+          "first": "Amjad",
+          "middle": [],
+          "last": "Almahairi",
+          "suffix": ""
+        },
+        {
+          "first": "Yasmine",
+          "middle": [],
+          "last": "Babaei",
+          "suffix": ""
+        },
+        {
+          "first": "Nikolay",
+          "middle": [],
+          "last": "Bashlykov",
+          "suffix": ""
+        },
+        {
+          "first": "Soumya",
+          "middle": [],
+          "last": "Batra",
+          "suffix": ""
+        },
+        {
+          "first": "Prajjwal",
+          "middle": [],
+          "last": "Bhargava",
+          "suffix": ""
+        },
+        {
+          "first": "Shruti",
+          "middle": [],
+          "last": "Bhosale",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF50",
+      "title": "Attention is all you need",
+      "authors": [
+        {
+          "first": "Ashish",
+          "middle": [],
+          "last": "Vaswani",
+          "suffix": ""
+        },
+        {
+          "first": "Noam",
+          "middle": [],
+          "last": "Shazeer",
+          "suffix": ""
+        },
+        {
+          "first": "Niki",
+          "middle": [],
+          "last": "Parmar",
+          "suffix": ""
+        },
+        {
+          "first": "Jakob",
+          "middle": [],
+          "last": "Uszkoreit",
+          "suffix": ""
+        },
+        {
+          "first": "Llion",
+          "middle": [],
+          "last": "Jones",
+          "suffix": ""
+        },
+        {
+          "first": "Aidan",
+          "middle": [
+            "N"
+          ],
+          "last": "Gomez",
+          "suffix": ""
+        },
+        {
+          "first": "Ł Ukasz",
+          "middle": [],
+          "last": "Kaiser",
+          "suffix": ""
+        },
+        {
+          "first": "Illia",
+          "middle": [],
+          "last": "Polosukhin",
+          "suffix": ""
+        }
+      ],
+      "year": null,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF52",
+      "title": "Analyzing multi-head self-attention: Specialized heads do the heavy lifting, the rest can be pruned",
+      "authors": [
+        {
+          "first": "Elena",
+          "middle": [],
+          "last": "Voita",
+          "suffix": ""
+        },
+        {
+          "first": "David",
+          "middle": [],
+          "last": "Talbot",
+          "suffix": ""
+        },
+        {
+          "first": "Fedor",
+          "middle": [],
+          "last": "Moiseev",
+          "suffix": ""
+        },
+        {
+          "first": "Rico",
+          "middle": [],
+          "last": "Sennrich",
+          "suffix": ""
+        },
+        {
+          "first": "Ivan",
+          "middle": [],
+          "last": "Titov",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF53",
+      "title": "GPT-J-6B: A 6 Billion Parameter Autoregressive Language Model",
+      "authors": [
+        {
+          "first": "Ben",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Aran",
+          "middle": [],
+          "last": "Komatsuzaki",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF54",
+      "title": "Do prompt-based models really understand the meaning of their prompts",
+      "authors": [
+        {
+          "first": "Albert",
+          "middle": [],
+          "last": "Webson",
+          "suffix": ""
+        },
+        {
+          "first": "Ellie",
+          "middle": [],
+          "last": "Pavlick",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF55",
+      "title": "Finetuned language models are zero-shot learners",
+      "authors": [
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Maarten",
+          "middle": [],
+          "last": "Bosma",
+          "suffix": ""
+        },
+        {
+          "first": "Y",
+          "middle": [],
+          "last": "Vincent",
+          "suffix": ""
+        },
+        {
+          "first": "Kelvin",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        },
+        {
+          "first": "Adams",
+          "middle": [
+            "Wei"
+          ],
+          "last": "Guu",
+          "suffix": ""
+        },
+        {
+          "first": "Brian",
+          "middle": [],
+          "last": "Yu",
+          "suffix": ""
+        },
+        {
+          "first": "Nan",
+          "middle": [],
+          "last": "Lester",
+          "suffix": ""
+        },
+        {
+          "first": "Andrew",
+          "middle": [
+            "M"
+          ],
+          "last": "Du",
+          "suffix": ""
+        },
+        {
+          "first": "Quoc V",
+          "middle": [],
+          "last": "Dai",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        }
+      ],
+      "year": 2021,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF56",
+      "title": "Chain-of-thought prompting elicits reasoning in large language models",
+      "authors": [
+        {
+          "first": "Jason",
+          "middle": [],
+          "last": "Wei",
+          "suffix": ""
+        },
+        {
+          "first": "Xuezhi",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Dale",
+          "middle": [],
+          "last": "Schuurmans",
+          "suffix": ""
+        },
+        {
+          "first": "Maarten",
+          "middle": [],
+          "last": "Bosma",
+          "suffix": ""
+        },
+        {
+          "first": "Fei",
+          "middle": [],
+          "last": "Xia",
+          "suffix": ""
+        },
+        {
+          "first": "Ed",
+          "middle": [],
+          "last": "Chi",
+          "suffix": ""
+        },
+        {
+          "first": "V",
+          "middle": [],
+          "last": "Quoc",
+          "suffix": ""
+        },
+        {
+          "first": "Denny",
+          "middle": [],
+          "last": "Le",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        }
+      ],
+      "year": 2022,
+      "venue": "Advances in Neural Information Processing Systems"
+    },
+    {
+      "id": "BIBREF57",
+      "title": "Attention is not not explanation",
+      "authors": [
+        {
+          "first": "Sarah",
+          "middle": [],
+          "last": "Wiegreffe",
+          "suffix": ""
+        },
+        {
+          "first": "Yuval",
+          "middle": [],
+          "last": "Pinter",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF58",
+      "title": "Huggingface's transformers: State-of-the-art natural language processing",
+      "authors": [
+        {
+          "first": "Thomas",
+          "middle": [],
+          "last": "Wolf",
+          "suffix": ""
+        },
+        {
+          "first": "Lysandre",
+          "middle": [],
+          "last": "Debut",
+          "suffix": ""
+        },
+        {
+          "first": "Victor",
+          "middle": [],
+          "last": "Sanh",
+          "suffix": ""
+        },
+        {
+          "first": "Julien",
+          "middle": [],
+          "last": "Chaumond",
+          "suffix": ""
+        },
+        {
+          "first": "Clement",
+          "middle": [],
+          "last": "Delangue",
+          "suffix": ""
+        },
+        {
+          "first": "Anthony",
+          "middle": [],
+          "last": "Moi",
+          "suffix": ""
+        },
+        {
+          "first": "Pierric",
+          "middle": [],
+          "last": "Cistac",
+          "suffix": ""
+        },
+        {
+          "first": "Tim",
+          "middle": [],
+          "last": "Rault",
+          "suffix": ""
+        },
+        {
+          "first": "Rémi",
+          "middle": [],
+          "last": "Louf",
+          "suffix": ""
+        },
+        {
+          "first": "Morgan",
+          "middle": [],
+          "last": "Funtowicz",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF59",
+      "title": "Deepspeed-chat: Easy, fast and affordable rlhf training of chatgpt-like models at all scales",
+      "authors": [
+        {
+          "first": "Zhewei",
+          "middle": [],
+          "last": "Yao",
+          "suffix": ""
+        },
+        {
+          "first": "Reza",
+          "middle": [],
+          "last": "Yazdani Aminabadi",
+          "suffix": ""
+        },
+        {
+          "first": "Olatunji",
+          "middle": [],
+          "last": "Ruwase",
+          "suffix": ""
+        },
+        {
+          "first": "Samyam",
+          "middle": [],
+          "last": "Rajbhandari",
+          "suffix": ""
+        },
+        {
+          "first": "Xiaoxia",
+          "middle": [],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Ammar",
+          "middle": [],
+          "last": "Ahmad Awan",
+          "suffix": ""
+        },
+        {
+          "first": "Jeff",
+          "middle": [],
+          "last": "Rasley",
+          "suffix": ""
+        },
+        {
+          "first": "Minjia",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Conglong",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Connor",
+          "middle": [],
+          "last": "Holmes",
+          "suffix": ""
+        },
+        {
+          "first": "Zhongzhu",
+          "middle": [],
+          "last": "Zhou",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [],
+          "last": "Wyatt",
+          "suffix": ""
+        },
+        {
+          "first": "Molly",
+          "middle": [],
+          "last": "Smith",
+          "suffix": ""
+        },
+        {
+          "first": "L A",
+          "middle": [],
+          "last": "Kurilenko",
+          "suffix": ""
+        },
+        {
+          "first": "Heyang",
+          "middle": [],
+          "last": "Qin",
+          "suffix": ""
+        },
+        {
+          "first": "Masahiro",
+          "middle": [],
+          "last": "Tanaka",
+          "suffix": ""
+        },
+        {
+          "first": "Shuai",
+          "middle": [],
+          "last": "Che",
+          "suffix": ""
+        },
+        {
+          "first": "Shuaiwen",
+          "middle": [],
+          "last": "",
+          "suffix": ""
+        },
+        {
+          "first": "Leon",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Yuxiong",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF60",
+      "title": "Adaptive budget allocation for parameter-efficient fine-tuning",
+      "authors": [
+        {
+          "first": "Qingru",
+          "middle": [],
+          "last": "Zhang",
+          "suffix": ""
+        },
+        {
+          "first": "Minshuo",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Bukharin",
+          "suffix": ""
+        },
+        {
+          "first": "Pengcheng",
+          "middle": [],
+          "last": "He",
+          "suffix": ""
+        },
+        {
+          "first": "Yu",
+          "middle": [],
+          "last": "Cheng",
+          "suffix": ""
+        },
+        {
+          "first": "Weizhu",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "Tuo",
+          "middle": [],
+          "last": "Zhao",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": "The Eleventh International Conference on Learning Representations"
+    },
+    {
+      "id": "BIBREF61",
+      "title": "Fine-tuning language models from human preferences",
+      "authors": [
+        {
+          "first": "Nisan",
+          "middle": [],
+          "last": "Daniel M Ziegler",
+          "suffix": ""
+        },
+        {
+          "first": "Jeffrey",
+          "middle": [],
+          "last": "Stiennon",
+          "suffix": ""
+        },
+        {
+          "first": "Tom",
+          "middle": [
+            "B"
+          ],
+          "last": "Wu",
+          "suffix": ""
+        },
+        {
+          "first": "Alec",
+          "middle": [],
+          "last": "Brown",
+          "suffix": ""
+        },
+        {
+          "first": "Dario",
+          "middle": [],
+          "last": "Radford",
+          "suffix": ""
+        },
+        {
+          "first": "Paul",
+          "middle": [],
+          "last": "Amodei",
+          "suffix": ""
+        },
+        {
+          "first": "Geoffrey",
+          "middle": [],
+          "last": "Christiano",
+          "suffix": ""
+        },
+        {
+          "first": "",
+          "middle": [],
+          "last": "Irving",
+          "suffix": ""
+        }
+      ],
+      "year": 2019,
+      "venue": ""
+    },
+    {
+      "id": "BIBREF62",
+      "title": "Representation engineering: A top-down approach to ai transparency",
+      "authors": [
+        {
+          "first": "Andy",
+          "middle": [],
+          "last": "Zou",
+          "suffix": ""
+        },
+        {
+          "first": "Long",
+          "middle": [],
+          "last": "Phan",
+          "suffix": ""
+        },
+        {
+          "first": "Sarah",
+          "middle": [],
+          "last": "Chen",
+          "suffix": ""
+        },
+        {
+          "first": "James",
+          "middle": [],
+          "last": "Campbell",
+          "suffix": ""
+        },
+        {
+          "first": "Phillip",
+          "middle": [],
+          "last": "Guo",
+          "suffix": ""
+        },
+        {
+          "first": "Richard",
+          "middle": [],
+          "last": "Ren",
+          "suffix": ""
+        },
+        {
+          "first": "Alexander",
+          "middle": [],
+          "last": "Pan",
+          "suffix": ""
+        },
+        {
+          "first": "Xuwang",
+          "middle": [],
+          "last": "Yin",
+          "suffix": ""
+        },
+        {
+          "first": "Mantas",
+          "middle": [],
+          "last": "Mazeika",
+          "suffix": ""
+        },
+        {
+          "first": "Ann-Kathrin",
+          "middle": [],
+          "last": "Dombrowski",
+          "suffix": ""
+        },
+        {
+          "first": "Shashwat",
+          "middle": [],
+          "last": "Goel",
+          "suffix": ""
+        },
+        {
+          "first": "Nathaniel",
+          "middle": [],
+          "last": "Li",
+          "suffix": ""
+        },
+        {
+          "first": "Michael",
+          "middle": [
+            "J"
+          ],
+          "last": "Byun",
+          "suffix": ""
+        },
+        {
+          "first": "Zifan",
+          "middle": [],
+          "last": "Wang",
+          "suffix": ""
+        },
+        {
+          "first": "Alex",
+          "middle": [],
+          "last": "Mallen",
+          "suffix": ""
+        },
+        {
+          "first": "Steven",
+          "middle": [],
+          "last": "Basart",
+          "suffix": ""
+        },
+        {
+          "first": "Sanmi",
+          "middle": [],
+          "last": "Koyejo",
+          "suffix": ""
+        },
+        {
+          "first": "Dawn",
+          "middle": [],
+          "last": "Song",
+          "suffix": ""
+        },
+        {
+          "first": "Matt",
+          "middle": [],
+          "last": "Fredrikson",
+          "suffix": ""
+        },
+        {
+          "first": "J",
+          "middle": [
+            "Zico"
+          ],
+          "last": "Kolter",
+          "suffix": ""
+        },
+        {
+          "first": "Dan",
+          "middle": [],
+          "last": "Hendrycks",
+          "suffix": ""
+        }
+      ],
+      "year": 2023,
+      "venue": ""
+    }
+  ]
+}
