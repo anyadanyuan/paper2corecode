@@ -1,0 +1,170 @@
+\documentclass[a4paper]{article}
+\usepackage[UTF8]{ctex}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{placeins}
+
+\geometry{a4paper, left=1in, right=1in, top=1in, bottom=1in}
+
+\title{Paper2CoreCode: Fine-Tuning Qwen2.5-Coder-7B for Paper-to-Code Generation}
+\author{但杰, 蒋佳媛, 高鑫彤, 徐媛}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{项目概述}
+本项目旨在将学术论文的文本描述自动转换为可执行的 PyTorch 核心模型代码。我们基于 Qwen2.5-Coder-7B-Instruct，使用 90 篇 2024 年顶级机器学习会议论文（ICLR/ICML/NeurIPS）构建的 SFT 数据集进行 LoRA/QLoRA 微调。最终，在独立的 75 篇 2025 年论文测试集上，我们系统性地评测了微调模型与基座模型的性能差异，并完成了 5 种基座模型 × 4 种量化方案的消融实验，验证了技术路线的有效性。项目的仓库在 \href{https://github.com/anyadanyuan/paper2corecode.git}{paper2corecode}。 由于某些技术原因，模型尚未上传至 HuggingFace。
+
+\subsection{核心能力}
+\begin{itemize}
+    \item \textbf{输入}: 论文核心文本 (Abstract + Body)
+    \item \textbf{输出}: \texttt{<file>} 标签包裹的、去除了工程脚手架的纯净 PyTorch 模型代码。
+\end{itemize}
+
+\section{模型微调报告}
+
+\subsection{训练配置}
+训练采用 LLaMA-Factory 框架，在单张 NVIDIA A100 (80GB) GPU 上进行 4-bit QLoRA 微调。
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{配置项} & \textbf{值} \\
+\midrule
+基础模型 & Qwen/Qwen2.5-Coder-7B-Instruct \\
+微调方式 & LoRA (4-bit 量化 QLoRA) \\
+LoRA 目标模块 & all (所有线性层) \\
+训练阶段 & SFT (Supervised Fine-Tuning) \\
+训练轮数 & 8 epochs \\
+学习率 & 2.0e-4 \\
+Batch Size & 2 (per device) \\
+梯度累积 & 8 steps \\
+截断长度 & 2048 tokens \\
+混合精度 & FP16 \\
+梯度检查点 & 启用 \\
+\bottomrule
+\end{tabularx}
+\caption{训练配置}
+\end{table}
+
+\noindent
+\textit{配置文件}: \texttt{programs/fine\_tuning/training/train\_qwen.yaml}
+
+\subsection{训练结果}
+\begin{itemize}
+    \item \textit{最终训练损失 (train\_loss)}: \texttt{0.5489}
+    \item \textit{训练耗时 (train\_runtime)}: \texttt{9分41秒}
+\end{itemize}
+
+
+\subsection{模型权重}
+\begin{itemize}
+    \item \textit{HuggingFace (完整模型)}: \href{https://huggingface.co/Anyadanyuan/Qwen2.5-7B-paper2XCode}{Anyadanyuan/Qwen2.5-7B-paper2XCode}
+    \item \textit{HuggingFace (LoRA 适配器)}: \href{https://huggingface.co/Anyadanyuan/Qwen2.5-7B-paper2XCode-lora}{Anyadanyuan/Qwen2.5-7B-paper2XCode-lora}
+\end{itemize}
+
+\section{数据说明}
+
+\subsection{训练集}
+\begin{itemize}
+    \item \textit{规模}: 90 篇 2024 年 ICLR/ICML/NeurIPS 论文
+    \item \textit{构建流程}: 采用 ACPP (Algorithm Code Purification Pipeline) 管线，对每篇论文的官方 GitHub 仓库进行代码提纯，与论文文本配对，生成 Alpaca 格式数据。
+    \item \textit{文件}: \texttt{data/train\_dataset.json}
+\end{itemize}
+
+\subsection{测试集}
+\begin{itemize}
+    \item \textit{规模}: 75 篇 2025 年 ICLR/ICML/NeurIPS 论文（与训练集无交集）
+    \item \textit{构建流程}: \texttt{build\_test\_set\_correct.py} 脚本自动从 PDF 提取文本、从 GitHub 克隆参考代码，零 API 成本。
+    \item \textit{文件}: \texttt{data/test\_dataset.json}
+\end{itemize}
+
+\section{评测结果报告}
+在 75 篇论文的测试集上，我们对比了微调模型与基座模型的性能。
+
+\subsection{核心指标对比}
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\textwidth}{Xccc}
+\toprule
+\textbf{指标} & \textbf{基座模型} & \textbf{微调模型} & \textbf{提升 (pp)} \\
+\midrule
+可执行率 (XPR) & 9.4\% & 14.7\% & +5.3 \\
+语法正确率 (SYR) & 39.1\% & 34.7\% & -4.4 \\
+论文组件覆盖率 (PCR) & 9.8\% & 16.2\% & +6.4 \\
+CodeBERTScore & 0.380 & 0.444 & +0.064 \\
+\textbf{总分 (Overall)} & \textbf{16.1\%} & \textbf{20.5\%} & \textbf{+4.4} \\
+\bottomrule
+\end{tabularx}
+\caption{评测结果核心指标对比}
+\end{table}
+
+\noindent
+\textit{数据来源}: \texttt{data/evaluation\_results/*/summary.json}
+
+\subsection{消融实验}
+为验证技术选型的合理性，我们进行了 5 种基座模型 × 4 种量化方案的消融实验。
+
+\FloatBarrier
+
+\subsubsection{基座模型对比（固定 4-bit QLoRA）}
+\begin{table}[htbp]
+\centering
+\begin{tabularx}{\textwidth}{Xccccc}
+\toprule
+\textbf{基座模型} & \textbf{XPR} & \textbf{SYR} & \textbf{CodeBERTScore} & \textbf{Overall} & \textbf{峰值显存} \\
+\midrule
+Qwen2.5-Coder-7B-Instruct & 14.7\% & 34.7\% & 0.444 & 20.5\% & 13.2 GB \\
+Qwen2.5-7B-Instruct & 15.2\% & 30.6\% & 0.467 & 19.8\% & 13.5 GB \\
+DeepSeek-Coder-V2-Lite (16B MoE) & 13.5\% & 33.0\% & 0.432 & 19.2\% & 13.8 GB \\
+CodeLlama-7b-Instruct & 20.7\% & 30.4\% & 0.428 & 20.3\% & 13.0 GB \\
+Mistral-7B-Instruct-v0.3 & 16.3\% & 27.7\% & 0.443 & 18.5\% & 13.1 GB \\
+\bottomrule
+\end{tabularx}
+\caption{基座模型消融实验结果}
+\end{table}
+
+\FloatBarrier
+
+\subsubsection{量化方案对比（固定 Qwen2.5-Coder-7B-Instruct）}
+
+\begin{table}[htbp]
+\centering
+\begin{tabularx}{\textwidth}{Xcccccc}
+\toprule
+\textbf{量化方案} & \textbf{XPR} & \textbf{SYR} & \textbf{CodeBERTScore} & \textbf{Overall} & \textbf{峰值显存} & \textbf{训练耗时} \\
+\midrule
+BF16 全参数微调 & 15.2\% & 35.1\% & 0.450 & 21.1\% & 31.5 GB & 45.3 min \\
+BF16 + LoRA & 14.9\% & 32.9\% & 0.431 & 20.4\% & 18.2 GB & 1.9 min \\
+8-bit QLoRA & 14.8\% & 32.0\% & 0.485 & 21.0\% & 14.2 GB & 4.0 min \\
+4-bit QLoRA & 14.7\% & 34.7\% & 0.444 & 20.5\% & 13.2 GB & 2.6 min \\
+\bottomrule
+\end{tabularx}
+\caption{量化方案消融实验结果}
+\end{table}
+
+\section{分工信息}
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{姓名} & \textbf{贡献} \\
+\midrule
+但杰 & 评测体系设计，消融实验，报告撰写 \\
+蒋佳媛 & 模型微调，训练脚本与监控重构，数据集构建 \\
+高鑫彤 & ACPP 代码提纯管线设计与实现，数据清洗 \\
+徐媛 & 推理脚本与服务器部署，项目管理与整合 \\
+\bottomrule
+\end{tabularx}
+\caption{分工信息}
+\end{table}
+
+\end{document}
